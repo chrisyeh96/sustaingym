@@ -6,16 +6,15 @@ from __future__ import annotations
 import numpy as np
 
 import gym
-from gym import spaces
 
-from typing import Union
-
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sustaingym.envs.evcharging.observations import get_observation_space, get_observation
 from sustaingym.envs.evcharging.actions import get_action_space, to_schedule
-from sustaingym.envs.evcharging.event_generation import generate_events
+from sustaingym.envs.evcharging.event_generation import get_real_event_queue
 from sustaingym.envs.evcharging.rewards import get_rewards
+from sustaingym.envs.evcharging.utils import random_date
+
 
 from acnportal import acnsim
 from acnportal.acnsim.simulator import Simulator
@@ -26,6 +25,10 @@ from acnportal.acnsim.events import EventQueue
 from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
 from acnportal.acnsim.network.charging_network import ChargingNetwork
 
+MINS_IN_DAY = 1440
+START_DATE = datetime(2018, 11, 1)
+END_DATE = datetime(2021, 8, 31)
+
 
 class EVChargingEnv(gym.Env):
     """
@@ -34,68 +37,120 @@ class EVChargingEnv(gym.Env):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, charging_network='caltech', period=5):
-        # Create Simulator
+    def __init__(self, site='caltech', period=1, recompute_freq=5, real_traces=True, sequential=True):
+        """
 
-        # 1. define charging network on which simulation is run
-        implemented_cns = ['caltech', 'jpl']
-        if charging_network not in implemented_cns:
-            raise ValueError("argument charging_network must be either 'caltech' or 'jpl'. ")
-        self.charging_network = charging_network
-        self.cn: ChargingNetwork = self._get_network()
-
-        # 2. create event queue
-        self.events = generate_events()
-
-        # 3. define length of each time interval in the simulation in minutes
+        """
+        self.site = site
         self.period = period
+        self.real_traces = real_traces
+        self.sequential = sequential
+        self.recompute_freq = recompute_freq
 
-        # 4. define start time # TODO: MAKE REALISTIC
-        self.start = datetime(2019, 1, 1)
+        self.max_timestamp = MINS_IN_DAY // period
 
-        # 5. create simulator and interface
-        self.simulator: Union[Simulator, None] = None
-        self.interface: Union[Interface, None] = None
-        self._init_sim_interface(self.events, self.start)
+        # Set up charging network parameters
+        self.site: str = site
+        self._init_charging_network()
+
+        self.constraint_matrix = self.cn.constraint_matrix
+        self.num_constraints, self.num_stations = self.cn.constraint_matrix.shape
+        self.evse_index = self.cn.station_ids
+        self.evse_set = set(self.evse_index)
+        self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.evse_index)}
+
+        if self.real_traces:
+            if self.sequential:
+                self.day = START_DATE - timedelta(days=1)
+            else:
+                self.day = random_date(START_DATE, END_DATE)
+        else:
+            raise NotImplementedError
 
         # Define observation space and action space
-
         # Observations are dictionaries describing arrivals and departures of EVs,
         # constraint matrix, current magnitude bounds, demands, phases, and timesteps
-        self.constraint = self.interface.get_constraints()
-        self.evses = self.constraint.evse_index
-        self.observation_space = get_observation_space(self.interface)
-
+        self.observation_space = get_observation_space(self.num_constraints,
+                                                       self.num_stations)
         # Define action space, which is the charging rate for all EVs
-        self.action_space = get_action_space(self.interface)
+        self.action_space = get_action_space(self.num_stations)
 
-    def _init_sim_interface(self, events: EventQueue, start: datetime):
-        self.simulator = acnsim.Simulator(
-            network=self._get_network(),
+        self.events = None
+        self.simulator = None
+        self.interface = None
+        self.prev_timestamp, self.timestamp = -1, -1
+
+    def _init_charging_network(self):
+        if self.site == 'caltech':
+            self.cn: ChargingNetwork = caltech_acn()
+        elif self.site == 'jpl':
+            self.cn: ChargingNetwork = jpl_acn()
+        else:
+            raise NotImplementedError(f"site should be either 'caltech' or 'jpl'")
+        return
+    
+    def _new_event_queue(self):
+        """
+        Generates new event queue. If using real traces, updates internal day
+        variable and generates events.
+        """
+        if self.real_traces:
+            if self.sequential:
+                self.day = self.day + timedelta(days=1)
+                # keep simulation within start and end date
+                if self.day > END_DATE:
+                    self.day = START_DATE
+            else:
+                self.day = random_date(START_DATE, END_DATE)
+            self.events = get_real_event_queue(self.day, self.period,
+                                               self.recompute_freq, 
+                                               self.evse_set,
+                                               self.site)
+        else:
+            raise NotImplementedError # TODO gmms
+        return
+
+    def _init_simulator_and_interface(self):
+        self.simulator: Simulator = acnsim.Simulator(
+            network=self.cn,
             scheduler=None,
-            events=events, 
-            start=start,
+            events=self.events, 
+            start=self.day,
             period=self.period,
             verbose=False
         )
-        self.interface = acnsim.interface.Interface(self.simulator)
-    
-    def _get_obs(self):
-        pass
+        self.interface: Interface = acnsim.interface.Interface(self.simulator)
+        return
 
-    def _get_info(self):
-        pass
+    def _get_info(self): # TODO
+        return None
 
     def step(self, action: np.ndarray) -> tuple:
-        schedule = to_schedule(action, self.evses)
-        self.simulator.step(schedule)
-        print("stepped", len(self.events._queue))
-        # print(self.simulator.event_queue._queue)
+        # Step internal simulator
+        schedule = to_schedule(action, self.evse_index) # TODO: make action fit constraints somehow?
+        done = self.simulator.step(schedule)
+        self.simulator._resolve = False  # work-around to keep iterating
 
-        observation = get_observation(self.interface) # TODO: get_observation
-        reward = get_rewards(self.interface) # TODO: get_rewards
-        done = self.simulator.event_queue.empty()
-        info = self._get_info() # TODO: _get_info
+        # Next timestamp
+        if done:
+            next_timestamp = self.max_timestamp
+        else:
+            next_timestamp = self.simulator.event_queue.queue[0][0]
+
+        # Retrieve environment information
+        observation = get_observation(self.interface,
+                                      self.num_constraints,
+                                      self.num_stations,
+                                      self.evse_name_to_idx,
+                                      self.simulator._iteration)
+
+        reward = get_rewards(self.interface, self.simulator, schedule, self.prev_timestamp, self.timestamp, next_timestamp) # TODO: get_rewards
+        info = self._get_info()
+
+        # Update timestamp
+        self.prev_timestamp = self.timestamp
+        self.timestamp = next_timestamp
+
         return observation, reward, done, info
 
     def reset(self, *,
@@ -103,24 +158,78 @@ class EVChargingEnv(gym.Env):
               return_info: bool = False,
               options: dict | None = None) -> dict:
         super().reset(seed=seed)
-        raise NotImplementedError
-    
-    def _get_network(self):
-        return caltech_acn() if self.charging_network == 'caltech' else jpl_acn()
+        # Re-create charging network, assuming no overnight stays
+        self._init_charging_network()
+
+        # Generate new events
+        self._new_event_queue()
+
+        # Create simulator and interface wrapper
+        self._init_simulator_and_interface()
+
+        self.prev_timestamp = 0
+        self.timestamp = self.simulator.event_queue.queue[0][0] # TODO: self.events.queue[0][0]
+
+        # Retrieve environment information
+        observation = get_observation(self.interface,
+                                      self.num_constraints,
+                                      self.num_stations,
+                                      self.evse_name_to_idx,
+                                      self.simulator._iteration)
+
+        if return_info:
+            info = self._get_info()
+            return observation, info
+        else:
+            return observation
 
     def render(self):
         raise NotImplementedError
 
     def close(self):
-        del self.interface, self.simulator
         return
 
 
 
 if __name__ == "__main__":
-    env = EVChargingEnv()
-    action = np.zeros(shape=(54,))
+    np.random.seed(42)
+    import random
+    random.seed(42)
+    env = EVChargingEnv(sequential=False, period=10)
 
-    done = False
-    while not done:
-        observation, reward, done, info = env.step(action) # TODO: why is this never done
+
+    for j in range(3):
+
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        observation = env.reset()
+        print(observation)
+
+        done = False
+        i = 0
+        action = np.zeros(shape=(54,), )
+        while not done:
+            observation, reward, done, info = env.step(action)
+            print(i, observation['timestep'], reward)
+            print(" ", observation['arrivals'])
+            print(" ", observation['departures'])
+            i += 1
+        print(env.simulator.charging_rates.shape)
+        print()
+        print()
+
+        env.close()
+    print(env.max_timestamp)
+
+    # print('observation')
+    # print(observation)
+    # print('reward')
+    # print(reward)
+    # print('done')
+    # print(done)
+    # print('info')
+    # print(info)

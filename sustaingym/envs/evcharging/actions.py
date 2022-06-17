@@ -8,20 +8,20 @@ from gym import spaces
 from acnportal.acnsim.interface import Interface
 
 
-def get_action_space(interface: Interface):
+def get_action_space(num_stations: int):
     """
     Returns discretized action space for a charging network.
 
     Args:
-        interface (acnportal.acnsim.interface): interface between algorithms
-            and simulation environment 
+        num_stations (int): number of evse charging stations in network
+
     
     Returns:
         MultiDiscrete: a space of shape (cn.station_ids,) where each entry
             takes on values in the set {0, 1, 2, 3, 4}
     """
     return spaces.MultiDiscrete(
-        [5 for _ in range(len(interface._simulator.network.station_ids))]
+        [5 for _ in range(num_stations)]
     )
 
 
