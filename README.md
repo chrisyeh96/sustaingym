@@ -5,6 +5,10 @@
 1. Install [miniconda3](https://docs.conda.io/en/latest/miniconda.html).
 2. Create conda environment.
     ```bash
+    # for environment development
+    conda env update --file env_norl.yml --prune
+
+    # for RL development
     conda env update --file env.yml --prune
     ```
 3. Make code modifications in a separate git branch

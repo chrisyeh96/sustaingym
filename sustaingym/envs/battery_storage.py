@@ -17,6 +17,7 @@ class BatteryStorageEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self):
+        self.action_space = spaces.Box(low=-5, high=5, shape=(1,))
         raise NotImplementedError
 
     def step(self, action: np.ndarray) -> tuple:
