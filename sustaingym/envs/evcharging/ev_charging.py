@@ -3,27 +3,23 @@ TODO
 """
 from __future__ import annotations
 
-import numpy as np
-
-import gym
-
 from datetime import datetime, timedelta
 
-from sustaingym.envs.evcharging.observations import get_observation_space, get_observation
-from sustaingym.envs.evcharging.actions import get_action_space, to_schedule
-from sustaingym.envs.evcharging.event_generation import get_real_event_queue
-from sustaingym.envs.evcharging.rewards import get_rewards
-from sustaingym.envs.evcharging.utils import random_date
-
-
 from acnportal import acnsim
-from acnportal.acnsim.simulator import Simulator
-from acnportal.acnsim.interface import Interface
-
 from acnportal.acnsim.events import EventQueue
-
-from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
+from acnportal.acnsim.interface import Interface
 from acnportal.acnsim.network.charging_network import ChargingNetwork
+from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
+from acnportal.acnsim.simulator import Simulator
+import gym
+import numpy as np
+
+from .actions import get_action_space, to_schedule
+from .event_generation import get_real_event_queue
+from .observations import get_observation_space, get_observation
+from .rewards import get_rewards
+from .utils import random_date
+
 
 MINS_IN_DAY = 1440
 START_DATE = datetime(2018, 11, 1)
@@ -34,10 +30,9 @@ class EVChargingEnv(gym.Env):
     """
     TODO
     """
+    metadata: dict = {"render_modes": []}
 
-    metadata = {"render_modes": []}
-
-    def __init__(self, site='caltech', period=1, recompute_freq=5, real_traces=True, sequential=True):
+    def __init__(self, site='caltech', period=1, recompute_freq=5, real_traces=True, sequential=True) -> None:
         """
 
         """
@@ -87,7 +82,6 @@ class EVChargingEnv(gym.Env):
             self.cn: ChargingNetwork = jpl_acn()
         else:
             raise NotImplementedError(f"site should be either 'caltech' or 'jpl'")
-        return
     
     def _new_event_queue(self):
         """
@@ -96,7 +90,7 @@ class EVChargingEnv(gym.Env):
         """
         if self.real_traces:
             if self.sequential:
-                self.day = self.day + timedelta(days=1)
+                self.day += timedelta(days=1)
                 # keep simulation within start and end date
                 if self.day > END_DATE:
                     self.day = START_DATE
@@ -108,7 +102,6 @@ class EVChargingEnv(gym.Env):
                                                self.site)
         else:
             raise NotImplementedError # TODO gmms
-        return
 
     def _init_simulator_and_interface(self):
         self.simulator: Simulator = acnsim.Simulator(

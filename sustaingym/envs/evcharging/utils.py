@@ -1,9 +1,8 @@
+from datetime import timedelta, datetime
 from random import randrange
-from datetime import timedelta
 
 
-
-def random_date(start, end):
+def random_date(start, end) -> datetime:
     """
     This function will return a random datetime between two datetime 
     objects.

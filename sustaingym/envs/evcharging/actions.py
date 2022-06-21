@@ -1,21 +1,18 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from gym import spaces
 import numpy as np
 
-from typing import List
 
-import gym
-from gym import spaces
-
-from acnportal.acnsim.interface import Interface
-
-
-def get_action_space(num_stations: int):
+def get_action_space(num_stations: int) -> spaces.MultiDiscrete:
     """
     Returns discretized action space for a charging network.
 
     Args:
         num_stations (int): number of evse charging stations in network
 
-    
     Returns:
         MultiDiscrete: a space of shape (cn.station_ids,) where each entry
             takes on values in the set {0, 1, 2, 3, 4}
@@ -25,7 +22,7 @@ def get_action_space(num_stations: int):
     )
 
 
-def to_schedule(action: np.ndarray, evses: List[str]):
+def to_schedule(action: np.ndarray, evses: Sequence[str]) -> dict[str, list[float]]:
     """
     Returns a dictionary for pilot signals given the action. Entries of action
     are in the set {0, 1, 2, 3, 4}, and they are scaled up by a factor of 8 to

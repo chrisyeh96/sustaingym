@@ -1,6 +1,9 @@
+"""
+TODO
+"""
+from __future__ import annotations
 
 from acnportal.acnsim.interface import Interface
-
 from acnportal.acnsim.simulator import Simulator
 import numpy as np
 
@@ -8,7 +11,7 @@ import numpy as np
 CHARGE_WEIGHT = 10
 CONSTRAINT_VIOLATION_WEIGHT = 10
 
-def get_rewards(interface: Interface, simulator: Simulator, schedule: dict, prev_timestamp: int, timestamp: int, next_timestamp: int):
+def get_rewards(interface: Interface, simulator: Simulator, schedule: dict, prev_timestamp: int, timestamp: int, next_timestamp: int) -> float:
     schedule = schedule_to_numpy(schedule)
     # Find charging cost based on amount of charge delivered
     charging_cost = -sum(schedule) * (next_timestamp - timestamp)
@@ -32,6 +35,6 @@ def get_rewards(interface: Interface, simulator: Simulator, schedule: dict, prev
     return total_reward
 
 
-def schedule_to_numpy(schedule: dict):
+def schedule_to_numpy(schedule: dict) -> np.array:
 
     return np.array(list(map(lambda x: x[0], schedule.values())))

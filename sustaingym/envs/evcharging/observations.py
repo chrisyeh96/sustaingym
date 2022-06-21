@@ -1,15 +1,16 @@
-import numpy as np
-
-import gym
-from gym import spaces
+"""
+TODO
+"""
+from __future__ import annotations
 
 from acnportal.acnsim.interface import Interface
-
-from collections import OrderedDict
+from gym import spaces
+import numpy as np
 
 MAX_INT = int(2**31 - 1)
 
-def get_observation_space(num_constraints: int, num_stations: int):
+
+def get_observation_space(num_constraints: int, num_stations: int) -> spaces.Dict:
     """
     Returns dictionary concerning the observation space for the network.
 
@@ -34,7 +35,7 @@ def get_observation_space(num_constraints: int, num_stations: int):
     })
 
 
-def get_observation(interface: Interface, num_constraints: int, num_stations: int, evse_name_to_idx: dict, timestep: int):
+def get_observation(interface: Interface, num_constraints: int, num_stations: int, evse_name_to_idx: dict, timestep: int) -> dict:
     # constraints = interface.get_constraints()
     # num_constraints, num_stations = constraints.constraint_matrix.shape
     # constraints.evse_index
@@ -58,28 +59,12 @@ def get_observation(interface: Interface, num_constraints: int, num_stations: in
     constraint_matrix = interface.get_constraints().constraint_matrix
     magnitudes = interface.get_constraints().magnitudes
 
-    return OrderedDict([
-        ("arrivals", arrivals),
-        ("departures", departures),
-        ("constraint_matrix", constraint_matrix),
-        ("magnitudes", magnitudes),
-        ("demands", demands),
-        ("phases", phases),
-        ("timestep", timestep),
-    ])
-
-
-    # for evse in evse_name_to_idx.keys():
-    # demands = interface.remaining_amp_periods()
-    # # print(interface._simulator.get_active_evs())
-
-    # return spaces.Dict({
-    #     "arrivals": spaces.Box(low=0, high=MAX_INT, shape=(num_stations,), dtype=np.int32),
-    #     "departures": spaces.Box(low=0, high=MAX_INT, shape=(num_stations,), dtype=np.int32),
-    #     "constraint_matrix": spaces.Box(low=-1.0, high=1.0, shape=(num_constraints, num_stations), dtype=np.float32),
-    #     "magnitudes": spaces.Box(low=0.0, high=np.inf, shape=(num_constraints,), dtype=np.float32),
-    #     "demands": spaces.Box(low=0.0, high=np.inf, shape=(num_stations,), dtype=np.float32),
-    #     "phases": spaces.Box(low=-180.0, high=180.0, shape=(num_stations,), dtype=np.float32),
-    #     "timestep": spaces.Box(low=0, high=MAX_INT, shape=(), dtype=np.int32),
-    # }).sample()
-
+    return {
+        "arrivals": arrivals,
+        "departures": departures,
+        "constraint_matrix": constraint_matrix,
+        "magnitudes": magnitudes,
+        "demands": demands,
+        "phases": phases,
+        "timestep": timestep,
+    }
