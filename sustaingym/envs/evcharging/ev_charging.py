@@ -15,7 +15,7 @@ import gym
 import numpy as np
 
 from .actions import get_action_space, to_schedule
-from .event_generation import get_real_event_queue
+from .event_generation import get_real_event_queue, ArtificialEventGenerator
 from .observations import get_observation_space, get_observation
 from .rewards import get_rewards
 from .utils import random_date
@@ -60,7 +60,12 @@ class EVChargingEnv(gym.Env):
             else:
                 self.day = random_date(START_DATE, END_DATE)
         else:
-            raise NotImplementedError
+            
+            self.generator = ArtificialEventGenerator(period=period,
+                                                      recompute_freq=recompute_freq,
+                                                      site=site)
+            now = datetime.now()
+            self.day = datetime(now.year, now.month, now.day)
 
         # Define observation space and action space
         # Observations are dictionaries describing arrivals and departures of EVs,
@@ -101,10 +106,11 @@ class EVChargingEnv(gym.Env):
                                                self.evse_set,
                                                self.site)
         else:
-            raise NotImplementedError # TODO gmms
+            self.day += timedelta(days=1)
+            self.events = self.generator.get_event_queue(p=[1, 0, 0])
 
     def _init_simulator_and_interface(self):
-        self.simulator: Simulator = acnsim.Simulator(
+        self.simulator: Simulator = Simulator(
             network=self.cn,
             scheduler=None,
             events=self.events, 
@@ -112,7 +118,7 @@ class EVChargingEnv(gym.Env):
             period=self.period,
             verbose=False
         )
-        self.interface: Interface = acnsim.interface.Interface(self.simulator)
+        self.interface: Interface = Interface(self.simulator)
         return
 
     def _get_info(self): # TODO
@@ -150,7 +156,7 @@ class EVChargingEnv(gym.Env):
               seed: int | None = None,
               return_info: bool = False,
               options: dict | None = None) -> dict:
-        super().reset(seed=seed)
+        # super().reset(seed=seed) # TODO what is going on here
         # Re-create charging network, assuming no overnight stays
         self._init_charging_network()
 
@@ -161,7 +167,7 @@ class EVChargingEnv(gym.Env):
         self._init_simulator_and_interface()
 
         self.prev_timestamp = 0
-        self.timestamp = self.simulator.event_queue.queue[0][0] # TODO: self.events.queue[0][0]
+        self.timestamp = self.simulator.event_queue.queue[0][0]
 
         # Retrieve environment information
         observation = get_observation(self.interface,
@@ -176,10 +182,10 @@ class EVChargingEnv(gym.Env):
         else:
             return observation
 
-    def render(self):
+    def render(self): # TODO
         raise NotImplementedError
 
-    def close(self):
+    def close(self): # TODO
         return
 
 
@@ -188,7 +194,7 @@ if __name__ == "__main__":
     np.random.seed(42)
     import random
     random.seed(42)
-    env = EVChargingEnv(sequential=False, period=10)
+    env = EVChargingEnv(sequential=False, period=10, real_traces=False)
 
 
     for j in range(3):

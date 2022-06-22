@@ -147,6 +147,7 @@ class ArtificialEventGenerator:
         Arguments:
         n (int) - number of samples.
         idx (int) - index of gmm to sample from.
+        period (int) - period of 
 
         Returns:
         (np.ndarray) - array of shape (n, 3) whose columns are arrival time
@@ -162,20 +163,23 @@ class ArtificialEventGenerator:
             # discard sample if arrival, departure, or requested energy not in bound
             if sample[0][0] < 0 or sample[0][1] >= 1 or sample[0][2] < 0:
                 continue
-            
-            # discard sample if arrival > departure
-            if sample[0][0] > sample[0][1]:
+
+            # rescale arrival and departure
+            sample[0][0] = 1440 * sample[0][0] // self.period
+            sample[0][1] = 1440 * sample[0][1] // self.period
+
+            # discard sample if arrival >= departure
+            if sample[0][0] >= sample[0][1]:
                 continue
 
             np.copyto(samples[i], sample)
             i += 1
 
-        # rescale arrival, departure, and requested energy
-        samples[:, 0:2] *= 1440
+        # rescale requested energy
         samples[:, 2] *= 100
         return samples
     
-    def get_artificial_event_queue(self, p: Sequence=None, station_uniform_sampling=True):
+    def get_event_queue(self, p: Sequence=None, station_uniform_sampling=True):
         """
         Gets event queue from artificially-created data.
 
@@ -230,9 +234,8 @@ class ArtificialEventGenerator:
                     station_cnts = [1 / len(station_cnts) for _ in range(len(station_cnts))]
                 else:
                     station_cnts = [station_cnts[i] / sum(station_cnts) for i in range(len(station_cnts))]
-            
-            arrival = int(arrival // self.period)
-            departure = int(departure // self.period)
+
+            arrival, departure = int(arrival), int(departure)
 
             battery = Battery(capacity=100,
                               init_charge=max(0, 100-energy),
@@ -264,6 +267,6 @@ if __name__ == "__main__":
     import time
     begin = time.time()
     for _ in range(1):
-        eq = gen.get_artificial_event_queue(p=[1, 0, 0])
+        eq = gen.get_event_queue(p=[1, 0, 0])
     end = time.time()
     print("time elapsed: ", end - begin)
