@@ -1,134 +1,35 @@
+# TODO: better way of parsing
+
 """
 TODO
 """
 from __future__ import annotations
 
-from collections.abc import Set, Generator
+from collections.abc import Set, Sequence
 
 from datetime import datetime, timedelta
-import pandas as pd
-import pytz
+import numpy as np
+import os
+import uuid
 
-from acnportal.acndata.data_client import DataClient
-from acnportal.acndata.utils import parse_http_date 
 from acnportal.acnsim.events import PluginEvent, RecomputeEvent, EventQueue
 from acnportal.acnsim.models.battery import Battery, Linear2StageBattery
 from acnportal.acnsim.models.ev import EV
+from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
+
+from .utils import get_real_events, load_gmm
 
 
 MINS_IN_DAY = 1440
 DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
 API_TOKEN = "DEMO_TOKEN"
-
+GMM_DEFAULT_PATH = "sustaingym/envs/evcharging/gmms/default/"
 
 def datetime_to_timestamp(dt: datetime, period: int) -> int:
     """
     Helper function to get_sessions. Returns simulation timestamp of datetime.
     """
     return (dt.hour * 60 + dt.minute) // period
-
-
-def get_sessions(start_date: datetime,
-                 end_date: datetime,
-                 site: str ="caltech", return_count=True) -> Generator[dict]:
-    """
-    Retrieves charging sessions from site between start_date and end_date using
-    ACNData Python API. 
-
-    Args:
-    start_date (datetime): beginning time of interval
-    end_date (datetime): ending time of interval
-    site (str): 'caltech' or 'jpl'
-    return_count (bool) - whether to return count as well
-
-    Returns:
-    sessions - generator of sessions that had a connection time starting on
-    `start_date` and ending the day before `end_date`
-    count (bool) - also returns count if return_count is True
-
-    Notes:
-    For `start_date` and `end_date` arguments, only year, month, and day are
-    considered.
-
-    Ex. get_sessions(datetime(2020, 8, 1), datetime(2020, 11, 1)).
-    """
-    start_time = start_date.strftime(DT_STRING_FORMAT)
-    end_time = end_date.strftime(DT_STRING_FORMAT)
-
-    cond = f'connectionTime>="{start_time}" and connectionTime<="{end_time}"'
-    data_client = DataClient(api_token=API_TOKEN)
-    sessions = data_client.get_sessions(site, cond=cond)
-
-    if return_count:
-        count = data_client.count_sessions(site, cond=cond)
-        return sessions, int(count)
-    else:
-        return sessions
-
-
-def get_real_events(start_date: datetime, end_date: datetime,
-                    site: str) -> pd.DataFrame:
-    """
-    Returns a pandas DataFrame of charging events.
-
-    Arguments:
-    start_date (datetime): beginning time of interval
-    end_date (datetime): ending time of interval
-    site (str): 'caltech' or 'jpl'
-
-    Returns:
-    (pd.DataFrame): DataFrame containing necessary charging info
-
-    Assumes:
-    sessions are in Pacific time
-    """
-    sessions = get_sessions(start_date, end_date, site=site, return_count=False)
-
-    arrivals = []
-    departures = []
-    requested_energies = []
-    station_ids = []
-    session_ids = []
-    estimated_departures = []
-    claimed_sessions = []
-
-    for session in sessions:
-        userInputs = session['userInputs']
-
-        connection = session['connectionTime']
-        disconnect = session['disconnectTime']
-
-        if userInputs:
-            requested_energy = userInputs[0]['kWhRequested']
-            est_depart_time = userInputs[0]['requestedDeparture']
-            est_depart_dt = parse_http_date(est_depart_time,
-                                            pytz.timezone('US/Pacific'))
-            claimed = True
-        else:
-            requested_energy = session['kWhDelivered']
-            est_depart_dt = disconnect
-            claimed = False
-
-        station_id = session['spaceID']
-        session_id = session['sessionID']
-
-        arrivals.append(connection)
-        departures.append(disconnect)
-        requested_energies.append(requested_energy)
-        station_ids.append(station_id)
-        session_ids.append(session_id)
-        estimated_departures.append(est_depart_dt)
-        claimed_sessions.append(claimed)
-    
-    return pd.DataFrame({
-        "arrival": arrivals,
-        "departure": departures,
-        "requested_energy (kWh)": requested_energies,
-        "station_id": station_ids,
-        "session_id": session_ids,
-        "estimated_departure": estimated_departures,
-        "claimed": claimed_sessions
-    })
 
 
 def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
@@ -161,14 +62,14 @@ def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
 
     events = []
 
-    for row, session in events_df.iterrows():
+    for _, session in events_df.iterrows():
         connection_timestamp = datetime_to_timestamp(session['arrival'],
                                                      period)
         disconnect_timestamp = datetime_to_timestamp(session['departure'],
                                                      period)
         # Discard sessions with disconnect - connection <= 0, which occurs when
         # EV stays overnight
-        if disconnect_timestamp - connection_timestamp <= 0:
+        if session['arrival'].day != session['departure'].day:
             continue
 
         # Discard sessions with station id's not in dataset 
@@ -180,7 +81,7 @@ def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
         requested_energy = session['requested_energy (kWh)']
             
         battery = Battery(capacity=100,
-                          init_charge=100-requested_energy,
+                          init_charge=max(0, 100-requested_energy),
                           max_power=100)
 
         ev = EV(
@@ -204,3 +105,165 @@ def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
     
     events = EventQueue(events)
     return events
+
+
+class ArtificialEventGenerator:
+    """Class for random sampling using trained GMMs."""
+
+    def __init__(self, period: int, recompute_freq: int,
+                 site: str, gmm_path=GMM_DEFAULT_PATH,):
+        """
+        Initialize event generator. Contains multiple GMMs that can be sampled
+        from a specified probability distribution.
+        """
+        self.period = period
+        self.recompute_freq = recompute_freq
+        self.site = site
+        self.gmm_paths = os.path.join(GMM_DEFAULT_PATH, site)
+
+        self.gmms = []
+        self.cnts = []
+        self.station_usages = []
+
+        # load counts, gmms, 
+        for gmm_path in os.listdir(self.gmm_paths):
+            gmm_total_path = os.path.join(self.gmm_paths, gmm_path)
+            self.gmms.append(load_gmm(gmm_total_path))
+            self.cnts.append(np.load(os.path.join(gmm_total_path, "_cnts.npy")))
+            self.station_usages.append(np.load(os.path.join(gmm_total_path, "_station_usage.npy")))
+
+        self.num_gmms = len(self.gmms)
+
+        if site == "caltech":
+            self.station_ids = caltech_acn().station_ids
+        else:
+            self.station_ids = jpl_acn().station_ids
+        self.num_stations = len(self.station_ids)
+
+    def sample(self, n: int, idx: int) -> np.ndarray:
+        """
+        Return `n` samples from a single GMM at a given index.
+
+        Arguments:
+        n (int) - number of samples.
+        idx (int) - index of gmm to sample from.
+
+        Returns:
+        (np.ndarray) - array of shape (n, 3) whose columns are arrival time
+            in minutes, departure time in minutes, and requested energy in kWh
+        """
+        samples = np.zeros(shape=(n, 3), dtype=np.float32)
+        gmm = self.gmms[idx]
+        # use while loop for quality check
+        i = 0
+        while i < n:
+            sample = gmm.sample(1)[0]
+            
+            # discard sample if arrival, departure, or requested energy not in bound
+            if sample[0][0] < 0 or sample[0][1] >= 1 or sample[0][2] < 0:
+                continue
+            
+            # discard sample if arrival > departure
+            if sample[0][0] > sample[0][1]:
+                continue
+
+            np.copyto(samples[i], sample)
+            i += 1
+
+        # rescale arrival, departure, and requested energy
+        samples[:, 0:2] *= 1440
+        samples[:, 2] *= 100
+        return samples
+    
+    def get_artificial_event_queue(self, p: Sequence=None, station_uniform_sampling=True):
+        """
+        Gets event queue from artificially-created data.
+
+        Arguments:
+        p (Sequence of floats) - probabilities to sample from each gmm, elements
+            should add up to 1. If None, assumes uniform distribution across gmms.
+        station_uniform_sampling (bool) - if True, uniformly samples station; otherwise,
+            samples from the distribution of sessions on stations
+
+        Returns:
+        (EventQueue) - events used for acnportal simulator
+        """
+        if p and len(p) != self.num_gmms:
+            raise ValueError(f"found length {len(p)}, but expected length {self.num_gmms}")
+        
+        if p and sum(p) != 1:
+            raise ValueError(f"sum of p is {sum(p)}, which is not valid for a probability measure")
+        
+        # generate samples
+        idx = np.random.choice(self.num_gmms, p=p)
+        # cap number at the garage's number of stations
+        n = max(np.random.choice(self.cnts[idx]), self.num_stations)
+        samples = self.sample(n, idx)
+
+        if station_uniform_sampling:
+            hashmap = {station_id: i for i, station_id in enumerate(self.station_ids)}
+            array = [station_id for station_id in self.station_ids]
+        else:
+            station_ids = list(self.station_ids)
+            station_cnts = self.station_usages[idx].tolist()
+
+        events = []
+        
+        for arrival, departure, energy in samples:
+            if station_uniform_sampling:
+                # remove station id with uniformly random probability
+                idx = np.random.choice(len(array))
+                array[idx], array[-1] = array[-1], array[idx]
+                hashmap[array[idx]] = idx
+                del hashmap[array[-1]]
+                station_id = array.pop()
+            else:
+                # sample station id, remove from both lists
+                idx = np.random.choice(len(station_ids), p=station_cnts)
+                station_ids[idx], station_ids[-1] = station_ids[-1], station_ids[idx]
+                station_id = station_ids.pop()
+                station_cnts[idx], station_cnts[-1] = station_cnts[-1], station_cnts[idx]
+                station_cnts.pop(idx)
+
+                # normalize station_cnts probabilities
+                if sum(station_cnts) == 0:
+                    station_cnts = [1 / len(station_cnts) for _ in range(len(station_cnts))]
+                else:
+                    station_cnts = [station_cnts[i] / sum(station_cnts) for i in range(len(station_cnts))]
+            
+            arrival = int(arrival // self.period)
+            departure = int(departure // self.period)
+
+            battery = Battery(capacity=100,
+                              init_charge=max(0, 100-energy),
+                              max_power=100)
+
+            ev = EV(
+                arrival=arrival,
+                departure=departure,
+                requested_energy=energy,
+                station_id=station_id,
+                session_id=str(uuid.uuid4()),
+                battery=battery
+            )
+
+            event = PluginEvent(arrival, ev)
+            events.append(event)
+        
+        # add recompute event every every `recompute_freq` periods
+        for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
+            event = RecomputeEvent(i * self.recompute_freq)
+            events.append(event)
+        
+        events = EventQueue(events)
+        return events
+
+
+if __name__ == "__main__":
+    gen = ArtificialEventGenerator(5, 10, 'caltech')
+    import time
+    begin = time.time()
+    for _ in range(1):
+        eq = gen.get_artificial_event_queue(p=[1, 0, 0])
+    end = time.time()
+    print("time elapsed: ", end - begin)
