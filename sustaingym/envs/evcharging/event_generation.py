@@ -1,7 +1,7 @@
-# TODO: better way of parsing
-
 """
-TODO
+This module contains the logic for generating events. It defines a method for
+generating real event traces and a class for generating artificial event
+traces.
 """
 from __future__ import annotations
 
@@ -23,7 +23,8 @@ from .utils import get_real_events, load_gmm
 MINS_IN_DAY = 1440
 DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
 API_TOKEN = "DEMO_TOKEN"
-GMM_DEFAULT_PATH = "sustaingym/envs/evcharging/gmms/default/"
+GMMS_PATH = os.path.join("sustaingym", "envs", "evcharging", "gmms")
+
 
 def datetime_to_timestamp(dt: datetime, period: int) -> int:
     """
@@ -34,9 +35,9 @@ def datetime_to_timestamp(dt: datetime, period: int) -> int:
 
 def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
                          station_ids: Set[str], site: str,
-                         use_unclaimed: bool=False) -> EventQueue:
+                         use_unclaimed: bool = False) -> EventQueue:
     """
-    Creates an ACN Simulator event queue from real traces in ACNData. Ignores
+    Create an ACN Simulator event queue from real traces in ACNData. Ignore
     unclaimed user sessions.
 
     Arguments:
@@ -49,7 +50,7 @@ def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
     use_unclaimed (boolean): whether to use unclaimed data. If True
         - Battery init_charge: 100 - session['kWhDelivered']
         - estimated_departure: disconnect timestamp
-    
+
     Returns:
     event_queue (EventQueue): event queue for simulation
 
@@ -72,14 +73,14 @@ def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
         if session['arrival'].day != session['departure'].day:
             continue
 
-        # Discard sessions with station id's not in dataset 
+        # Discard sessions with station id's not in dataset
         if session['station_id'] not in station_ids:
             continue
-        
+
         est_depart_timestamp = datetime_to_timestamp(session['estimated_departure'],
                                                      period)
         requested_energy = session['requested_energy (kWh)']
-            
+
         battery = Battery(capacity=100,
                           init_charge=max(0, 100-requested_energy),
                           max_power=100)
@@ -97,12 +98,12 @@ def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
         event = PluginEvent(connection_timestamp, ev)
         # no need for UnplugEvent as the simulator takes care of it
         events.append(event)
-    
+
     # add recompute event every every `recompute_freq` periods
     for i in range(MINS_IN_DAY // (period * recompute_freq) + 1):
         event = RecomputeEvent(i * recompute_freq)
         events.append(event)
-    
+
     events = EventQueue(events)
     return events
 
@@ -111,21 +112,28 @@ class ArtificialEventGenerator:
     """Class for random sampling using trained GMMs."""
 
     def __init__(self, period: int, recompute_freq: int,
-                 site: str, gmm_path=GMM_DEFAULT_PATH,):
+                 site: str, gmm_custom_path: str = "default") -> None:
         """
         Initialize event generator. Contains multiple GMMs that can be sampled
         from a specified probability distribution.
+
+        Args:
+        period (int): number of minutes of each time interval in simulation
+        recompute_freq (int): number of periods for recurring recompute
+        site (string): either 'caltech' or 'jpl' garage to get events from
+        gmm_custom_path (string) - path to a folder of GMMs if custom
         """
         self.period = period
         self.recompute_freq = recompute_freq
         self.site = site
-        self.gmm_paths = os.path.join(GMM_DEFAULT_PATH, site)
+
+        self.gmm_paths = os.path.join(GMMS_PATH, gmm_custom_path, site)
 
         self.gmms = []
         self.cnts = []
         self.station_usages = []
 
-        # load counts, gmms, 
+        # load counts, gmms, and station_usages
         for gmm_path in os.listdir(self.gmm_paths):
             gmm_total_path = os.path.join(self.gmm_paths, gmm_path)
             self.gmms.append(load_gmm(gmm_total_path))
@@ -147,7 +155,7 @@ class ArtificialEventGenerator:
         Arguments:
         n (int) - number of samples.
         idx (int) - index of gmm to sample from.
-        period (int) - period of 
+        period (int) - number of minutes for the timestep interval
 
         Returns:
         (np.ndarray) - array of shape (n, 3) whose columns are arrival time
@@ -159,7 +167,7 @@ class ArtificialEventGenerator:
         i = 0
         while i < n:
             sample = gmm.sample(1)[0]
-            
+
             # discard sample if arrival, departure, or requested energy not in bound
             if sample[0][0] < 0 or sample[0][1] >= 1 or sample[0][2] < 0:
                 continue
@@ -178,10 +186,11 @@ class ArtificialEventGenerator:
         # rescale requested energy
         samples[:, 2] *= 100
         return samples
-    
-    def get_event_queue(self, p: Sequence=None, station_uniform_sampling=True):
+
+    def get_event_queue(self, p: Sequence = None,
+                        station_uniform_sampling: bool = True) -> EventQueue:
         """
-        Gets event queue from artificially-created data.
+        Get event queue from artificially-created data.
 
         Arguments:
         p (Sequence of floats) - probabilities to sample from each gmm, elements
@@ -194,10 +203,10 @@ class ArtificialEventGenerator:
         """
         if p and len(p) != self.num_gmms:
             raise ValueError(f"found length {len(p)}, but expected length {self.num_gmms}")
-        
+
         if p and sum(p) != 1:
             raise ValueError(f"sum of p is {sum(p)}, which is not valid for a probability measure")
-        
+
         # generate samples
         idx = np.random.choice(self.num_gmms, p=p)
         # cap number at the garage's number of stations
@@ -212,7 +221,7 @@ class ArtificialEventGenerator:
             station_cnts = self.station_usages[idx].tolist()
 
         events = []
-        
+
         for arrival, departure, energy in samples:
             if station_uniform_sampling:
                 # remove station id with uniformly random probability
@@ -252,18 +261,18 @@ class ArtificialEventGenerator:
 
             event = PluginEvent(arrival, ev)
             events.append(event)
-        
+
         # add recompute event every every `recompute_freq` periods
         for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
             event = RecomputeEvent(i * self.recompute_freq)
             events.append(event)
-        
+
         events = EventQueue(events)
         return events
 
 
 if __name__ == "__main__":
-    gen = ArtificialEventGenerator(5, 10, 'caltech')
+    gen = ArtificialEventGenerator(5, 10, 'caltech', gmm_custom_path="default")
     import time
     begin = time.time()
     for _ in range(1):

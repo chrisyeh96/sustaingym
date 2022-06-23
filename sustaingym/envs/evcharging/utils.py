@@ -1,3 +1,4 @@
+"""This module contains utility methods for interacting with data and GMMs."""
 from __future__ import annotations
 
 from collections.abc import Generator
@@ -12,18 +13,15 @@ from random import randrange
 from sklearn.mixture import GaussianMixture
 
 from acnportal.acndata.data_client import DataClient
-from acnportal.acndata.utils import parse_http_date 
+from acnportal.acndata.utils import parse_http_date
 
 
 DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
 API_TOKEN = "DEMO_TOKEN"
 
 
-def random_date(start, end) -> datetime:
-    """
-    This function will return a random datetime between two datetime 
-    objects.
-    """
+def random_date(start: datetime, end: datetime) -> datetime:
+    """Return a random datetime between two datetime objects."""
     delta = end - start
     days_interval = delta.days + 1
     random_day = randrange(days_interval)
@@ -32,10 +30,11 @@ def random_date(start, end) -> datetime:
 
 def get_sessions(start_date: datetime,
                  end_date: datetime,
-                 site: str ="caltech", return_count=True) -> Generator[dict]:
+                 site: str = "caltech",
+                 return_count: bool = True) -> Generator[dict] | tuple:
     """
-    Retrieves charging sessions from site between start_date and end_date using
-    ACNData Python API. 
+    Retrieve charging sessions from site between start_date and end_date using
+    ACNData Python API.
 
     Args:
     start_date (datetime): beginning time of interval
@@ -71,7 +70,7 @@ def get_sessions(start_date: datetime,
 def get_real_events(start_date: datetime, end_date: datetime,
                     site: str) -> pd.DataFrame:
     """
-    Returns a pandas DataFrame of charging events.
+    Return a pandas DataFrame of charging events.
 
     Arguments:
     start_date (datetime): beginning time of interval
@@ -124,7 +123,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
         session_ids.append(session_id)
         estimated_departures.append(est_depart_dt)
         claimed_sessions.append(claimed)
-    
+
     return pd.DataFrame({
         "arrival": arrivals,
         "departure": departures,
@@ -137,7 +136,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
     })
 
 
-def save_gmm(gmm: GaussianMixture, path: str):
+def save_gmm(gmm: GaussianMixture, path: str) -> None:
     """
     Saves gmm, presumably trained, to path.
 
@@ -155,7 +154,7 @@ def save_gmm(gmm: GaussianMixture, path: str):
 
 def load_gmm(path: str) -> GaussianMixture:
     """
-    Loads gmm from path.
+    Load gmm from path.
 
     Arguments:
     path (str) - save path of gmm
@@ -169,7 +168,7 @@ def load_gmm(path: str) -> GaussianMixture:
 
     means = np.load(os.path.join(path, '_means.npy'))
     covar = np.load(os.path.join(path, '_covariances.npy'))
-    loaded_gmm = GaussianMixture(n_components = len(means), covariance_type='full')
+    loaded_gmm = GaussianMixture(n_components=len(means), covariance_type='full')
     loaded_gmm.precisions_cholesky_ = np.linalg.cholesky(np.linalg.inv(covar))
     loaded_gmm.weights_ = np.load(os.path.join(path, '_weights.npy'))
     loaded_gmm.means_ = means

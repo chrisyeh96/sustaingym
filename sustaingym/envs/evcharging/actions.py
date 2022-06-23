@@ -1,3 +1,8 @@
+"""
+This module contains methods for defining the action space of the simulation
+and converting actions to usable pilot signals for the Simulator class in
+acnportal.acnsim.
+"""
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -33,7 +38,7 @@ def to_schedule(action: np.ndarray, evses: Sequence[str]) -> dict[str, list[floa
         action : np.ndarray of shape (len(evses),)
             entries of action are pilot signals from {0, 1, 2, 3, 4}
         evses (List) : list of names of charging stations
-    
+
     Returns:
         Dictionary mapping station ids to a schedule of pilot signals, as
         required by the step function of acnportal.acnsim.simulator.Simulator
