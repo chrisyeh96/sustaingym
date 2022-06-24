@@ -1,3 +1,8 @@
+## CUSTOM EXCLUSIONS
+.DS_STORE
+.vscode/
+## END CUSTOM EXCLUSIONS
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
