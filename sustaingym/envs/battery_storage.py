@@ -96,9 +96,7 @@ class BatteryStorageEnv(gym.Env):
         if self.LOCAL_FILE:
             return pd.read_csv(self.FILE_PATH)
         else:
-            df = pd.read_csv(
-                'https://raw.githubusercontent.com/chrisyeh96/sustaingym/electricitymarket/pricing_data_5%3A21%3A22_to_6%3A21%3A22.csv?token=GHSAT0AAAAAABV2EK7TSCUFBK4LVAR3DUYWYVWUGOQ'
-                )
+            df = pd.read_csv('data/pricing_data_2022.csv')
             df_prices = df.loc[df['GROUP'] % 5 == 0]
             return df_prices
 
