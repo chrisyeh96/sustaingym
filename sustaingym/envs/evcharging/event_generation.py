@@ -158,33 +158,40 @@ class ArtificialEventGenerator:
         period (int) - number of minutes for the timestep interval
 
         Returns:
-        (np.ndarray) - array of shape (n, 3) whose columns are arrival time
-            in minutes, departure time in minutes, and requested energy in kWh
+        (np.ndarray) - array of shape (n, 4) whose columns are arrival time
+            in minutes, departure time in minutes, estimated departure time
+            in minutes, and requested energy in kWh, respectively
         """
-        samples = np.zeros(shape=(n, 3), dtype=np.float32)
+        ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
+
+        samples = np.zeros(shape=(n, 4), dtype=np.float32)
         gmm = self.gmms[idx]
         # use while loop for quality check
         i = 0
         while i < n:
-            sample = gmm.sample(1)[0]
+            sample = gmm.sample(1)[0]  # select just 1 sample of shape (1, 4)
 
-            # discard sample if arrival, departure, or requested energy not in bound
-            if sample[0][0] < 0 or sample[0][1] >= 1 or sample[0][2] < 0:
+            # discard sample if arrival, departure, estimated departure or
+            #  requested energy not in bound
+            if sample[0][ARRCOL] < 0 or sample[0][DEPCOL] >= 1 or \
+               sample[0][ESTCOL] >= 1 or sample[0][EREQCOL] < 0:
                 continue
 
-            # rescale arrival and departure
-            sample[0][0] = 1440 * sample[0][0] // self.period
-            sample[0][1] = 1440 * sample[0][1] // self.period
+            # rescale arrival, departure, estimated departure
+            sample[0][ARRCOL] = 1440 * sample[0][ARRCOL] // self.period
+            sample[0][DEPCOL] = 1440 * sample[0][DEPCOL] // self.period
+            sample[0][ESTCOL] = 1440 * sample[0][ESTCOL] // self.period
 
-            # discard sample if arrival >= departure
-            if sample[0][0] >= sample[0][1]:
+            # discard sample if arrival >= departure or arrival >= estimated_departure
+            if sample[0][ARRCOL] >= sample[0][DEPCOL] or \
+               sample[0][ARRCOL] >= sample[0][ESTCOL]:
                 continue
 
             np.copyto(samples[i], sample)
             i += 1
 
         # rescale requested energy
-        samples[:, 2] *= 100
+        samples[:, EREQCOL] *= 100
         return samples
 
     def get_event_queue(self, p: Sequence = None,
@@ -222,7 +229,7 @@ class ArtificialEventGenerator:
 
         events = []
 
-        for arrival, departure, energy in samples:
+        for arrival, departure, est_departure, energy in samples:
             if station_uniform_sampling:
                 # remove station id with uniformly random probability
                 idx = np.random.choice(len(array))
@@ -244,7 +251,7 @@ class ArtificialEventGenerator:
                 else:
                     station_cnts = [station_cnts[i] / sum(station_cnts) for i in range(len(station_cnts))]
 
-            arrival, departure = int(arrival), int(departure)
+            arrival, departure, est_departure = int(arrival), int(departure), int(est_departure)
 
             battery = Battery(capacity=100,
                               init_charge=max(0, 100-energy),
@@ -256,7 +263,8 @@ class ArtificialEventGenerator:
                 requested_energy=energy,
                 station_id=station_id,
                 session_id=str(uuid.uuid4()),
-                battery=battery
+                battery=battery,
+                estimated_departure=est_departure
             )
 
             event = PluginEvent(arrival, ev)

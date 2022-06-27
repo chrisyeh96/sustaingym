@@ -25,18 +25,24 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     df['same_day'] = df['arrival'].map(lambda x: x.day) == df['departure'].map(lambda x: x.day)
     df = df[df['same_day']].copy()
 
-    # Arrival time and departure time
+    # Arrival time, departure time, estimated departure time
     df['arrival_time'] = df['arrival'].map(lambda x: x.hour * 60 + x.minute)
     df['departure_time'] = df['departure'].map(lambda x: x.hour * 60 + x.minute)
+    df['estimated_departure_time'] = df['estimated_departure'].map(lambda x: x.hour * 60 + x.minute)
 
-    df = df[['arrival_time', 'departure_time', 'requested_energy (kWh)']].copy()
+    df = df[['arrival_time', 'departure_time', 'estimated_departure_time', 'requested_energy (kWh)']].copy()
 
     # normalize using heuristics
     df['arrival_time'] /= 1440
     df['departure_time'] /= 1440
+    df['estimated_departure_time'] /= 1440
     df['requested_energy (kWh)'] /= 100
 
     return df
+
+
+def filter_unclaimed_sessions(df: pd.DataFrame) -> pd.DataFrame:
+    return df[df['claimed']].copy()
 
 
 if __name__ == "__main__":
@@ -75,9 +81,9 @@ if __name__ == "__main__":
 
     for site in ['caltech', 'jpl']:
         print(f"Fetching data from site {site}... \n")
-        df1 = get_real_events(P1[0], P1[1], site=site)
-        df2 = get_real_events(P2[0], P2[1], site=site)
-        df3 = get_real_events(P3[0], P3[1], site=site)
+        df1 = filter_unclaimed_sessions(get_real_events(P1[0], P1[1], site=site))
+        df2 = filter_unclaimed_sessions(get_real_events(P2[0], P2[1], site=site))
+        df3 = filter_unclaimed_sessions(get_real_events(P3[0], P3[1], site=site))
 
         # Get number of sessions per day
         cnts1 = df1['arrival'].map(lambda x: int(x.strftime("%j"))).value_counts().to_numpy()
