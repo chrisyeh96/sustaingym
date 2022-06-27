@@ -1,15 +1,14 @@
 """This module contains utility methods for interacting with data and GMMs."""
 from __future__ import annotations
 
-from collections.abc import Generator
-
+from collections.abc import Iterator
 from datetime import timedelta, datetime
 import os
-import pytz
+from random import randrange
 
 import numpy as np
 import pandas as pd
-from random import randrange
+import pytz
 from sklearn.mixture import GaussianMixture
 
 from acnportal.acndata.data_client import DataClient
@@ -31,7 +30,8 @@ def random_date(start: datetime, end: datetime) -> datetime:
 def get_sessions(start_date: datetime,
                  end_date: datetime,
                  site: str = "caltech",
-                 return_count: bool = True) -> Generator[dict] | tuple:
+                 return_count: bool = True
+                 ) -> Iterator[dict] | tuple[Iterator[dict], int]:
     """
     Retrieve charging sessions from site between start_date and end_date using
     ACNData Python API.
