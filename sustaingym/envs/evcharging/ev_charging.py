@@ -23,15 +23,50 @@ END_DATE = datetime(2021, 8, 31)
 
 class EVChargingEnv(gym.Env):
     """
-    This class uses the Simulator class in acnportal.acnsim to simulate a day
-    of charging. The data comes from Caltech's ACNData, which collects data
-    on two garages located at Caltech and JPL.
+    Central class for the EV Charging gym.
+
+    This class uses the Simulator class in the acnportal.acnsim package to
+    simulate a day of charging. The simulation can be done using real data
+    from Caltech's ACNData or a Gaussian mixture model (GMM) trained on
+    that data (script is located in train_artificial_data_model.py). The
+    gym has support for the Caltech and JPL site.
+
+    Args:
+        site: the charging site, currently supports either 'caltech' or 'jpl'
+        period: the number of minutes for the timestep interval. Default: 5
+        recompute_freq: number of periods elapsed to make the scheduler
+            recompute pilot signals, which is in addition to the compute events
+            when there is a plug in or unplug. Default: 2
+        real_traces: if True, uses real traces for the simulation;
+            otherwise, uses Gaussian mixture model (GMM) samples. Default: False
+        sequential: if True, simulates days sequentially from the start
+            and end date of the data; otherwise, randomly samples a day at the
+            beginning of each episode. Ignored when real_traces is False. Default:
+            True
+        gmm_folder: path to trained GMM. Ignored when real_traces is set to True.
+            Defaults to default. The folder structure should look as follows:
+            gmms
+            |----gmm_folder (by default, "default")
+            |   |----caltech
+            |   |--------gmm_folder1
+            |   |--------gmm_folder2
+            |   |--------gmm_folder3
+            |   |--------....
+            |   |----jpl
+            |   |--------gmm_folder1
+            |   |--------gmm_folder2
+            |   |--------gmm_folder3
+            |   |--------....
+            Run python3 -m sustaingym.envs.evcharging.train_artificial_data_generator --
+                from the command line.
+            See train_artificial_data_model.py 
+
     """
     metadata: dict = {"render_modes": []}
 
     def __init__(self, site: str = 'caltech', period: int = 5, recompute_freq: int = 2,
-                 real_traces: bool = True, sequential: bool = True,
-                 gmm_path: str = "default") -> None:
+                 real_traces: bool = False, sequential: bool = True,
+                 gmm_folder: str = "default") -> None:
         """
         Initialize the EV charging gym environment.
 
@@ -46,7 +81,7 @@ class EVChargingEnv(gym.Env):
         sequential (bool) - if True, simulates days sequentially from the start
             and end date of the data; otherwise, randomly samples a day at the
             beginning of each episode. Ignored when real_traces is False.
-        gmm_path (str) - path to collection of GMMs to be used. Default to
+        gmm_folder (str) - path to collection of GMMs to be used. Default to
             default path. Ignored if real_traces is set to True.
         """
         self.site = site
@@ -75,7 +110,7 @@ class EVChargingEnv(gym.Env):
             self.generator = ArtificialEventGenerator(period=period,
                                                       recompute_freq=recompute_freq,
                                                       site=site,
-                                                      gmm_custom_path=gmm_path
+                                                      gmm_folder=gmm_folder
                                                       )
             now = datetime.now()
             self.day = datetime(now.year, now.month, now.day)
@@ -88,7 +123,6 @@ class EVChargingEnv(gym.Env):
         # Define action space, which is the charging rate for all EVs
         self.action_space = get_action_space(self.num_stations)
 
-
     def _init_charging_network(self) -> None:
         """Initialize charging network."""
         if self.site == 'caltech':
@@ -99,7 +133,7 @@ class EVChargingEnv(gym.Env):
             raise NotImplementedError(("site should be either 'caltech' or "
                                        f"'jpl', found {self.site}"))
 
-    def _new_event_queue(self, p: Sequence) -> None:
+    def _new_event_queue(self) -> None:
         """
         Generate new event queue. If using real traces, update internal day
         variable and fetch data from ACNData. If using generated traces,
@@ -126,7 +160,7 @@ class EVChargingEnv(gym.Env):
                                                self.site)
         else:
             self.day += timedelta(days=1)
-            self.events = self.generator.get_event_queue(p=p)
+            self.events = self.generator.get_event_queue(p=self.p)
 
     def _init_simulator_and_interface(self) -> None:
         self.simulator = Simulator(
@@ -138,18 +172,6 @@ class EVChargingEnv(gym.Env):
             verbose=False
         )
         self.interface = Interface(self.simulator)
-
-    def _get_info(self) -> dict:  # TODO what should go here?
-        """
-        Return a dictionary of information about the current timestep of the
-        simulation.
-        """
-        return {
-            "charging_rates": self.simulator.charging_rates_as_df(),
-            "active_evs": self.simulator.get_active_evs(),
-            "pilot_signals": self.simulator.pilot_signals_as_df(),
-            "active_sessions": self.interface.active_sessions()
-        }
 
     def step(self, action: np.ndarray) -> tuple:
         """
@@ -174,17 +196,19 @@ class EVChargingEnv(gym.Env):
             next_timestamp = self.simulator.event_queue.queue[0][0]
 
         # Retrieve environment information
-        observation = get_observation(self.interface,
-                                      self.num_stations,
-                                      self.evse_name_to_idx,
-                                      self.simulator._iteration)
+        observation, info = get_observation(self.interface,
+                                            self.num_stations,
+                                            self.evse_name_to_idx,
+                                            self.simulator._iteration,
+                                            get_info=True)
 
-        reward = get_rewards(self.simulator, schedule, self.prev_timestamp, self.timestamp, next_timestamp)  # TODO: get_rewards
-        info = self._get_info()
+        reward, reward_info = get_rewards(self.simulator, schedule, self.prev_timestamp, self.timestamp, next_timestamp)  # TODO: get_rewards
 
         # Update timestamp
         self.prev_timestamp = self.timestamp
         self.timestamp = next_timestamp
+
+        info = info.update(reward_info)
 
         return observation, reward, done, info
 
@@ -203,18 +227,19 @@ class EVChargingEnv(gym.Env):
                 generation, has 1 probability of choosing first GMM by
                 default
         """
-        super().reset(seed=seed)
-        if options and "p" in options:
-            p = options["p"]
-        else:
-            p = [0 for _ in range(self.generator.num_gmms)]
-            p[0] = 1
+        # super().reset(seed=seed)
+        if not self.real_traces:
+            if options and "p" in options:
+                self.p = options["p"]
+            else:
+                self.p = [0 for _ in range(self.generator.num_gmms)]
+                self.p[0] = 1
 
         # Re-create charging network, assuming no overnight stays
         self._init_charging_network()
 
         # Generate new events
-        self._new_event_queue(p)
+        self._new_event_queue()
 
         # Create simulator and interface wrapper
         self._init_simulator_and_interface()
@@ -223,16 +248,11 @@ class EVChargingEnv(gym.Env):
         self.timestamp = self.simulator.event_queue.queue[0][0]
 
         # Retrieve environment information
-        observation = get_observation(self.interface,
-                                      self.num_stations,
-                                      self.evse_name_to_idx,
-                                      self.simulator._iteration)
-
-        if return_info:
-            info = self._get_info()
-            return observation, info
-        else:
-            return observation
+        return get_observation(self.interface,
+                               self.num_stations,
+                               self.evse_name_to_idx,
+                               self.simulator._iteration,
+                               get_info=return_info)
 
     def render(self) -> None:
         raise NotImplementedError
@@ -246,28 +266,25 @@ if __name__ == "__main__":
     np.random.seed(42)
     import random
     random.seed(42)
-    env = EVChargingEnv(sequential=False, period=10, real_traces=False)
+    env = EVChargingEnv(sequential=False, period=5, real_traces=True)
 
-    for j in range(3):
-        print("----------------------------")
-        print("----------------------------")
-        print("----------------------------")
-        print("----------------------------")
-        observation = env.reset()
-        print(observation)
+    print("----------------------------")
+    print("----------------------------")
+    print("----------------------------")
+    print("----------------------------")
+    observation = env.reset()
+    print(observation)
 
-        done = False
-        i = 0
-        action = np.zeros(shape=(54,), )
-        while not done:
-            observation, reward, done, info = env.step(action)
-            print(i, observation['timestep'], reward)
-            print(" ", observation['arrivals'])
-            print(" ", observation['departures'])
-            i += 1
-        print(env.simulator.charging_rates.shape)
-        print()
-        print()
+    done = False
+    i = 0
+    action = np.ones(shape=(54,), )
+    while not done:
+        observation, reward, done, info = env.step(action)
+        print(i, observation['timestep'], reward)
+        i += 1
+    print(env.simulator.charging_rates.shape)
+    print()
+    print()
 
-        env.close()
+    env.close()
     print(env.max_timestamp)

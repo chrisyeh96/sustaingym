@@ -112,7 +112,7 @@ class ArtificialEventGenerator:
     """Class for random sampling using trained GMMs."""
 
     def __init__(self, period: int, recompute_freq: int,
-                 site: str, gmm_custom_path: str = "default") -> None:
+                 site: str, gmm_folder: str = "default") -> None:
         """
         Initialize event generator. Contains multiple GMMs that can be sampled
         from a specified probability distribution.
@@ -121,13 +121,13 @@ class ArtificialEventGenerator:
         period (int): number of minutes of each time interval in simulation
         recompute_freq (int): number of periods for recurring recompute
         site (string): either 'caltech' or 'jpl' garage to get events from
-        gmm_custom_path (string) - path to a folder of GMMs if custom
+        gmm_folder (string) - path to a folder of GMMs if custom
         """
         self.period = period
         self.recompute_freq = recompute_freq
         self.site = site
 
-        self.gmm_paths = os.path.join(GMMS_PATH, gmm_custom_path, site)
+        self.gmm_paths = os.path.join(GMMS_PATH, gmm_folder, site)
 
         self.gmms = []
         self.cnts = []
@@ -280,7 +280,7 @@ class ArtificialEventGenerator:
 
 
 if __name__ == "__main__":
-    gen = ArtificialEventGenerator(5, 10, 'caltech', gmm_custom_path="default")
+    gen = ArtificialEventGenerator(5, 10, 'caltech', gmm_folder="default")
     import time
     begin = time.time()
     for _ in range(1):
