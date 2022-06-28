@@ -33,25 +33,25 @@ def get_sessions(start_date: datetime,
                  return_count: bool = True
                  ) -> Iterator[dict] | tuple[Iterator[dict], int]:
     """
-    Retrieve charging sessions from site between start_date and end_date using
-    ACNData Python API.
+    Retrieve charging sessions using ACNData.
 
     Args:
-    start_date (datetime): beginning time of interval
-    end_date (datetime): ending time of interval
-    site (str): 'caltech' or 'jpl'
-    return_count (bool) - whether to return count as well
+        start_date: beginning time of interval
+        end_date: ending time of interval
+        site: 'caltech' or 'jpl'
+        return_count: whether to return count as well
 
     Returns:
-    sessions - generator of sessions that had a connection time starting on
-    `start_date` and ending the day before `end_date`
-    count (bool) - also returns count if return_count is True
+        - iterator of sessions that had a connection time starting on
+        `start_date` and ending the day before `end_date`
+        - count - number of sessions, returned in return_count is True
 
     Notes:
     For `start_date` and `end_date` arguments, only year, month, and day are
     considered.
 
-    Ex. get_sessions(datetime(2020, 8, 1), datetime(2020, 11, 1)).
+    Example:
+        fall_sessions = get_sessions(datetime(2020, 9, 1), datetime(2020, 12, 1))
     """
     start_time = start_date.strftime(DT_STRING_FORMAT)
     end_time = end_date.strftime(DT_STRING_FORMAT)
@@ -72,16 +72,16 @@ def get_real_events(start_date: datetime, end_date: datetime,
     """
     Return a pandas DataFrame of charging events.
 
-    Arguments:
-    start_date (datetime): beginning time of interval
-    end_date (datetime): ending time of interval
-    site (str): 'caltech' or 'jpl'
+    Args:
+        start_date: beginning time of interval
+        end_date: ending time of interval
+        site: 'caltech' or 'jpl'
 
     Returns:
-    (pd.DataFrame): DataFrame containing necessary charging info
+        DataFrame containing charging info.
 
     Assumes:
-    sessions are in Pacific time
+        sessions are in Pacific time
     """
     sessions = get_sessions(start_date, end_date, site=site, return_count=False)
 
@@ -138,11 +138,11 @@ def get_real_events(start_date: datetime, end_date: datetime,
 
 def save_gmm(gmm: GaussianMixture, path: str) -> None:
     """
-    Saves gmm, presumably trained, to path.
+    Save gmm, presumably trained, to path.
 
-    Arguments:
-    gmm (GaussianMixture) - trained Gaussian Mixture Model
-    path (str) - save path
+    Args:
+        gmm: trained Gaussian Mixture Model
+        path: save path
     """
     if not os.path.exists(path):
         os.makedirs(path)
@@ -157,10 +157,10 @@ def load_gmm(path: str) -> GaussianMixture:
     Load gmm from path.
 
     Arguments:
-    path (str) - save path of gmm
+        path: save path of gmm
 
     Returns:
-    gmm (GaussianMixture) - gmm with parameters of those in path
+        gmm: trained gmm with parameters of those in path
     """
     if not os.path.exists(path):
         print("Directory does not exist: ", path)

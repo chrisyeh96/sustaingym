@@ -5,6 +5,8 @@ the gym.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from acnportal.acnsim.interface import Interface
 from gym import spaces
 import numpy as np
@@ -17,11 +19,11 @@ def get_observation_space(num_constraints: int, num_stations: int) -> spaces.Dic
     Return dictionary concerning the observation space for the network.
 
     Args:
-        num_constraints (int): number of constraints in charging network
-        num_stations (int): number of evse charging stations in network
+        num_constraints: number of constraints in charging network.
+        num_stations: number of evse charging stations in network.
 
     Returns:
-        (spaces.Dict()): observation space of simulator
+        the observation space of the simulator.
     """
 
     return spaces.Dict({
@@ -35,19 +37,24 @@ def get_observation_space(num_constraints: int, num_stations: int) -> spaces.Dic
     })
 
 
-def get_observation(interface: Interface, num_stations: int, evse_name_to_idx: dict, timestep: int, get_info: bool = False) -> dict:
+def get_observation(interface: Interface,
+                    num_stations: int,
+                    evse_name_to_idx: dict,
+                    timestep: int,
+                    get_info: bool = False
+                    ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
     """
     Return dictionary of observations.
 
     Args:
-        interface (Interface) - interface of acnportal.acnsim Simulator
-        num_stations (int) - number of stations in the garage
-        evse_name_to_idx (dict) - dictionary defining the index of each EVSE
-        timestep (int) - timestep of gym simulation
-        get_info (bool) - whether extra information should be returned as well
+        interface: interface of acnportal.acnsim Simulator.
+        num_stations: number of stations in the garage.
+        evse_name_to_idx: dictionary defining the index of each EVSE.
+        timestep: timestep of gym simulation.
+        get_info: whether extra information should be returned as well.
 
     Returns:
-        (dict): observations from internal simulator to be used in gym
+        observations from internal simulator to be used in gym.
     """
     arrivals = np.zeros(shape=(num_stations,), dtype=np.int32)
     est_departures = np.zeros(shape=(num_stations,), dtype=np.int32)

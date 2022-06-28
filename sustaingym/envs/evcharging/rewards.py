@@ -3,6 +3,8 @@ This module contains the method that scores how well the agent is doing.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from acnportal.acnsim.simulator import Simulator
 import numpy as np
 
@@ -12,23 +14,33 @@ DELIVERED_CHARGE_WEIGHT = 3
 CONSTRAINT_VIOLATION_WEIGHT = 10
 
 
-def get_rewards(simulator: Simulator, schedule: dict, prev_timestamp: int, timestamp: int, next_timestamp: int, get_info: bool = True) -> float:
+def get_rewards(simulator: Simulator,
+                schedule: dict,
+                prev_timestamp: int,
+                timestamp: int,
+                next_timestamp: int,
+                get_info: bool = True
+                ) -> float | tuple[float, dict[str, Any]]:
     """
-    Get reward from charge received by EVs in previous timestep minus costs of
-    violation constraints and amount of charge delivered in current timestep.
+    Return reward for scheduler's performance.
+
+    Gets reward for charging EVs in previous timestep minus costs of
+        violation constraints and amount of charge delivered in current
+        timestep.
 
     Args:
-    simulator (Simulator)
-    schedule (dictionary) - maps EVSE charger to a single-element list of
-        the pilot signal to that charger.
-    prev_timestamp (int) - timestamp of previous action taken, needed to
-        compute reward from charge received by EVs
-    timestamp (int) - timestamp of current action taken
-    next_timestamp (int) - timestamp of next action to be taken
-    get_info (bool) - return information about how reward is calculated
+        simulator: internal simulator from acnportal.acnsim
+        schedule: dictionary mapping EVSE charger to a single-element list of
+            the pilot signal to that charger.
+        prev_timestamp: timestamp of previous action taken, needed to
+            compute reward from charge received by EVs
+        timestamp: timestamp of current action taken
+        next_timestamp: timestamp of next action to be taken
+        get_info: whether to return information about how reward is calculated
 
     Returns:
-    total_reward (float) - total reward awarded to current timestep
+        - total reward awarded to current timestep
+        - information on how reward is calculated
     """
     timestamp_diff = next_timestamp - timestamp
 
@@ -77,10 +89,10 @@ def schedule_to_numpy(schedule: dict) -> np.ndarray:
     Convert schedule dictionary to usable numpy array. Helper to get_rewards.
 
     Args:
-    schedule (dictionary) - maps EVSE charger to a single-element list of
-        the pilot signal to that charger.
+        schedule: dictionary mapping EVSE charger to a single-element list of
+            the pilot signal to that charger.
 
     Returns:
-    (np.ndarray) - numpified version of schedule
+        numpified version of schedule
     """
     return np.array(list(map(lambda x: x[0], schedule.values())))

@@ -33,29 +33,37 @@ def datetime_to_timestamp(dt: datetime, period: int) -> int:
     return (dt.hour * 60 + dt.minute) // period
 
 
-def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
-                         station_ids: Set[str], site: str,
-                         use_unclaimed: bool = False) -> EventQueue:
+def get_real_event_queue(day: datetime,
+                         period: int,
+                         recompute_freq: int,
+                         station_ids: Set[str],
+                         site: str,
+                         use_unclaimed: bool = False
+                         ) -> EventQueue:
     """
-    Create an ACN Simulator event queue from real traces in ACNData. Ignore
-    unclaimed user sessions.
+    Create an event queue from real traces in ACNData.
 
-    Arguments:
-    day (datetime): date of collection, only year, month, and day are
-        considered.
-    period (int): number of minutes of each time interval in simulation
-    recompute_freq (int): number of periods for recurring recompute
-    station_ids (set): station ids in charging network to compare with
-    site (string): either 'caltech' or 'jpl' garage to get events from
-    use_unclaimed (boolean): whether to use unclaimed data. If True
-        - Battery init_charge: 100 - session['kWhDelivered']
-        - estimated_departure: disconnect timestamp
+    Generate PlugIn events defined in acnportal.acnsim.events for an ACN
+    Simulator object. Unplug events are automatically internally and don't
+    need to be generated. Recompute events are added depending on the
+    argument recompute_freq.
+
+    Args:
+        day: date of collection, only year, month, and day are
+            considered.
+        period: number of minutes of each time interval in simulation.
+        recompute_freq: number of periods for recurring recompute.
+        station_ids: station ids in charging network to compare with.
+        site: either 'caltech' or 'jpl' garage to get events from.
+        use_unclaimed: whether to use unclaimed data. If True
+            - Battery init_charge: 100 - session['kWhDelivered']
+            - estimated_departure: disconnect timestamp.
 
     Returns:
-    event_queue (EventQueue): event queue for simulation
+        event queue for simulation.
 
-    Assumes:
-    sessions are in Pacific time
+    Assumes: TODO
+        sessions are in Pacific time.
     """
     events_df = get_real_events(day, day + timedelta(days=1), site=site)
     if not use_unclaimed:
@@ -108,21 +116,26 @@ def get_real_event_queue(day: datetime, period: int, recompute_freq: int,
     return events
 
 
+ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
+
+
 class ArtificialEventGenerator:
-    """Class for random sampling using trained GMMs."""
+    """
+    Class for event queue generation using random sampling from trained GMMs.
 
-    def __init__(self, period: int, recompute_freq: int,
-                 site: str, gmm_folder: str = "default") -> None:
-        """
-        Initialize event generator. Contains multiple GMMs that can be sampled
-        from a specified probability distribution.
+    Args:
+        period: number of minutes of each time interval in simulation
+        recompute_freq: number of periods for recurring recompute
+        site: either 'caltech' or 'jpl' garage to get events from
+        gmm_folder: folder name where GMMs reside. Default "default."
+    """
 
-        Args:
-        period (int): number of minutes of each time interval in simulation
-        recompute_freq (int): number of periods for recurring recompute
-        site (string): either 'caltech' or 'jpl' garage to get events from
-        gmm_folder (string) - path to a folder of GMMs if custom
-        """
+    def __init__(self,
+                 period: int,
+                 recompute_freq: int,
+                 site: str,
+                 gmm_folder: str = "default"
+                 ) -> None:
         self.period = period
         self.recompute_freq = recompute_freq
         self.site = site
@@ -152,18 +165,16 @@ class ArtificialEventGenerator:
         """
         Return `n` samples from a single GMM at a given index.
 
-        Arguments:
-        n (int) - number of samples.
-        idx (int) - index of gmm to sample from.
-        period (int) - number of minutes for the timestep interval
+        Args:
+            n: number of samples.
+            idx: index of gmm to sample from.
+            period: number of minutes for the timestep interval
 
         Returns:
-        (np.ndarray) - array of shape (n, 4) whose columns are arrival time
-            in minutes, departure time in minutes, estimated departure time
-            in minutes, and requested energy in kWh, respectively
+            array of shape (n, 4) whose columns are arrival time in minutes,
+            departure time in minutes, estimated departure time in minutes,
+            and requested energy in kWh, respectively.
         """
-        ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
-
         samples = np.zeros(shape=(n, 4), dtype=np.float32)
         gmm = self.gmms[idx]
         # use while loop for quality check
@@ -194,19 +205,22 @@ class ArtificialEventGenerator:
         samples[:, EREQCOL] *= 100
         return samples
 
-    def get_event_queue(self, p: Sequence = None,
-                        station_uniform_sampling: bool = True) -> EventQueue:
+    def get_event_queue(self,
+                        p: Sequence[float] = None,
+                        station_uniform_sampling: bool = True
+                        ) -> EventQueue:
         """
-        Get event queue from artificially-created data.
+        Get event queue from artificially created data.
 
-        Arguments:
-        p (Sequence of floats) - probabilities to sample from each gmm, elements
-            should add up to 1. If None, assumes uniform distribution across gmms.
-        station_uniform_sampling (bool) - if True, uniformly samples station; otherwise,
-            samples from the distribution of sessions on stations
+        Args:
+            p: probabilities to sample from each gmm, elements should add up
+                to 1. If None, assumes uniform distribution across gmms.
+            station_uniform_sampling (bool) - if True, uniformly samples
+                station; otherwise, samples from the distribution of sessions
+                on stations.
 
         Returns:
-        (EventQueue) - events used for acnportal simulator
+            events used for acnportal simulator.
         """
         if p and len(p) != self.num_gmms:
             raise ValueError(f"found length {len(p)}, but expected length {self.num_gmms}")

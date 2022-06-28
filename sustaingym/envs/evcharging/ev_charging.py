@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
 from datetime import datetime, timedelta
+from typing import Any
 
 from acnportal.acnsim.interface import Interface
 from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
@@ -57,9 +57,25 @@ class EVChargingEnv(gym.Env):
             |   |--------gmm_folder2
             |   |--------gmm_folder3
             |   |--------....
-            Run python3 -m sustaingym.envs.evcharging.train_artificial_data_generator --
-                from the command line.
-            See train_artificial_data_model.py 
+            See train_artificial_data_model.py for how to train GMMs from the
+            command-line.
+
+    Attributes: TODO??????????? - how to comment attribute type
+        max_timestamp: maximum timestamp in a day's simulation
+        constraint_matrix: constraint matrix of charging garage
+        num_constraints: number of constraints in constraint_matrix
+        num_stations: number of EVSEs in the garage
+        day: only present when self.real_traces is True. The actual day that
+            the simulator is simulating.
+        generator: (ArtificialEventGenerator) a class whose instances can
+            sample events that populate the event queue.
+        observation_space: the space of available observations
+        action_space: the space of actions. Note that not all actions in the
+            action space may be feasible.
+        events: the current EventQueue for the simulation
+        cn: charging network in use
+        simulator: internal simulator from acnportal package
+        interface: interface wrapper for simulator
 
     """
     metadata: dict = {"render_modes": []}
@@ -67,29 +83,12 @@ class EVChargingEnv(gym.Env):
     def __init__(self, site: str = 'caltech', period: int = 5, recompute_freq: int = 2,
                  real_traces: bool = False, sequential: bool = True,
                  gmm_folder: str = "default") -> None:
-        """
-        Initialize the EV charging gym environment.
-
-        Arguments:
-        period (int) - number of minutes for the timestep interval
-        recompute_freq (int) - number of periods elapsed to make the scheduler
-            recompute pilot signals, which is in addition to the compute events
-            when there is a plug in or unplug
-        real_traces (bool) - if True, uses real traces for the simulation;
-            otherwise, uses Gaussian mixture model (GMM) samples for the day's
-            data
-        sequential (bool) - if True, simulates days sequentially from the start
-            and end date of the data; otherwise, randomly samples a day at the
-            beginning of each episode. Ignored when real_traces is False.
-        gmm_folder (str) - path to collection of GMMs to be used. Default to
-            default path. Ignored if real_traces is set to True.
-        """
         self.site = site
         self.period = period
+        self.recompute_freq = recompute_freq
         self.real_traces = real_traces
         self.sequential = sequential
-        self.recompute_freq = recompute_freq
-
+        self.gmm_folder = gmm_folder
         self.max_timestamp = MINS_IN_DAY // period
 
         # Set up charging network parameters
@@ -110,7 +109,7 @@ class EVChargingEnv(gym.Env):
             self.generator = ArtificialEventGenerator(period=period,
                                                       recompute_freq=recompute_freq,
                                                       site=site,
-                                                      gmm_folder=gmm_folder
+                                                      gmm_folder=self.gmm_folder
                                                       )
             now = datetime.now()
             self.day = datetime(now.year, now.month, now.day)
@@ -124,7 +123,7 @@ class EVChargingEnv(gym.Env):
         self.action_space = get_action_space(self.num_stations)
 
     def _init_charging_network(self) -> None:
-        """Initialize charging network."""
+        """Initialize and set charging network."""
         if self.site == 'caltech':
             self.cn = caltech_acn()
         elif self.site == 'jpl':
@@ -135,16 +134,10 @@ class EVChargingEnv(gym.Env):
 
     def _new_event_queue(self) -> None:
         """
-        Generate new event queue. If using real traces, update internal day
-        variable and fetch data from ACNData. If using generated traces,
-        sample from a GMM model.
+        Generate new event queue.
 
-        Arguments:
-        p (Sequence) - if self.real_traces is False, events are generated from
-            a gmm that is randomly chosen given p. The entries of p need to
-            sum to 1. By default, p should have length 3, with the first,
-            second, and third element corresponding to a GMM trained on years
-            2019, 2020, and 2021. If self.real_traces is True, this is ignored.
+        If using real traces, update internal day variable and fetch data from
+        ACNData. If using generated traces, sample from a GMM model.
         """
         if self.real_traces:
             if self.sequential:
@@ -163,6 +156,7 @@ class EVChargingEnv(gym.Env):
             self.events = self.generator.get_event_queue(p=self.p)
 
     def _init_simulator_and_interface(self) -> None:
+        """Initialize and set simulator and interface."""
         self.simulator = Simulator(
             network=self.cn,
             scheduler=None,
@@ -173,15 +167,55 @@ class EVChargingEnv(gym.Env):
         )
         self.interface = Interface(self.simulator)
 
-    def step(self, action: np.ndarray) -> tuple:
+    def step(self, action: np.ndarray) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
         """
-        Call the step function of the internal simulator and generate
-        the observation, reward, done, info tuple required by OpenAI
-        gym.
+        Step the environment.
 
-        Arguments:
-        action (np.ndarray) - shape (number of stations,) with entries
-            in the set {0, 1, 2, 3, 4}
+        Call the step function of the internal simulator and generate the
+        observation, reward, done, info tuple required by OpenAI gym.
+
+        Args:
+        action: array of shape (number of stations,) with entries in the set
+            {0, 1, 2, 3, 4}
+
+        Returns:
+            observation: dict
+            - "arrivals": array of shape (num_stations,). If the EVSE
+                corresponding to the index is active, the entry is the number
+                of periods that have elapsed since arrival (always negative).
+                Otherwise, for indices with corresponding non-active EVSEs,
+                the entry is zero.
+            - "est_departures": array of shape (num_stations,). If the
+                EVSE corresponding to the index is active, the entry is the
+                estimated number of periods before departure (always positive).
+                Otherwise, for indices with corresponding non-active EVSEs,
+                the entry is zero.
+            - "constraint_matrix": array of shape (num_constraints,
+                num_stations). Each row indicates a constraint on the aggregate
+                current of EVSEs with non-zero entries. Entry (i, j) indicates
+                the fractional amount that station j contributes to constraint
+                i.
+            - "magnitudes": array of shape (num_constraints,). The absolute
+                value of the maximum amount of allowable current row i of the
+                constraint_matrix can handle.
+            - "phases": the phase of a station id
+            - "timestep": an integer between 0 and MINS_IN_DAY // period
+                indicating the timestep
+            reward: float
+            - objective function to maximize
+            done: bool
+            - indicator to whether the day's simulation has finished
+            info: dict
+            - "charging_rates": pd.DataFrame. History of charging rates as
+                provided by the internal simulator.
+            - "active_evs": List of all EVs currenting charging.
+            - "pilot_signals": entire history of pilot signals throughout simulation.
+            - "active_sessions": List of active sessions.
+            - "departures": array of shape (num_stations,). If the
+                EVSE corresponding to the index is active, the entry is the
+                actual number of periods before departure (always positive).
+                Otherwise, for indices with corresponding non-active EVSEs,
+                the entry is zero.
         """
         # Step internal simulator
         # TODO: make action fit constraints somehow? or nah
@@ -202,32 +236,39 @@ class EVChargingEnv(gym.Env):
                                             self.simulator._iteration,
                                             get_info=True)
 
-        reward, reward_info = get_rewards(self.simulator, schedule, self.prev_timestamp, self.timestamp, next_timestamp)  # TODO: get_rewards
+        reward, reward_info = get_rewards(self.simulator, schedule, self.prev_timestamp, self.timestamp, next_timestamp)
 
         # Update timestamp
         self.prev_timestamp = self.timestamp
         self.timestamp = next_timestamp
 
-        info = info.update(reward_info)
+        info.update(reward_info)
 
         return observation, reward, done, info
 
     def reset(self, *,
               seed: int | None = None,
               return_info: bool = False,
-              options: dict | None = None) -> dict | tuple:
+              options: dict | None = None
+              ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
         """
-        Reset environment to prepare for next episode.
+        Reset the environment.
 
-        Arguments:
-        seed (int) - random seed to reset environment
-        return_info (bool) - whether information should be returned as well
-        options (dict)
-            - "p": probability distribution for choosing GMM during event
-                generation, has 1 probability of choosing first GMM by
-                default
+        Prepare for next episode by re-creating charging network,
+        generating new events, creating simulation and interface,
+        and resetting the timestamps.
+
+        Args:
+            seed: random seed to reset environment
+            return_info: whether information should be returned as well
+            options: dictionary containing options for resetting.
+            - "p": probability distribution for choosing GMM for day's
+                simulation, has 1 probability of choosing first GMM by
+                default. By default, 3 GMMs can be chosen, so "p" should be a
+                sequence of floats of length 3 that sum up to 1. Ignored when
+                self.real_traces is True.
         """
-        # super().reset(seed=seed)
+        super().reset(seed=seed)
         if not self.real_traces:
             if options and "p" in options:
                 self.p = options["p"]
@@ -255,10 +296,15 @@ class EVChargingEnv(gym.Env):
                                get_info=return_info)
 
     def render(self) -> None:
+        """Render environment."""
         raise NotImplementedError
 
     def close(self) -> None:
-        """Delete simulator, interface, events, and charging network."""
+        """
+        Close the environment.
+
+        Delete simulator, interface, events, and charging network.
+        """
         del self.simulator, self.interface, self.events, self.cn
 
 
@@ -281,6 +327,7 @@ if __name__ == "__main__":
     while not done:
         observation, reward, done, info = env.step(action)
         print(i, observation['timestep'], reward)
+        print(info['pilot_signals'])
         i += 1
     print(env.simulator.charging_rates.shape)
     print()
