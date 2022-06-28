@@ -198,6 +198,7 @@ class EVChargingEnv(gym.Env):
             - "magnitudes": array of shape (num_constraints,). The absolute
                 value of the maximum amount of allowable current row i of the
                 constraint_matrix can handle.
+            - "demands": amount of charge demanded in units A*period
             - "phases": the phase of a station id
             - "timestep": an integer between 0 and MINS_IN_DAY // period
                 indicating the timestep
@@ -220,6 +221,8 @@ class EVChargingEnv(gym.Env):
         # Step internal simulator
         # TODO: make action fit constraints somehow? or nah
         schedule = to_schedule(action, self.evse_index)
+
+        cur_event = self.simulator.event_queue._queue[0][1]
         done = self.simulator.step(schedule)
         self.simulator._resolve = False  # work-around to keep iterating
 
@@ -236,7 +239,13 @@ class EVChargingEnv(gym.Env):
                                             self.simulator._iteration,
                                             get_info=True)
 
-        reward, reward_info = get_rewards(self.simulator, schedule, self.prev_timestamp, self.timestamp, next_timestamp)
+        reward, reward_info = get_rewards(self.interface,
+                                          self.simulator,
+                                          schedule,
+                                          self.prev_timestamp,
+                                          self.timestamp,
+                                          next_timestamp,
+                                          cur_event)
 
         # Update timestamp
         self.prev_timestamp = self.timestamp
@@ -268,7 +277,7 @@ class EVChargingEnv(gym.Env):
                 sequence of floats of length 3 that sum up to 1. Ignored when
                 self.real_traces is True.
         """
-        super().reset(seed=seed)
+        # super().reset(seed=seed)
         if not self.real_traces:
             if options and "p" in options:
                 self.p = options["p"]
@@ -287,6 +296,8 @@ class EVChargingEnv(gym.Env):
 
         self.prev_timestamp = 0
         self.timestamp = self.simulator.event_queue.queue[0][0]
+
+        self.starting_demands = {}
 
         # Retrieve environment information
         return get_observation(self.interface,
@@ -319,17 +330,15 @@ if __name__ == "__main__":
     print("----------------------------")
     print("----------------------------")
     observation = env.reset()
-    print(observation)
 
     done = False
     i = 0
     action = np.ones(shape=(54,), )
     while not done:
         observation, reward, done, info = env.step(action)
-        print(i, observation['timestep'], reward)
-        print(info['pilot_signals'])
+        print(i, observation['demands'], reward)
+        print(info['departures'])
         i += 1
-    print(env.simulator.charging_rates.shape)
     print()
     print()
 
