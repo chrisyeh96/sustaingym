@@ -8,6 +8,8 @@ import numpy as np
 import gym
 from gym import spaces
 import pandas as pd
+import sys
+sys.path.append('../')
 
 
 class BatteryStorageEnv(gym.Env):
@@ -121,7 +123,10 @@ class BatteryStorageEnv(gym.Env):
         Returns:
             tuple containing the initial observation for env's episode
         """
-        super().reset(seed=seed)
+        if seed:
+            self.np_random = np.random.default_rng(seed)
+        else:
+            self.np_random = np.random.default_rng()
         # initial running average price
         self.avg_price = 0.0
         # initial energy storage level
@@ -130,10 +135,10 @@ class BatteryStorageEnv(gym.Env):
         if options and 'reward' in options.keys():
             if options.get('reward') == 1:
                 self.reward_type = 1
-        self.reward = 0
+        # self.reward = 0
         # get random initial starting price position
-        self.idx = self.np_random.randint(
-            0, self.price_data_len - self.MAX_STEPS_PER_EPISODE
+        self.idx = self.np_random.integers(
+            low = 0, high = self.price_data_len - self.MAX_STEPS_PER_EPISODE, size = 1
         )
         self.count = 1  # counter for the step in current episode
         self.init = True
@@ -166,38 +171,38 @@ class BatteryStorageEnv(gym.Env):
                 pwr = min(
                     action, (self.energy_lvl - self.ENERGY_MIN) / self.TIME_STEP_DURATION
                 )
-                self.reward = self.curr_price*self.DISCHARGE_EFFICIENCY*pwr
+                reward = self.curr_price*self.DISCHARGE_EFFICIENCY*pwr
                 self.energy_lvl -= self.DISCHARGE_EFFICIENCY*pwr*self.TIME_STEP_DURATION
             elif action > 0:
                 pwr = min(
                     action, (self.ENERGY_MAX - self.energy_lvl) / self.TIME_STEP_DURATION
                 )
-                self.reward = -1*self.curr_price*(1 / self.CHARGE_EFFICIENCY)*pwr
+                reward = -1*self.curr_price*(1 / self.CHARGE_EFFICIENCY)*pwr
                 self.energy_lvl += (1 / self.CHARGE_EFFICIENCY)*pwr*self.TIME_STEP_DURATION
             else:
-                self.reward = 0
+                reward = 0
         else:
             if action < 0:
                 pwr = min(
                     action, (self.energy_lvl - self.ENERGY_MIN) / self.TIME_STEP_DURATION
                 )
-                self.reward = (self.curr_price - info)*self.DISCHARGE_EFFICIENCY*pwr
+                reward = (self.curr_price - info)*self.DISCHARGE_EFFICIENCY*pwr
                 self.energy_lvl -= self.DISCHARGE_EFFICIENCY*pwr*self.TIME_STEP_DURATION
             elif action > 0:
                 pwr = min(
                     action, (self.ENERGY_MAX - self.energy_lvl) / self.TIME_STEP_DURATION
                 )
-                self.reward = (info - self.curr_price)*(1 / self.CHARGE_EFFICIENCY)*pwr
+                reward = (info - self.curr_price)*(1 / self.CHARGE_EFFICIENCY)*pwr
                 self.energy_lvl += (1 / self.CHARGE_EFFICIENCY)*pwr*self.TIME_STEP_DURATION
             else:
-                self.reward = 0
+                reward = 0
         self.count += 1
         if self.count >= self.MAX_STEPS_PER_EPISODE:
             done = True
         else:
             done = False
         state = (self.energy_lvl, self.curr_price)
-        return (state, self.reward, done, info)
+        return (state, reward, done, info)
 
     def _get_info(self, curr_price: float) -> float:
         self.avg_price = (1.0 - self.eta)*self.avg_price + self.eta*curr_price
