@@ -1,6 +1,7 @@
 ## CUSTOM EXCLUSIONS
 .DS_STORE
 .vscode/
+sandbox/
 ## END CUSTOM EXCLUSIONS
 
 # Byte-compiled / optimized / DLL files
