@@ -21,6 +21,7 @@ if __name__ == '__main__':
     # which does exactly the previous steps for you.
     # You can choose between `DummyVecEnv` (usually faster) and `SubprocVecEnv`
     # env = make_vec_env(env_id, n_envs=num_cpu, seed=0, vec_env_cls=SubprocVecEnv)
+    model = PPO('MlpPolicy', env, verbose=1)
 
     avg_rewards = []
     obs = env.reset()
@@ -31,7 +32,6 @@ if __name__ == '__main__':
     avg_rewards = np.mean(avg_rewards)
     print("beginning rewards: ", avg_rewards)
 
-    model = PPO('MlpPolicy', env, verbose=1)
     model.learn(total_timesteps=25_000)
 
     avg_rewards = []
