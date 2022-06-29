@@ -38,7 +38,8 @@ def get_real_event_queue(day: datetime,
                          recompute_freq: int,
                          station_ids: Set[str],
                          site: str,
-                         use_unclaimed: bool = False
+                         use_unclaimed: bool = False,
+                         requested_energy_cap: float = 100
                          ) -> EventQueue:
     """
     Create an event queue from real traces in ACNData.
@@ -58,6 +59,7 @@ def get_real_event_queue(day: datetime,
         use_unclaimed: whether to use unclaimed data. If True
             - Battery init_charge: 100 - session['kWhDelivered']
             - estimated_departure: disconnect timestamp.
+        requested_energy_cap: largest amount of requested energy allowed (kWh)
 
     Returns:
         event queue for simulation.
@@ -87,7 +89,7 @@ def get_real_event_queue(day: datetime,
 
         est_depart_timestamp = datetime_to_timestamp(session['estimated_departure'],
                                                      period)
-        requested_energy = session['requested_energy (kWh)']
+        requested_energy = min(session['requested_energy (kWh)'], requested_energy_cap)
 
         battery = Battery(capacity=100,
                           init_charge=max(0, 100-requested_energy),
@@ -128,17 +130,21 @@ class ArtificialEventGenerator:
         recompute_freq: number of periods for recurring recompute
         site: either 'caltech' or 'jpl' garage to get events from
         gmm_folder: folder name where GMMs reside. Default "default."
+        requested_energy_cap: largest amount of requested energy allowed (kWh)
+
     """
 
     def __init__(self,
                  period: int,
                  recompute_freq: int,
                  site: str,
-                 gmm_folder: str = "default"
+                 gmm_folder: str = "default",
+                 requested_energy_cap: float = 100
                  ) -> None:
         self.period = period
         self.recompute_freq = recompute_freq
         self.site = site
+        self.requested_energy_cap = requested_energy_cap
 
         self.gmm_paths = os.path.join(GMMS_PATH, gmm_folder, site)
 
@@ -266,6 +272,9 @@ class ArtificialEventGenerator:
                     station_cnts = [station_cnts[i] / sum(station_cnts) for i in range(len(station_cnts))]
 
             arrival, departure, est_departure = int(arrival), int(departure), int(est_departure)
+
+            # cap energy
+            energy = min(self.requested_energy_cap, energy)
 
             battery = Battery(capacity=100,
                               init_charge=max(0, 100-energy),

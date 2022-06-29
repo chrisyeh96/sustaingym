@@ -11,9 +11,9 @@ from acnportal.acnsim.events import Event
 import numpy as np
 
 
-CHARGE_COST_WEIGHT = 1
-DELIVERED_CHARGE_WEIGHT = 3
-CONSTRAINT_VIOLATION_WEIGHT = 10
+CHARGE_COST_WEIGHT = 0.025
+DELIVERED_CHARGE_WEIGHT = 10
+CONSTRAINT_VIOLATION_WEIGHT = 2.5
 UNCHARGED_WEIGHT = 10
 
 
@@ -52,7 +52,7 @@ def get_rewards(interface: Interface,
 
     schedule = schedule_to_numpy(schedule)
     # Find charging cost based on amount of charge delivered
-    charging_cost = -sum(schedule) * timestamp_diff * CHARGE_COST_WEIGHT
+    charging_cost = - CHARGE_COST_WEIGHT * sum(schedule) * timestamp_diff
 
     # Get charging reward based on charging rates for previous interval
     charging_reward = DELIVERED_CHARGE_WEIGHT * np.sum(simulator.charging_rates[:, prev_timestamp:timestamp])
@@ -62,42 +62,40 @@ def get_rewards(interface: Interface,
     current_sum = np.real(simulator.network.constraint_current(schedule, linear=False))
     magnitudes = simulator.network.magnitudes
     over_current = np.maximum(current_sum - magnitudes, 0)
-    constraint_punishment = -CONSTRAINT_VIOLATION_WEIGHT * sum(over_current) * timestamp_diff
+    constraint_punishment = - CONSTRAINT_VIOLATION_WEIGHT * sum(over_current) * timestamp_diff
 
     # reward for how much charge a vehicle that is leaving has left with
     if isinstance(cur_event, UnplugEvent):
-        remaining_demand = cur_event.ev.requested_energy - cur_event.ev.energy_delivered
-        remaining_amp_periods = interface._convert_to_amp_periods(remaining_demand, cur_event.ev.station_id)
-        remaining_amp_periods_punishment = - remaining_amp_periods * UNCHARGED_WEIGHT
+        # punish by how much more energy is requested than is actually delivered
+        remaining_amp_periods_punishment = UNCHARGED_WEIGHT * min(0, cur_event.ev.energy_delivered - cur_event.ev.requested_energy)
         departure_event = True
     else:
         departure_event = False
         remaining_amp_periods_punishment = 0
 
     # Get total reward
-    total_reward = charging_reward + charging_cost + constraint_punishment + remaining_amp_periods_punishment
+    total_reward = charging_cost + charging_reward + constraint_punishment + remaining_amp_periods_punishment
+
+    # normalize by number of charging stations
+    total_reward /= len(simulator.network.station_ids)
 
     if get_info:
         info = {
             "schedule": schedule,
-            "charging_cost": charging_cost,
             "current_sum": current_sum,
             "magnitudes": magnitudes,
             "constraint_violation": over_current,
+            "charging_cost": charging_cost,
+            "charging_reward": charging_reward,
             "constraint_punishment": constraint_punishment,
-            "departure_event": departure_event,
             "remaining_amp_periods_punishment": remaining_amp_periods_punishment,
+            "departure_event": departure_event,
             "charge_cost_weight": CHARGE_COST_WEIGHT,
             "delivered_charge_weight": DELIVERED_CHARGE_WEIGHT,
             "constraint_violation_weight": CONSTRAINT_VIOLATION_WEIGHT,
             "uncharged_weight": UNCHARGED_WEIGHT,
             "unnormalized_total_reward": total_reward,
         }
-
-    # normalize by number of charging stations
-    total_reward /= len(simulator.network.station_ids)
-
-    if get_info:
         return total_reward, info
     else:
         return total_reward

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import warnings
 from typing import Any
 
 from acnportal.acnsim.interface import Interface
@@ -59,6 +60,7 @@ class EVChargingEnv(gym.Env):
             |   |--------....
             See train_artificial_data_model.py for how to train GMMs from the
             command-line.
+        verbose: whether to print out warnings when constraints are being violated
 
     Attributes: TODO??????????? - how to comment attribute type
         max_timestamp: maximum timestamp in a day's simulation
@@ -82,7 +84,7 @@ class EVChargingEnv(gym.Env):
 
     def __init__(self, site: str = 'caltech', period: int = 5, recompute_freq: int = 2,
                  real_traces: bool = False, sequential: bool = True,
-                 gmm_folder: str = "default") -> None:
+                 gmm_folder: str = "default", verbose: bool = False) -> None:
         self.site = site
         self.period = period
         self.recompute_freq = recompute_freq
@@ -90,6 +92,9 @@ class EVChargingEnv(gym.Env):
         self.sequential = sequential
         self.gmm_folder = gmm_folder
         self.max_timestamp = MINS_IN_DAY // period
+        self.verbose = verbose
+        if not verbose:
+            warnings.filterwarnings("ignore")
 
         # Set up charging network parameters
         self._init_charging_network()
@@ -320,27 +325,58 @@ class EVChargingEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    np.random.seed(42)
-    import random
-    random.seed(42)
-    env = EVChargingEnv(sequential=False, period=5, real_traces=True)
+    from collections import defaultdict
 
-    print("----------------------------")
-    print("----------------------------")
-    print("----------------------------")
-    print("----------------------------")
-    observation = env.reset()
+    for j in range(5):
+        np.random.seed(42)
+        import random
+        random.seed(42)
 
-    done = False
-    i = 0
-    action = np.ones(shape=(54,), )
-    while not done:
-        observation, reward, done, info = env.step(action)
-        print(i, observation['demands'], reward)
-        print(info['departures'])
-        i += 1
-    print()
-    print()
+        env = EVChargingEnv(sequential=False, period=5, real_traces=True)
+
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        observation = env.reset()
+
+        done = False
+        i = 0
+        action = np.ones(shape=(54,), ) * j
+        d = defaultdict(list)
+        while not done:
+            observation, reward, done, info = env.step(action)
+            for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:
+                d[x].append(info[x])
+            d["reward"].append(reward)
+
+            i += 1
+        for k, v in d.items():
+            print(k)
+            d[k] = np.array(v)
+            print(d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
+
+        print()
+        print()
+    # 1 -> d
+    #  charging cost -864
+    #  charging reward 16 - 48
+    #  constraint punishment 0
+    #  remaining amp periods punishment -15 to -38
+    # 2
+    #  charging cost -1728
+    #  charging reward 32 - 96
+    #  constraint punishment -411
+    #  remaining amp periods -10 to -60
+    # 3 
+    #  charging cost -2592
+    #  charging reward 48 - 144
+    #  constraint punishment -1374
+    #  remaining amp periods -5 to -35
+    # charging cost: 0.05
+    # charging reward: 1
+    # constraint punishment: 5
+    # remaining amp periods: 10
 
     env.close()
     print(env.max_timestamp)
