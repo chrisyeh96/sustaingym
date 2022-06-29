@@ -6,13 +6,11 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.utils import set_random_seed
 
-from .ev_charging import EVChargingEnv
+from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 
 
 if __name__ == '__main__':
-    env = EVChargingEnv()
-
-    env_id = "CartPole-v1"
+    # env = EVChargingEnv()
     num_cpu = 4  # Number of processes to use
     # Create the vectorized environment
     env = SubprocVecEnv([EVChargingEnv() for i in range(num_cpu)])

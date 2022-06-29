@@ -139,8 +139,7 @@ class ArtificialEventGenerator:
                  recompute_freq: int,
                  site: str,
                  gmm_folder: str = "default",
-                 requested_energy_cap: float = 100
-                 ) -> None:
+                 requested_energy_cap: float = 100):
         self.period = period
         self.recompute_freq = recompute_freq
         self.site = site

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-import warnings
 from typing import Any
+import warnings
 
 from acnportal.acnsim.interface import Interface
 from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
@@ -84,7 +84,7 @@ class EVChargingEnv(gym.Env):
 
     def __init__(self, site: str = 'caltech', period: int = 5, recompute_freq: int = 2,
                  real_traces: bool = False, sequential: bool = True,
-                 gmm_folder: str = "default", verbose: bool = False) -> None:
+                 gmm_folder: str = "default", verbose: bool = False):
         self.site = site
         self.period = period
         self.recompute_freq = recompute_freq
