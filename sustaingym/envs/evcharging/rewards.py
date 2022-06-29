@@ -23,7 +23,7 @@ def get_rewards(interface: Interface,
                 prev_timestamp: int,
                 timestamp: int,
                 next_timestamp: int,
-                cur_event: Event,
+                cur_event: Event = None,
                 get_info: bool = True,
                 ) -> float | tuple[float, dict[str, Any]]:
     """
@@ -65,7 +65,7 @@ def get_rewards(interface: Interface,
     constraint_punishment = - CONSTRAINT_VIOLATION_WEIGHT * sum(over_current) * timestamp_diff
 
     # reward for how much charge a vehicle that is leaving has left with
-    if isinstance(cur_event, UnplugEvent):
+    if cur_event and isinstance(cur_event, UnplugEvent):
         # punish by how much more energy is requested than is actually delivered
         remaining_amp_periods_punishment = UNCHARGED_WEIGHT * min(0, cur_event.ev.energy_delivered - cur_event.ev.requested_energy)
         departure_event = True

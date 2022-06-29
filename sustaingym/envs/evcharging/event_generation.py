@@ -91,6 +91,10 @@ def get_real_event_queue(day: datetime,
                                                      period)
         requested_energy = min(session['requested_energy (kWh)'], requested_energy_cap)
 
+        # Discard sessions with est_disconnect - connection <= 0
+        if est_depart_timestamp <= connection_timestamp:
+            continue
+
         battery = Battery(capacity=100,
                           init_charge=max(0, 100-requested_energy),
                           max_power=100)

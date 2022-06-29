@@ -2,7 +2,7 @@
 GMM training script. Run from root directory.
 
 Example command line usage
-python3 -m sustaingym.envs.evcharging.train_artificial_data_model --gmm_n_components 50 --date_range 2019-01-01 2019-12-31 2020-01-31 2020-12-31 2021-01-31 2021-07-31 --gmm_labels 2019 2020 2021
+python -m sustaingym.envs.evcharging.train_artificial_data_model --gmm_n_components 50 --date_range 2019-01-01 2019-12-31 2020-01-31 2020-12-31 2021-01-31 2021-07-31 --gmm_labels 2019 2020 2021
 
 usage: train_artificial_data_model.py [-h] [--gmm_folder GMM_FOLDER] [--gmm_n_components GMM_N_COMPONENTS]
                                       [--date_ranges DATE_RANGES [DATE_RANGES ...]]

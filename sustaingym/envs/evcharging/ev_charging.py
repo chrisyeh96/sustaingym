@@ -19,7 +19,7 @@ from .utils import random_date
 
 MINS_IN_DAY = 1440
 START_DATE = datetime(2018, 11, 1)
-END_DATE = datetime(2021, 8, 31)
+END_DATE = datetime(2018, 11, 10)
 
 
 class EVChargingEnv(gym.Env):
@@ -123,7 +123,8 @@ class EVChargingEnv(gym.Env):
         # Observations are dictionaries describing arrivals and departures of EVs,
         # constraint matrix, current magnitude bounds, demands, phases, and timesteps
         self.observation_space = get_observation_space(self.num_constraints,
-                                                       self.num_stations)
+                                                       self.num_stations,
+                                                       self.period)
         # Define action space, which is the charging rate for all EVs
         self.action_space = get_action_space(self.num_stations)
 
@@ -227,9 +228,13 @@ class EVChargingEnv(gym.Env):
         # TODO: make action fit constraints somehow? or nah
         schedule = to_schedule(action, self.evse_index)
 
-        cur_event = self.simulator.event_queue._queue[0][1]
-        done = self.simulator.step(schedule)
-        self.simulator._resolve = False  # work-around to keep iterating
+        if self.simulator.event_queue._queue:
+            cur_event = self.simulator.event_queue._queue[0][1]
+            done = self.simulator.step(schedule)
+            self.simulator._resolve = False  # work-around to keep iterating
+        else:
+            done = True
+            cur_event = None
 
         # Next timestamp
         if done:

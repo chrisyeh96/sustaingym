@@ -11,29 +11,32 @@ from acnportal.acnsim.interface import Interface
 from gym import spaces
 import numpy as np
 
-MAX_INT = int(2**31 - 1)
+LARGE_INT = 2 ** 30
+MINS_IN_DAY = 1440
 
 
-def get_observation_space(num_constraints: int, num_stations: int) -> spaces.Dict:
+def get_observation_space(num_constraints: int, num_stations: int, period: int) -> spaces.Dict:
     """
     Return dictionary concerning the observation space for the network.
 
     Args:
         num_constraints: number of constraints in charging network.
         num_stations: number of evse charging stations in network.
+        period: the number of minutes for the timestep interval.
 
     Returns:
         the observation space of the simulator.
     """
+    num_periods = MINS_IN_DAY // period
 
     return spaces.Dict({
-        "arrivals": spaces.Box(low=0, high=MAX_INT, shape=(num_stations,), dtype=np.int32),
-        "departures": spaces.Box(low=0, high=MAX_INT, shape=(num_stations,), dtype=np.int32),
+        "arrivals": spaces.Box(low=-num_periods, high=0, shape=(num_stations,), dtype=np.int32),
+        "est_departures": spaces.Box(low=0, high=LARGE_INT, shape=(num_stations,), dtype=np.int32),
         "constraint_matrix": spaces.Box(low=-1.0, high=1.0, shape=(num_constraints, num_stations), dtype=np.float32),
         "magnitudes": spaces.Box(low=0.0, high=np.inf, shape=(num_constraints,), dtype=np.float32),
         "demands": spaces.Box(low=0.0, high=np.inf, shape=(num_stations,), dtype=np.float32),
         "phases": spaces.Box(low=-180.0, high=180.0, shape=(num_stations,), dtype=np.float32),
-        "timestep": spaces.Box(low=0, high=MAX_INT, shape=(), dtype=np.int32),
+        "timestep": spaces.Box(low=0, high=LARGE_INT, shape=(1,), dtype=np.int32),
     })
 
 
@@ -84,6 +87,8 @@ def get_observation(interface: Interface,
     arrivals = np.where(arrivals, arrivals - timestep, arrivals)
     est_departures = np.where(est_departures, est_departures - timestep, est_departures)
 
+    np_timestep = np.ones(shape=(1,), dtype=np.int32) * timestep
+
     obs = {
         "arrivals": arrivals,
         "est_departures": est_departures,
@@ -91,7 +96,7 @@ def get_observation(interface: Interface,
         "magnitudes": magnitudes,
         "demands": demands,
         "phases": phases,
-        "timestep": timestep,
+        "timestep": np_timestep,
     }
 
     simulator = interface._simulator
