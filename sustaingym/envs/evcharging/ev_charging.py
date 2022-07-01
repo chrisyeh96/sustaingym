@@ -14,7 +14,7 @@ from .event_generation import RealTraceGenerator, ArtificialTraceGenerator
 from .observations import get_observation_space, get_observation
 from .rewards import get_rewards
 from .train_artificial_data_model import create_gmms
-from .utils import MINS_IN_DAY, parse_string_date_list, find_potential_folder
+from .utils import MINS_IN_DAY, parse_string_date_list, find_potential_folder, DATE_FORMAT
 
 
 class EVChargingEnv(gym.Env):
@@ -86,7 +86,7 @@ class EVChargingEnv(gym.Env):
                  period: int = 5, recompute_freq: int = 2,
                  real_traces: bool = False, sequential: bool = True,
                  n_components: int = 50,
-                 verbose: bool = False):
+                 verbose: int = 1):
         self.site = site
         if len(date_range) != 2:
             raise ValueError(f"Length of date_range expected to be 2 but found th be {len(date_range)})")
@@ -97,7 +97,7 @@ class EVChargingEnv(gym.Env):
         self.sequential = sequential
         self.max_timestamp = MINS_IN_DAY // period
         self.verbose = verbose
-        if not verbose:
+        if verbose < 2:
             warnings.filterwarnings("ignore")
 
         # Set up charging network parameters
@@ -158,9 +158,13 @@ class EVChargingEnv(gym.Env):
         If using real traces, update internal day variable and fetch data from
         ACNData. If using generated traces, sample from a GMM model.
         """
+
         self.generator.update_day()
         self.day = self.generator.day
-        self.events = self.generator.get_event_queue()
+        self.events, num_plugs = self.generator.get_event_queue()
+
+        if self.verbose >= 1:
+            print(f"Simulating day {self.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ")
 
     def _init_simulator_and_interface(self) -> None:
         """Initialize and set simulator and interface."""
@@ -282,12 +286,16 @@ class EVChargingEnv(gym.Env):
             seed: random seed to reset environment
             return_info: whether information should be returned as well
             options: dictionary containing options for resetting.
+            - "verbose": reset verbose factor
             - "p": probability distribution for choosing GMM for day's
                 simulation, has 1 probability of choosing first GMM by
                 default. By default, 3 GMMs can be chosen, so "p" should be a
                 sequence of floats of length 3 that sum up to 1. Ignored when
-                self.real_traces is True.
+                self.real_traces is True. TODO
         """
+        if options:
+            if "verbose" in options:
+                self.verbose = options["verbose"]
         # super().reset(seed=seed)
 
         # Re-create charging network, assuming no overnight stays
@@ -332,35 +340,34 @@ if __name__ == "__main__":
     random.seed(42)
 
     for site in ['jpl']:
-        for r, s in zip([True, True, False], [True, False, False]):
+        for r, s in zip([False], [False]):
             print("----------------------------")
             print("----------------------------")
             print("----------------------------")
             print("----------------------------")
             print(site, "real_traces", r, "sequential", s)
-            env = EVChargingEnv(site=site, date_range=["2019-01-01", "2019-12-31"], real_traces=r, n_components=50, sequential=s)
+            env = EVChargingEnv(site=site, date_range=["2019-01-01", "2019-12-31"], real_traces=r, n_components=50, sequential=s, verbose=2)
 
-            for j in range(2):
-                observation = env.reset()
+            observation = env.reset()
 
-                done = False
-                i = 0
-                action = np.ones(shape=(54,), ) * j
-                d = defaultdict(list)
-                while not done:
-                    observation, reward, done, info = env.step(action)
-                    for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:
-                        d[x].append(info[x])
-                    d["reward"].append(reward)
+            done = False
+            i = 0
+            action = np.ones(shape=(54,), ) * 4
+            d = defaultdict(list)
+            while not done:
+                observation, reward, done, info = env.step(action)
+                # for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:
+                # d[x].append(info[x])
+                # d["reward"].append(reward)
+                # print(observation['demands'][3])
+                i += 1
+            # for k, v in d.items():
+            #     print(k)
+            #     d[k] = np.array(v)
+            #     print(d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
 
-                    i += 1
-                for k, v in d.items():
-                    print(k)
-                    d[k] = np.array(v)
-                    print(d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
-
-                print()
-                print()
+            print()
+            print()
     # 1 -> d
     #  charging cost -864
     #  charging reward 16 - 48
