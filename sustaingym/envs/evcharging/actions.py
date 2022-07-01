@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from gym import spaces
 import numpy as np
 
+ACTION_DISCRETIZATION_FACTOR = 8
 
 def get_action_space(num_stations: int) -> spaces.MultiDiscrete:
     """
@@ -45,4 +46,4 @@ def to_schedule(action: np.ndarray, evses: Sequence[str]) -> dict[str, list[floa
             required by the step function of
             acnportal.acnsim.simulator.Simulator
     """
-    return {e: [8 * a] for a, e in zip(action, evses)}
+    return {e: [ACTION_DISCRETIZATION_FACTOR * a] for a, e in zip(action, evses)}

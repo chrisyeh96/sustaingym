@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from datetime import timedelta, datetime
 import os
 from random import randrange
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -15,8 +16,15 @@ from acnportal.acndata.data_client import DataClient
 from acnportal.acndata.utils import parse_http_date
 
 
-DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
 API_TOKEN = "DEMO_TOKEN"
+DATE_FORMAT = "%Y-%m-%d"
+DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
+END_DATE = datetime(2021, 8, 31)
+MINS_IN_DAY = 1440
+REQ_ENERGY_SCALE = 100
+START_DATE = datetime(2018, 11, 1)
+start_date_str, end_date_str = START_DATE.strftime(DATE_FORMAT), END_DATE.strftime(DATE_FORMAT)
+GMM_DIR = os.path.join("sustaingym", "envs", "evcharging", "gmms")
 
 
 def random_date(start: datetime, end: datetime) -> datetime:
@@ -174,3 +182,59 @@ def load_gmm(path: str) -> GaussianMixture:
     loaded_gmm.means_ = means
     loaded_gmm.covariances_ = covar
     return loaded_gmm
+
+
+def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime]]:
+    """
+    Parse a list of strings and return a list of datetimes.
+
+    Args:
+        date_range: an even-length list of dates with each consecutive
+            pair of dates the start and end date of a period. Must be a
+            string and have format YYYY-MM-DD
+
+    Returns:
+        A sequence of 2-tuples that contains a begin and end datetime.
+
+    Raises:
+        ValueError: length of date_range is odd
+        ValueError: begin date of pair is not before end date of pair
+        ValueError: begin and end date not in data's range
+    """
+    if len(date_range) % 2 != 0:
+        raise ValueError(f"Number of dates must be divisible by 2, found length {len(date_range)} with the second later than the first.")
+
+    date_range_dt = []
+    for i in range(len(date_range) // 2):
+        begin = datetime.strptime(date_range[2 * i], DATE_FORMAT)
+        end = datetime.strptime(date_range[2 * i + 1], DATE_FORMAT)
+
+        if begin > end:
+            raise ValueError(f"beginning of date range {date_range[2 * i]} later than end {date_range[2 * i + 1]}")
+
+        date_range_dt.append((begin, end))
+
+        if begin < START_DATE:
+            raise ValueError(f"beginning of date range {date_range[2 * i]} before data's start date {start_date_str}")
+
+        if end > END_DATE:
+            raise ValueError(f"end of date range {date_range[2 * i + 1]} after data's end date {end_date_str}")
+    return date_range_dt
+
+
+def get_folder_name(begin: datetime, end: datetime, n_components: int):
+    """Return predefined folder name for a trained GMM."""
+    return begin.strftime(DATE_FORMAT) + " " + end.strftime(DATE_FORMAT) + " " + str(n_components)
+
+
+def find_potential_folder(begin: datetime, end: datetime, n_components: int, site: str):
+    """Returns potential folders that house trained GMMs."""
+    folder_prefix = begin.strftime(DATE_FORMAT) + " " + end.strftime(DATE_FORMAT)
+    # check overall directory existence
+    if not os.path.exists(os.path.join(GMM_DIR, site)):
+        return ""
+    # check sub-directories
+    for dir in os.listdir(os.path.join(GMM_DIR, site)):
+        if folder_prefix in dir and int(dir.split(' ')[-1]) == n_components:
+            return dir
+    return ""

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, Sequence
 import warnings
 
 from acnportal.acnsim.interface import Interface
@@ -11,15 +10,11 @@ import gym
 import numpy as np
 
 from .actions import get_action_space, to_schedule
-from .event_generation import get_real_event_queue, ArtificialEventGenerator
+from .event_generation import RealTraceGenerator, ArtificialTraceGenerator
 from .observations import get_observation_space, get_observation
 from .rewards import get_rewards
-from .utils import random_date
-
-
-MINS_IN_DAY = 1440
-START_DATE = datetime(2018, 11, 1)
-END_DATE = datetime(2018, 11, 10)
+from .train_artificial_data_model import create_gmms
+from .utils import MINS_IN_DAY, parse_string_date_list, find_potential_folder, DATE_FORMAT
 
 
 class EVChargingEnv(gym.Env):
@@ -34,6 +29,8 @@ class EVChargingEnv(gym.Env):
 
     Args:
         site: the charging site, currently supports either 'caltech' or 'jpl'
+        date_range: a sequence of length 2 that gives the start and end date of
+            a period. Must be a string and have format YYYY-MM-DD.
         period: the number of minutes for the timestep interval. Default: 5
         recompute_freq: number of periods elapsed to make the scheduler
             recompute pilot signals, which is in addition to the compute events
@@ -44,22 +41,8 @@ class EVChargingEnv(gym.Env):
             and end date of the data; otherwise, randomly samples a day at the
             beginning of each episode. Ignored when real_traces is False. Default:
             True
-        gmm_folder: path to trained GMM. Ignored when real_traces is set to True.
-            Defaults to default. The folder structure should look as follows:
-            gmms
-            |----gmm_folder (by default, "default")
-            |   |----caltech
-            |   |--------gmm_folder1
-            |   |--------gmm_folder2
-            |   |--------gmm_folder3
-            |   |--------....
-            |   |----jpl
-            |   |--------gmm_folder1
-            |   |--------gmm_folder2
-            |   |--------gmm_folder3
-            |   |--------....
-            See train_artificial_data_model.py for how to train GMMs from the
-            command-line.
+        n_components: number of components for GMM
+
         verbose: whether to print out warnings when constraints are being violated
 
     Attributes: TODO??????????? - how to comment attribute type
@@ -69,7 +52,7 @@ class EVChargingEnv(gym.Env):
         num_stations: number of EVSEs in the garage
         day: only present when self.real_traces is True. The actual day that
             the simulator is simulating.
-        generator: (ArtificialEventGenerator) a class whose instances can
+        generator: (ArtificialTraceGenerator) a class whose instances can
             sample events that populate the event queue.
         observation_space: the space of available observations
         action_space: the space of actions. Note that not all actions in the
@@ -79,21 +62,42 @@ class EVChargingEnv(gym.Env):
         simulator: internal simulator from acnportal package
         interface: interface wrapper for simulator
 
+    Notes:
+        gmm directory: Trained GMMs in directory used when real_traces is set
+            to False. The folder structure looks as follows:
+            gmms
+            |----caltech
+            |   |--------2019-01-01 2019-12-31 50
+            |   |--------2020-01-01 2020-12-31 50
+            |   |--------2021-01-01 2021-08-31 50
+            |   |--------....
+            |----jpl
+            |   |--------2019-01-01 2019-12-31 50
+            |   |--------2020-01-01 2020-12-31 50
+            |   |--------2021-01-01 2021-08-31 50
+            |   |--------....
+            Each folder consists of the start date, end date, and number of
+            GMM components trained. See train_artificial_data_model.py for
+            how to train GMMs from the command-line.
     """
     metadata: dict = {"render_modes": []}
 
-    def __init__(self, site: str = 'caltech', period: int = 5, recompute_freq: int = 2,
+    def __init__(self, site: str, date_range: Sequence[str],
+                 period: int = 5, recompute_freq: int = 2,
                  real_traces: bool = False, sequential: bool = True,
-                 gmm_folder: str = "default", verbose: bool = False):
+                 n_components: int = 50,
+                 verbose: int = 1):
         self.site = site
+        if len(date_range) != 2:
+            raise ValueError(f"Length of date_range expected to be 2 but found th be {len(date_range)})")
+        self.date_range = parse_string_date_list(date_range)
         self.period = period
         self.recompute_freq = recompute_freq
         self.real_traces = real_traces
         self.sequential = sequential
-        self.gmm_folder = gmm_folder
         self.max_timestamp = MINS_IN_DAY // period
         self.verbose = verbose
-        if not verbose:
+        if verbose < 2:
             warnings.filterwarnings("ignore")
 
         # Set up charging network parameters
@@ -106,18 +110,27 @@ class EVChargingEnv(gym.Env):
 
         # Set up for event generation
         if self.real_traces:
-            if self.sequential:
-                self.day = START_DATE - timedelta(days=1)
-            else:
-                self.day = random_date(START_DATE, END_DATE)
+            self.generator = RealTraceGenerator(station_ids=self.evse_set,
+                                                site=self.site,
+                                                use_unclaimed=False,
+                                                sequential=self.sequential,
+                                                date_ranges=self.date_range,
+                                                period=self.period,
+                                                recompute_freq=self.recompute_freq
+                                                )
         else:
-            self.generator = ArtificialEventGenerator(period=period,
+            # find folder path of gmm
+            start_date, end_date = self.date_range[0]
+            folder = find_potential_folder(start_date, end_date, n_components, site)
+            if not folder:
+                create_gmms(site=site, gmm_n_components=n_components, date_ranges=date_range)
+                folder = find_potential_folder(start_date, end_date, n_components, site)
+            self.generator = ArtificialTraceGenerator(period=period,
                                                       recompute_freq=recompute_freq,
                                                       site=site,
-                                                      gmm_folder=self.gmm_folder
+                                                      gmm_folder=folder
                                                       )
-            now = datetime.now()
-            self.day = datetime(now.year, now.month, now.day)
+        self.day = self.generator.day
 
         # Define observation space and action space
         # Observations are dictionaries describing arrivals and departures of EVs,
@@ -145,21 +158,13 @@ class EVChargingEnv(gym.Env):
         If using real traces, update internal day variable and fetch data from
         ACNData. If using generated traces, sample from a GMM model.
         """
-        if self.real_traces:
-            if self.sequential:
-                self.day += timedelta(days=1)
-                # keep simulation within start and end date
-                if self.day > END_DATE:
-                    self.day = START_DATE
-            else:
-                self.day = random_date(START_DATE, END_DATE)
-            self.events = get_real_event_queue(self.day, self.period,
-                                               self.recompute_freq,
-                                               self.evse_set,
-                                               self.site)
-        else:
-            self.day += timedelta(days=1)
-            self.events = self.generator.get_event_queue(p=self.p)
+
+        self.generator.update_day()
+        self.day = self.generator.day
+        self.events, num_plugs = self.generator.get_event_queue()
+
+        if self.verbose >= 1:
+            print(f"Simulating day {self.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ")
 
     def _init_simulator_and_interface(self) -> None:
         """Initialize and set simulator and interface."""
@@ -281,19 +286,17 @@ class EVChargingEnv(gym.Env):
             seed: random seed to reset environment
             return_info: whether information should be returned as well
             options: dictionary containing options for resetting.
+            - "verbose": reset verbose factor
             - "p": probability distribution for choosing GMM for day's
                 simulation, has 1 probability of choosing first GMM by
                 default. By default, 3 GMMs can be chosen, so "p" should be a
                 sequence of floats of length 3 that sum up to 1. Ignored when
-                self.real_traces is True.
+                self.real_traces is True. TODO
         """
+        if options:
+            if "verbose" in options:
+                self.verbose = options["verbose"]
         # super().reset(seed=seed)
-        if not self.real_traces:
-            if options and "p" in options:
-                self.p = options["p"]
-            else:
-                self.p = [0 for _ in range(self.generator.num_gmms)]
-                self.p[0] = 1
 
         # Re-create charging network, assuming no overnight stays
         self._init_charging_network()
@@ -332,37 +335,39 @@ class EVChargingEnv(gym.Env):
 if __name__ == "__main__":
     from collections import defaultdict
 
-    for j in range(5):
-        np.random.seed(42)
-        import random
-        random.seed(42)
+    np.random.seed(42)
+    import random
+    random.seed(42)
 
-        env = EVChargingEnv(sequential=False, period=5, real_traces=True)
+    for site in ['jpl']:
+        for r, s in zip([False], [False]):
+            print("----------------------------")
+            print("----------------------------")
+            print("----------------------------")
+            print("----------------------------")
+            print(site, "real_traces", r, "sequential", s)
+            env = EVChargingEnv(site=site, date_range=["2019-01-01", "2019-12-31"], real_traces=r, n_components=50, sequential=s, verbose=2)
 
-        print("----------------------------")
-        print("----------------------------")
-        print("----------------------------")
-        print("----------------------------")
-        observation = env.reset()
+            observation = env.reset()
 
-        done = False
-        i = 0
-        action = np.ones(shape=(54,), ) * j
-        d = defaultdict(list)
-        while not done:
-            observation, reward, done, info = env.step(action)
-            for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:
-                d[x].append(info[x])
-            d["reward"].append(reward)
+            done = False
+            i = 0
+            action = np.ones(shape=(54,), ) * 4
+            d = defaultdict(list)
+            while not done:
+                observation, reward, done, info = env.step(action)
+                # for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:
+                # d[x].append(info[x])
+                # d["reward"].append(reward)
+                # print(observation['demands'][3])
+                i += 1
+            # for k, v in d.items():
+            #     print(k)
+            #     d[k] = np.array(v)
+            #     print(d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
 
-            i += 1
-        for k, v in d.items():
-            print(k)
-            d[k] = np.array(v)
-            print(d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
-
-        print()
-        print()
+            print()
+            print()
     # 1 -> d
     #  charging cost -864
     #  charging reward 16 - 48
