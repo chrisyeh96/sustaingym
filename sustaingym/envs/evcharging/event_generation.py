@@ -119,7 +119,7 @@ class RealTraceGenerator:
             self.interval_idx %= len(self.date_ranges)
             self.day = self.date_ranges[self.interval_idx][0]
 
-    def get_event_queue(self) -> EventQueue:
+    def get_event_queue(self) -> EventQueue | int:
         """
         Create an event queue from real traces in ACNData.
 
@@ -141,7 +141,7 @@ class RealTraceGenerator:
             requested_energy_cap: largest amount of requested energy allowed (kWh)
 
         Returns:
-            event queue for simulation.
+            events used for acnportal simulator and number of plug in events.
 
         Assumes: TODO
             sessions are in Pacific time.
@@ -192,13 +192,15 @@ class RealTraceGenerator:
             # no need for UnplugEvent as the simulator takes care of it
             events.append(event)
 
+        num_plugin = len(events)
+
         # add recompute event every every `recompute_freq` periods
         for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
             event = RecomputeEvent(i * self.recompute_freq)
             events.append(event)
 
         events = EventQueue(events)
-        return events
+        return events, num_plugin
 
 
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
@@ -287,7 +289,7 @@ class ArtificialTraceGenerator:
 
     def get_event_queue(self,
                         station_uniform_sampling: bool = True
-                        ) -> EventQueue:
+                        ) -> EventQueue | int:
         """
         Get event queue from artificially created data.
 
@@ -297,10 +299,10 @@ class ArtificialTraceGenerator:
                 on stations.
 
         Returns:
-            events used for acnportal simulator.
+            events used for acnportal simulator and number of plug in events.
         """
         # generate samples, capping maximum at the number of stations
-        n = max(np.random.choice(self.cnt), self.num_stations)
+        n = min(np.random.choice(self.cnt), self.num_stations)
         samples = self.sample(n)
 
         if station_uniform_sampling:
@@ -356,10 +358,12 @@ class ArtificialTraceGenerator:
             event = PluginEvent(arrival, ev)
             events.append(event)
 
+        num_plugin = len(events)
+
         # add recompute event every every `recompute_freq` periods
         for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
             event = RecomputeEvent(i * self.recompute_freq)
             events.append(event)
 
         events = EventQueue(events)
-        return events
+        return events, num_plugin
