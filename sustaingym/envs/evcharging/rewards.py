@@ -59,7 +59,7 @@ def get_rewards(interface: Interface,
 
     # Find negative reward for current violation by finding sum of current
     # going over the constraints
-    current_sum = np.real(simulator.network.constraint_current(schedule, linear=False))
+    current_sum = np.abs(simulator.network.constraint_current(schedule, linear=False))
     magnitudes = simulator.network.magnitudes
     over_current = np.maximum(current_sum - magnitudes, 0)
     constraint_punishment = - CONSTRAINT_VIOLATION_WEIGHT * sum(over_current) * timestamp_diff
