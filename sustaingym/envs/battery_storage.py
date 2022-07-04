@@ -77,10 +77,10 @@ class BatteryStorageEnv(gym.Env):
         # action space is a single value ranging between the max charge rates
         self.action_space = spaces.Box(low=-self.MAX_DISCHARGE_RATE,
                                        high=self.MAX_CHARGE_RATE, shape=(1, ),
-                                       dtype=np.float64)
+                                       dtype=np.float32)
         # observation space is current energy level and current price
         self.observation_space = spaces.Box(
-            -np.inf, np.inf, shape=(2, ), dtype=np.float64
+            -np.inf, np.inf, shape=(3, ), dtype=np.float32
         )
         # # set seed
         # self.np_random = None
@@ -162,7 +162,7 @@ class BatteryStorageEnv(gym.Env):
             hours = int(time_day[0:2])
             minutes = int(time_day[3:5])
             time = (hours + minutes/60) / 24
-        observation = (self.energy_lvl, self.curr_price, time)
+        observation = np.array([self.energy_lvl, self.curr_price, time], dtype=np.float32)
         info = self._get_info(self.curr_price)
         return (observation, info) if return_info else observation
 
@@ -211,13 +211,13 @@ class BatteryStorageEnv(gym.Env):
                 pwr = min(
                     abs(action), (self.energy_lvl - self.ENERGY_MIN) / self.TIME_STEP_DURATION
                 )
-                reward = (self.curr_price - info)*self.DISCHARGE_EFFICIENCY*pwr
+                reward = (self.curr_price - info['running_avg'])*self.DISCHARGE_EFFICIENCY*pwr
                 self.energy_lvl -= self.DISCHARGE_EFFICIENCY*pwr*self.TIME_STEP_DURATION
             elif action > 0:
                 pwr = min(
                     action, (self.ENERGY_MAX - self.energy_lvl) / self.TIME_STEP_DURATION
                 )
-                reward = (info - self.curr_price)*(1 / self.CHARGE_EFFICIENCY)*pwr
+                reward = (info['running_avg'] - self.curr_price)*(1 / self.CHARGE_EFFICIENCY)*pwr
                 self.energy_lvl += (1 / self.CHARGE_EFFICIENCY)*pwr*self.TIME_STEP_DURATION
             else:
                 reward = 0
@@ -226,12 +226,12 @@ class BatteryStorageEnv(gym.Env):
             done = True
         else:
             done = False
-        state = (self.energy_lvl, self.curr_price, time)
-        return (state, reward, done, info)
+        state = np.array([self.energy_lvl, self.curr_price, time], dtype=np.float32)
+        return (state, float(reward), done, info)
 
-    def _get_info(self, curr_price: float) -> float:
+    def _get_info(self, curr_price: float) -> Dict:
         self.avg_price = (1.0 - self.eta)*self.avg_price + self.eta*curr_price
-        return self.avg_price
+        return {"running_avg": self.avg_price}
 
     def render(self):
         raise NotImplementedError
