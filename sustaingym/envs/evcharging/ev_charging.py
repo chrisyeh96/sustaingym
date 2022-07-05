@@ -92,7 +92,7 @@ class EVChargingEnv(gym.Env):
                  real_traces: bool = False, sequential: bool = True,
                  n_components: int = 50,
                  action_type: str = 'discrete',
-                 verbose: int = 1):
+                 verbose: int = 0):
         self.site = site
         if len(date_range) != 2:
             raise ValueError(f"Length of date_range expected to be 2 but found th be {len(date_range)})")
