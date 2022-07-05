@@ -91,7 +91,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
     Assumes:
         sessions are in Pacific time
     """
-    sessions = get_sessions(start_date, end_date, site=site, return_count=False)
+    sessions = get_sessions(start_date, end_date + timedelta(days=1), site=site, return_count=False)
 
     arrivals = []
     departures = []

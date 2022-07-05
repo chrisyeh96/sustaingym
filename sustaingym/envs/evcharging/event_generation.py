@@ -146,7 +146,7 @@ class RealTraceGenerator:
         Assumes: TODO
             sessions are in Pacific time.
         """
-        events_df = get_real_events(self.day, self.day + timedelta(days=1), site=self.site)
+        events_df = get_real_events(self.day, self.day, site=self.site)
         if not self.use_unclaimed:
             events_df = events_df[events_df['claimed']]
 
