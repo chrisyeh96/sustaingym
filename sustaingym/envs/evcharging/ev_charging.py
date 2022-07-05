@@ -31,7 +31,8 @@ class EVChargingEnv(gym.Env):
         site: the charging site, currently supports either 'caltech' or 'jpl'
         date_range: a sequence of length 2 that gives the start and end date of
             a period. Must be a string and have format YYYY-MM-DD.
-        period: the number of minutes for the timestep interval. Default: 5
+        period: the number of minutes for the timestep interval. Should divide
+            evenly into the number of minutes in a day. Default: 5
         recompute_freq: number of periods elapsed to make the scheduler
             recompute pilot signals, which is in addition to the compute events
             when there is a plug in or unplug. Default: 2
@@ -90,6 +91,10 @@ class EVChargingEnv(gym.Env):
         self.site = site
         if len(date_range) != 2:
             raise ValueError(f"Length of date_range expected to be 2 but found th be {len(date_range)})")
+        
+        if MINS_IN_DAY % period != 0:
+            raise ValueError(f"Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0")
+
         self.date_range = parse_string_date_list(date_range)
         self.period = period
         self.recompute_freq = recompute_freq
@@ -346,10 +351,13 @@ if __name__ == "__main__":
             print("----------------------------")
             print("----------------------------")
             print(site, "real_traces", r, "sequential", s)
-            env = EVChargingEnv(site=site, date_range=["2019-01-01", "2019-12-31"], real_traces=r, n_components=50, sequential=s, verbose=2)
-
+            env = EVChargingEnv(site=site, date_range=["2019-01-01", "2019-12-31"], real_traces=r, n_components=50, sequential=s, verbose=0)
             observation = env.reset()
+            all_timestamps = sorted([event[0] for event in env.events._queue])
+            print(all_timestamps)
+            print("length of all_timestamps: ", len(all_timestamps))
 
+            rewards = 0
             done = False
             i = 0
             action = np.ones(shape=(54,), ) * 4
@@ -360,6 +368,7 @@ if __name__ == "__main__":
                 # d[x].append(info[x])
                 # d["reward"].append(reward)
                 # print(observation['demands'][3])
+                rewards += reward
                 i += 1
             # for k, v in d.items():
             #     print(k)
@@ -368,6 +377,8 @@ if __name__ == "__main__":
 
             print()
             print()
+            print("total iterations: ", i)
+            print("total reward: ", rewards)
     # 1 -> d
     #  charging cost -864
     #  charging reward 16 - 48

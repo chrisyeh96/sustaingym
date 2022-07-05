@@ -152,6 +152,8 @@ class RealTraceGenerator:
 
         events = []
 
+        # monitor connection/departure so no recomputes are generated then
+        non_recompute_timestamps = set()
         for _, session in events_df.iterrows():
             connection_timestamp = datetime_to_timestamp(session['arrival'],
                                                          self.period)
@@ -173,6 +175,9 @@ class RealTraceGenerator:
             # Discard sessions with est_disconnect - connection <= 0
             if est_depart_timestamp <= connection_timestamp:
                 continue
+                
+            non_recompute_timestamps.add(connection_timestamp)
+            non_recompute_timestamps.add(disconnect_timestamp)
 
             battery = Battery(capacity=100,
                               init_charge=max(0, 100-requested_energy),
@@ -196,8 +201,10 @@ class RealTraceGenerator:
 
         # add recompute event every every `recompute_freq` periods
         for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
-            event = RecomputeEvent(i * self.recompute_freq)
-            events.append(event)
+            recompute_timestamp = i * self.recompute_freq
+            if recompute_timestamp not in non_recompute_timestamps:
+                event = RecomputeEvent(i * self.recompute_freq)
+                events.append(event)
 
         events = EventQueue(events)
         return events, num_plugin
@@ -314,6 +321,9 @@ class ArtificialTraceGenerator:
 
         events = []
 
+        # monitor connection/departure so no recomputes are generated then
+        non_recompute_timestamps = set()
+
         for arrival, departure, est_departure, energy in samples:
             if station_uniform_sampling:
                 # remove station id with uniformly random probability
@@ -341,6 +351,9 @@ class ArtificialTraceGenerator:
             # cap energy
             energy = min(self.requested_energy_cap, energy)
 
+            non_recompute_timestamps.add(arrival)
+            non_recompute_timestamps.add(departure)
+
             battery = Battery(capacity=100,
                               init_charge=max(0, 100-energy),
                               max_power=100)
@@ -362,8 +375,10 @@ class ArtificialTraceGenerator:
 
         # add recompute event every every `recompute_freq` periods
         for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
-            event = RecomputeEvent(i * self.recompute_freq)
-            events.append(event)
+            recompute_timestamp = i * self.recompute_freq
+            if recompute_timestamp not in non_recompute_timestamps:
+                event = RecomputeEvent(i * self.recompute_freq)
+                events.append(event)
 
         events = EventQueue(events)
         return events, num_plugin
