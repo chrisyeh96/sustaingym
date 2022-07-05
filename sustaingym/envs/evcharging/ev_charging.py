@@ -43,7 +43,11 @@ class EVChargingEnv(gym.Env):
             beginning of each episode. Ignored when real_traces is False. Default:
             True
         n_components: number of components for GMM
-
+        action_type: either 'continuous' or 'discrete'. If 'discrete' the action
+            space is {0, 1, 2, 3, 4} to signify charging rates of 0 A, 8 A, 16 A,
+            24 A, and 32 A. If 'continuous', the action space is [0, 1] to signify
+            charging rates from 0 A to 32 A. If a charging rate does not achieve
+            the minimum pilot signal, it is set to zero.
         verbose: whether to print out warnings when constraints are being violated
 
     Attributes: TODO??????????? - how to comment attribute type
@@ -87,6 +91,7 @@ class EVChargingEnv(gym.Env):
                  period: int = 5, recompute_freq: int = 2,
                  real_traces: bool = False, sequential: bool = True,
                  n_components: int = 50,
+                 action_type: str = 'discrete',
                  verbose: int = 1):
         self.site = site
         if len(date_range) != 2:
@@ -101,6 +106,7 @@ class EVChargingEnv(gym.Env):
         self.real_traces = real_traces
         self.sequential = sequential
         self.max_timestamp = MINS_IN_DAY // period
+        self.action_type = action_type
         self.verbose = verbose
         if verbose < 2:
             warnings.filterwarnings("ignore")
@@ -144,7 +150,7 @@ class EVChargingEnv(gym.Env):
                                                        self.num_stations,
                                                        self.period)
         # Define action space, which is the charging rate for all EVs
-        self.action_space = get_action_space(self.num_stations)
+        self.action_space = get_action_space(self.num_stations, action_type)
 
     def _init_charging_network(self) -> None:
         """Initialize and set charging network."""
@@ -192,7 +198,8 @@ class EVChargingEnv(gym.Env):
 
         Args:
         action: array of shape (number of stations,) with entries in the set
-            {0, 1, 2, 3, 4}
+            {0, 1, 2, 3, 4} if action_type == 'discrete'; otherwise, entries
+            should fall in the range [0, 1]
 
         Returns:
             observation: dict
@@ -236,7 +243,7 @@ class EVChargingEnv(gym.Env):
         """
         # Step internal simulator
         # TODO: make action fit constraints somehow? or nah
-        schedule = to_schedule(action, self.evse_index)
+        schedule = to_schedule(action, self.evse_index, self.action_type)
 
         if self.simulator.event_queue._queue:
             cur_event = self.simulator.event_queue._queue[0][1]
@@ -351,16 +358,14 @@ if __name__ == "__main__":
             print("----------------------------")
             print("----------------------------")
             print(site, "real_traces", r, "sequential", s)
-            env = EVChargingEnv(site=site, date_range=["2019-01-01", "2019-12-31"], real_traces=r, n_components=50, sequential=s, verbose=0)
+            env = EVChargingEnv(site=site, date_range=["2019-01-01", "2019-12-31"], real_traces=r, n_components=50, sequential=s, verbose=0, action_type='continuous')
             observation = env.reset()
             all_timestamps = sorted([event[0] for event in env.events._queue])
-            print(all_timestamps)
-            print("length of all_timestamps: ", len(all_timestamps))
 
             rewards = 0
             done = False
             i = 0
-            action = np.ones(shape=(54,), ) * 4
+            action = np.ones(shape=(54,), ) * 0.3
             d = defaultdict(list)
             while not done:
                 observation, reward, done, info = env.step(action)

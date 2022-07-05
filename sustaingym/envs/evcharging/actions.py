@@ -11,24 +11,34 @@ from gym import spaces
 import numpy as np
 
 ACTION_DISCRETIZATION_FACTOR = 8
+MIN_PILOT_SIGNAL = 8
+MAX_PILOT_SIGNAL = 32
 
-def get_action_space(num_stations: int) -> spaces.MultiDiscrete:
+def get_action_space(num_stations: int, action_type: str) -> spaces.MultiDiscrete:
     """
     Return discretized action space for a charging network.
 
     Args:
         num_stations: number of evse charging stations in network
+        action_type: either 'discrete' or 'continuous'
 
     Returns:
         a space of shape (cn.station_ids,) where each entry
             takes on values in the set {0, 1, 2, 3, 4}
     """
-    return spaces.MultiDiscrete(
-        [5 for _ in range(num_stations)]
-    )
+    if action_type == 'discrete':
+        return spaces.MultiDiscrete(
+            [5 for _ in range(num_stations)]
+        )
+    elif action_type == 'continuous':
+        return spaces.Box(
+            low=0, high=1, shape=(num_stations,), dtype=np.float32
+        )
+    else:
+        raise ValueError("Only 'discrete' and 'continuous' action_types are allowed. ")
 
 
-def to_schedule(action: np.ndarray, evses: Sequence[str]) -> dict[str, list[float]]:
+def to_schedule(action: np.ndarray, evses: Sequence[str], action_type: str) -> dict[str, list[float]]:
     """
     Returns a dictionary for pilot signals given the action.
 
@@ -40,10 +50,19 @@ def to_schedule(action: np.ndarray, evses: Sequence[str]) -> dict[str, list[floa
         action: np.ndarray of shape (len(evses),)
             entries of action are pilot signals from {0, 1, 2, 3, 4}
         evses: list of names of charging stations
+        action_type: either 'discrete' or 'continuous'
+
 
     Returns:
         a dictionary mapping station ids to a schedule of pilot signals, as
             required by the step function of
             acnportal.acnsim.simulator.Simulator
     """
-    return {e: [ACTION_DISCRETIZATION_FACTOR * a] for a, e in zip(action, evses)}
+    if action_type == 'discrete':
+        return {e: [ACTION_DISCRETIZATION_FACTOR * a] for a, e in zip(action, evses)}
+    elif action_type == 'continuous':
+        action = np.round(action * MAX_PILOT_SIGNAL)
+        action = np.where(action > MIN_PILOT_SIGNAL, action, 0)
+        return {e: [a] for a, e in zip(action, evses)}
+    else:
+        raise ValueError("Only 'discrete' and 'continuous' action_types are allowed. ")
