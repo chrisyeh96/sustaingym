@@ -22,9 +22,10 @@ class BatteryStorageEnv(gym.Env):
         Charging/Discharing Power           -max discharge rate     max charge rate
     Observation:
         Type: Box(2)
-        Action                              Min                     Max
+                                            Min                     Max
         Energy storage level (MWh)          -Inf                    Inf
         Current Electricity Price ($/MWh)   -Inf                    Inf
+        Time (fraction of day)               0                       1
     """
     # metadata = {"render_modes": []}
     # Minimum storage level (MWh)
