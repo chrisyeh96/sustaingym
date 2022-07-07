@@ -18,7 +18,6 @@ UNCHARGED_WEIGHT = 10
 
 
 def get_rewards(interface: Interface,
-                simulator: Simulator,
                 schedule: dict,
                 prev_timestamp: int,
                 timestamp: int,
@@ -34,7 +33,7 @@ def get_rewards(interface: Interface,
         timestep.
 
     Args:
-        simulator: internal simulator from acnportal.acnsim
+        interface: acnportal.acnsim interface object
         schedule: dictionary mapping EVSE charger to a single-element list of
             the pilot signal to that charger.
         prev_timestamp: timestamp of previous action taken, needed to
@@ -48,6 +47,7 @@ def get_rewards(interface: Interface,
         - total reward awarded to current timestep
         - information on how reward is calculated
     """
+    simulator = interface._simulator
     timestamp_diff = next_timestamp - timestamp
 
     schedule = schedule_to_numpy(schedule)

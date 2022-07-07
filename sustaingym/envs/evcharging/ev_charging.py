@@ -1,6 +1,9 @@
+"""
+This module contains the class for the central EV Charging environment.
+"""
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any
 import warnings
 
 from acnportal.acnsim.interface import Interface
@@ -10,11 +13,10 @@ import gym
 import numpy as np
 
 from .actions import get_action_space, to_schedule
-from .event_generation import RealTraceGenerator, ArtificialTraceGenerator
+from .event_generation import AbstractTraceGenerator
 from .observations import get_observation_space, get_observation
 from .rewards import get_rewards
-from .train_artificial_data_model import create_gmms
-from .utils import MINS_IN_DAY, parse_string_date_list, find_potential_folder, DATE_FORMAT
+from .utils import MINS_IN_DAY, DATE_FORMAT
 
 
 class EVChargingEnv(gym.Env):
@@ -66,126 +68,32 @@ class EVChargingEnv(gym.Env):
         cn: charging network in use
         simulator: internal simulator from acnportal package
         interface: interface wrapper for simulator
-
-    Notes:
-        gmm directory: Trained GMMs in directory used when real_traces is set
-            to False. The folder structure looks as follows:
-            gmms
-            |----caltech
-            |   |--------2019-01-01 2019-12-31 50
-            |   |--------2020-01-01 2020-12-31 50
-            |   |--------2021-01-01 2021-08-31 50
-            |   |--------....
-            |----jpl
-            |   |--------2019-01-01 2019-12-31 50
-            |   |--------2020-01-01 2020-12-31 50
-            |   |--------2021-01-01 2021-08-31 50
-            |   |--------....
-            Each folder consists of the start date, end date, and number of
-            GMM components trained. See train_artificial_data_model.py for
-            how to train GMMs from the command-line.
     """
     metadata: dict = {"render_modes": []}
 
-    def __init__(self, site: str, date_range: Sequence[str],
-                 period: int = 5, recompute_freq: int = 2,
-                 real_traces: bool = False, sequential: bool = True,
-                 n_components: int = 50,
+    def __init__(self, data_generator: AbstractTraceGenerator,
                  action_type: str = 'discrete',
                  verbose: int = 0):
-        self.site = site
-        if len(date_range) != 2:
-            raise ValueError(f"Length of date_range expected to be 2 but found th be {len(date_range)})")
-        
-        if MINS_IN_DAY % period != 0:
-            raise ValueError(f"Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0")
-
-        self.date_range = parse_string_date_list(date_range)
-        self.period = period
-        self.recompute_freq = recompute_freq
-        self.real_traces = real_traces
-        self.sequential = sequential
-        self.max_timestamp = MINS_IN_DAY // period
+        self.data_generator = data_generator
+        self.day = self.data_generator.day
+        self.site = data_generator.site
+        self.period = data_generator.period
+        self.max_timestamp = MINS_IN_DAY // self.period
         self.action_type = action_type
         self.verbose = verbose
         if verbose < 2:
             warnings.filterwarnings("ignore")
 
         # Set up charging network parameters
-        self._init_charging_network()
-        self.constraint_matrix = self.cn.constraint_matrix
-        self.num_constraints, self.num_stations = self.cn.constraint_matrix.shape
-        self.evse_index = self.cn.station_ids
-        self.evse_set = set(self.evse_index)
-        self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.evse_index)}
-
-        # Set up for event generation
-        if self.real_traces:
-            self.generator = RealTraceGenerator(station_ids=self.evse_set,
-                                                site=self.site,
-                                                use_unclaimed=False,
-                                                sequential=self.sequential,
-                                                date_ranges=self.date_range,
-                                                period=self.period,
-                                                recompute_freq=self.recompute_freq
-                                                )
-        else:
-            # find folder path of gmm
-            start_date, end_date = self.date_range[0]
-            folder = find_potential_folder(start_date, end_date, n_components, site)
-            if not folder:
-                create_gmms(site=site, gmm_n_components=n_components, date_ranges=date_range)
-                folder = find_potential_folder(start_date, end_date, n_components, site)
-            self.generator = ArtificialTraceGenerator(period=period,
-                                                      recompute_freq=recompute_freq,
-                                                      site=site,
-                                                      gmm_folder=folder
-                                                      )
-        self.day = self.generator.day
+        self.cn = caltech_acn() if self.site == 'caltech' else jpl_acn()
+        self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
 
         # Define observation space and action space
         # Observations are dictionaries describing arrivals and departures of EVs,
         # constraint matrix, current magnitude bounds, demands, phases, and timesteps
-        self.observation_space = get_observation_space(self.num_constraints,
-                                                       self.num_stations,
-                                                       self.period)
+        self.observation_space = get_observation_space(self.cn)
         # Define action space, which is the charging rate for all EVs
-        self.action_space = get_action_space(self.num_stations, action_type)
-
-    def _init_charging_network(self) -> None:
-        """Initialize and set charging network."""
-        if self.site == 'caltech':
-            self.cn = caltech_acn()
-        elif self.site == 'jpl':
-            self.cn = jpl_acn()
-        else:
-            raise NotImplementedError(("site should be either 'caltech' or "
-                                       f"'jpl', found {self.site}"))
-
-    def _new_event_queue(self) -> None:
-        """
-        Generate new event queue.
-
-        If using real traces, update internal day variable and fetch data from
-        ACNData. If using generated traces, sample from a GMM model.
-        """
-        self.events, num_plugs = self.generator.get_event_queue()
-        self.day = self.generator.day
-
-        if self.verbose >= 1:
-            print(f"Simulating day {self.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ")
-
-    def _init_simulator_and_interface(self) -> None:
-        """Initialize and set simulator and interface."""
-        self.simulator = Simulator(
-            network=self.cn,
-            scheduler=None,
-            events=self.events,
-            start=self.day,
-            period=self.period,
-            verbose=False
-        )
-        self.interface = Interface(self.simulator)
+        self.action_space = get_action_space(self.cn, action_type)
 
     def step(self, action: np.ndarray) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
         """
@@ -239,45 +147,24 @@ class EVChargingEnv(gym.Env):
                 Otherwise, for indices with corresponding non-active EVSEs,
                 the entry is zero.
         """
-        # Step internal simulator
         # TODO: make action fit constraints somehow? or nah
-        schedule = to_schedule(action, self.evse_index, self.action_type)
-
-        if self.simulator.event_queue._queue:
-            cur_event = self.simulator.event_queue._queue[0][1]
-            done = self.simulator.step(schedule)
-            self.simulator._resolve = False  # work-around to keep iterating
-        else:
+        # Step internal simulator
+        schedule = to_schedule(action, self.cn, self.action_type)
+        if self.simulator.event_queue.empty():
             done = True
             cur_event = None
-
-        # Next timestamp
-        if done:
-            next_timestamp = self.max_timestamp
         else:
-            next_timestamp = self.simulator.event_queue.queue[0][0]
-
+            cur_event = self.simulator.event_queue.queue[0][1]
+            done = self.simulator.step(schedule)
+            self.simulator._resolve = False  # work-around to keep iterating
+        # Next timestamp
+        next_timestamp = self.max_timestamp if done else self.simulator.event_queue.queue[0][0]
         # Retrieve environment information
-        observation, info = get_observation(self.interface,
-                                            self.num_stations,
-                                            self.evse_name_to_idx,
-                                            self.simulator._iteration,
-                                            get_info=True)
-
-        reward, reward_info = get_rewards(self.interface,
-                                          self.simulator,
-                                          schedule,
-                                          self.prev_timestamp,
-                                          self.timestamp,
-                                          next_timestamp,
-                                          cur_event)
-
-        # Update timestamp
-        self.prev_timestamp = self.timestamp
-        self.timestamp = next_timestamp
-
+        observation, info = get_observation(self.interface, self.evse_name_to_idx)
+        reward, reward_info = get_rewards(self.interface, schedule, self.prev_timestamp, self.timestamp, next_timestamp, cur_event)
+        # Update timestamps
+        self.prev_timestamp, self.timestamp = self.timestamp, next_timestamp
         info.update(reward_info)
-
         return observation, reward, done, info
 
     def reset(self, *,
@@ -308,26 +195,20 @@ class EVChargingEnv(gym.Env):
                 self.verbose = options["verbose"]
         # super().reset(seed=seed)
 
-        # Re-create charging network, assuming no overnight stays
-        self._init_charging_network()
-
-        # Generate new events
-        self._new_event_queue()
-
-        # Create simulator and interface wrapper
-        self._init_simulator_and_interface()
-
-        self.prev_timestamp = 0
-        self.timestamp = self.simulator.event_queue.queue[0][0]
-
-        self.starting_demands = {}
-
+        # Initialize charging network
+        self.cn = caltech_acn() if self.site == 'caltech' else jpl_acn()
+        # Initialize event queue
+        self.events, num_plugs = self.data_generator.get_event_queue()
+        self.day = self.data_generator.day
+        if self.verbose >= 1:
+            print(f"Simulating day {self.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ")
+        # Initialize simulator and interface
+        self.simulator = Simulator(network=self.cn, scheduler=None, events=self.events, start=self.day, period=self.period, verbose=False)
+        self.interface = Interface(self.simulator)
+        # Initialize time steps
+        self.prev_timestamp, self.timestamp = 0, self.simulator.event_queue.queue[0][0]
         # Retrieve environment information
-        return get_observation(self.interface,
-                               self.num_stations,
-                               self.evse_name_to_idx,
-                               self.simulator._iteration,
-                               get_info=return_info)
+        return get_observation(self.interface, self.evse_name_to_idx, get_info=return_info)
 
     def render(self) -> None:
         """Render environment."""
@@ -344,26 +225,31 @@ class EVChargingEnv(gym.Env):
 
 if __name__ == "__main__":
     from collections import defaultdict
+    from .event_generation import RealTraceGenerator, ArtificialTraceGenerator
 
     np.random.seed(42)
     import random
     random.seed(42)
 
-    for site in ['jpl']:
-        for r, s in zip([False], [False]):
-            print("----------------------------")
-            print("----------------------------")
-            print("----------------------------")
-            print("----------------------------")
-            print(site, "real_traces", r, "sequential", s)
-            env = EVChargingEnv(site=site, date_range=["2019-01-01", "2019-12-31"], real_traces=r, n_components=50, sequential=s, verbose=0, action_type='continuous')
+    rtg1 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-11'], sequential=True)
+    rtg2 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-13'], sequential=False)
+    atg = ArtificialTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-15'], n_components=50)
+
+    for generator in [rtg1, rtg2, atg]:
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        print(generator.site)
+        env = EVChargingEnv(generator, action_type='discrete')
+        for _ in range(10):
             observation = env.reset()
             all_timestamps = sorted([event[0] for event in env.events._queue])
 
             rewards = 0
             done = False
             i = 0
-            action = np.ones(shape=(54,), ) * 0.3
+            action = np.ones(shape=(54,), ) * 2
             d = defaultdict(list)
             while not done:
                 observation, reward, done, info = env.step(action)

@@ -22,13 +22,26 @@ from acnportal.acnsim.models.ev import EV
 from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
 
 from .train_artificial_data_model import create_gmms
-from .utils import DATE_FORMAT, find_potential_folder, get_real_events, load_gmm, MINS_IN_DAY, REQ_ENERGY_SCALE
+from .utils import DATE_FORMAT, get_real_events, load_gmm, MINS_IN_DAY, REQ_ENERGY_SCALE, GMM_DIR
 
 DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
 API_TOKEN = "DEMO_TOKEN"
 GMMS_PATH = os.path.join("sustaingym", "envs", "evcharging", "gmms")
 DEFAULT_DATE_RANGE = ["2018-11-05", "2018-11-11"]
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
+
+
+def find_potential_folder(begin: datetime, end: datetime, n_components: int, site: str):
+    """Return potential folders that contain trained GMMs."""
+    folder_prefix = begin.strftime(DATE_FORMAT) + " " + end.strftime(DATE_FORMAT)
+    # check overall directory existence
+    if not os.path.exists(os.path.join(GMM_DIR, site)):
+        return ""
+    # check sub-directories
+    for dir in os.listdir(os.path.join(GMM_DIR, site)):
+        if folder_prefix in dir and int(dir.split(' ')[-1]) == n_components:
+            return dir
+    return ""
 
 
 class AbstractTraceGenerator:
@@ -45,9 +58,11 @@ class AbstractTraceGenerator:
                  date_range: Sequence[str],
                  requested_energy_cap: float = 100):
         self.site = site
+        if MINS_IN_DAY % period != 0:
+            raise ValueError(f"Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0")
         self.period = period
-        self.recompute_freq = recompute_freq
 
+        self.recompute_freq = recompute_freq
         if len(date_range) != 2:
             raise ValueError(f"Expected date_range to have length 2, got {len(date_range)}")
         if not date_range:
@@ -58,6 +73,9 @@ class AbstractTraceGenerator:
         self.requested_energy_cap = requested_energy_cap
         self.station_ids = caltech_acn().station_ids if site == 'caltech' else jpl_acn().station_ids
         self.num_stations = len(self.station_ids)
+
+        now = datetime.now()
+        self.day = datetime(now.year, now.month, now.day)
 
     def _update_day(self) -> None:
         raise NotImplementedError
@@ -219,6 +237,24 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
             format YYYY-MM-DD. Defaults to ["2018-11-05", "2018-11-11"].
         n_components: number of components in use for GMM
         requested_energy_cap: largest amount of requested energy allowed (kWh)
+
+    Notes:
+        gmm directory: Trained GMMs in directory used when real_traces is set
+            to False. The folder structure looks as follows:
+            gmms
+            |----caltech
+            |   |--------2019-01-01 2019-12-31 50
+            |   |--------2020-01-01 2020-12-31 50
+            |   |--------2021-01-01 2021-08-31 50
+            |   |--------....
+            |----jpl
+            |   |--------2019-01-01 2019-12-31 50
+            |   |--------2020-01-01 2020-12-31 50
+            |   |--------2021-01-01 2021-08-31 50
+            |   |--------....
+            Each folder consists of the start date, end date, and number of
+            GMM components trained. See train_artificial_data_model.py for
+            how to train GMMs from the command-line.
     """
     def __init__(self,
                  site: str,
@@ -238,8 +274,6 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
         self.gmm = load_gmm(gmm_path)
         self.cnt = np.load(os.path.join(gmm_path, "_cnts.npy"))  # number of sessions per day
         self.station_usage = np.load(os.path.join(gmm_path, "_station_usage.npy"))  # number of sessions on stations
-        now = datetime.now()
-        self.day = datetime(now.year, now.month, now.day)
 
     def _update_day(self) -> None:
         """Increment day counter indefinitely."""

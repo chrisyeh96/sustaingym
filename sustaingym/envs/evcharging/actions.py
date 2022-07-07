@@ -5,16 +5,18 @@ acnportal.acnsim.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
-
 from gym import spaces
 import numpy as np
+
+from acnportal.acnsim.network import ChargingNetwork
+
 
 ACTION_DISCRETIZATION_FACTOR = 8
 MIN_PILOT_SIGNAL = 8
 MAX_PILOT_SIGNAL = 32
 
-def get_action_space(num_stations: int, action_type: str) -> spaces.MultiDiscrete:
+
+def get_action_space(cn: ChargingNetwork, action_type: str) -> spaces.MultiDiscrete:
     """
     Return discretized action space for a charging network.
 
@@ -28,7 +30,7 @@ def get_action_space(num_stations: int, action_type: str) -> spaces.MultiDiscret
     """
     if action_type == 'discrete':
         return spaces.MultiDiscrete(
-            [5 for _ in range(num_stations)]
+            [5 for _ in range(len(cn.station_ids))]
         )
     elif action_type == 'continuous':
         return spaces.Box(
@@ -38,7 +40,7 @@ def get_action_space(num_stations: int, action_type: str) -> spaces.MultiDiscret
         raise ValueError("Only 'discrete' and 'continuous' action_types are allowed. ")
 
 
-def to_schedule(action: np.ndarray, evses: Sequence[str], action_type: str) -> dict[str, list[float]]:
+def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: str) -> dict[str, list[float]]:
     """
     Returns a dictionary for pilot signals given the action.
 
@@ -49,7 +51,7 @@ def to_schedule(action: np.ndarray, evses: Sequence[str], action_type: str) -> d
     Args:
         action: np.ndarray of shape (len(evses),)
             entries of action are pilot signals from {0, 1, 2, 3, 4}
-        evses: list of names of charging stations
+        evses: list of names of charging stations TODO
         action_type: either 'discrete' or 'continuous'
 
 
@@ -58,6 +60,7 @@ def to_schedule(action: np.ndarray, evses: Sequence[str], action_type: str) -> d
             required by the step function of
             acnportal.acnsim.simulator.Simulator
     """
+    evses = cn.station_ids
     if action_type == 'discrete':
         return {e: [ACTION_DISCRETIZATION_FACTOR * a] for a, e in zip(action, evses)}
     elif action_type == 'continuous':

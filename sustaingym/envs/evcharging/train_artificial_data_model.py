@@ -26,7 +26,6 @@ from argparse import RawTextHelpFormatter
 from datetime import datetime
 import os
 from typing import Sequence
-from unittest.mock import DEFAULT
 
 import numpy as np
 import pandas as pd
@@ -34,7 +33,7 @@ from sklearn.mixture import GaussianMixture
 
 from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
 
-from .utils import GMM_DIR, get_folder_name, get_real_events, parse_string_date_list, save_gmm, start_date_str, end_date_str, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE
+from .utils import get_real_events, get_folder_name, save_gmm, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, GMM_DIR
 
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
@@ -104,6 +103,47 @@ def station_id_pct(df: pd.DataFrame, n2i: dict[str: int]) -> list[int]:
     cnts = np.array(cnts, dtype=np.float32)
     cnts /= sum(cnts)
     return cnts
+
+
+def parse_string_date_list(date_range: Sequence[str] | Sequence[datetime]) -> Sequence[tuple[datetime]]:
+    """
+    Parse a list of strings and return a list of datetimes.
+
+    Args:
+        date_range: an even-length list of dates with each consecutive
+            pair of dates the start and end date of a period. Must be a
+            string and have format YYYY-MM-DD, or a datetime object.
+
+    Returns:
+        A sequence of 2-tuples that contains a begin and end datetime.
+
+    Raises:
+        ValueError: length of date_range is odd
+        ValueError: begin date of pair is not before end date of pair
+        ValueError: begin and end date not in data's range
+    """
+    if len(date_range) % 2 != 0:
+        raise ValueError(f"Number of dates must be divisible by 2, found length {len(date_range)} with the second later than the first.")
+
+    date_range_dt = []
+    for i in range(len(date_range) // 2):
+        begin, end = date_range[2 * i], date_range[2 * i + 1]
+        if type(begin) == str:
+            begin = datetime.strptime(begin, DATE_FORMAT)
+        if type(end) == str:
+            end = datetime.strptime(end, DATE_FORMAT)
+
+        if begin > end:
+            raise ValueError(f"beginning of date range {date_range[2 * i]} later than end {date_range[2 * i + 1]}")
+
+        date_range_dt.append((begin, end))
+
+        if begin < START_DATE:
+            raise ValueError(f"beginning of date range {date_range[2 * i]} before data's start date {START_DATE.strftime(DATE_FORMAT)}")
+
+        if end > END_DATE:
+            raise ValueError(f"end of date range {date_range[2 * i + 1]} after data's end date {END_DATE.strftime(DATE_FORMAT)}")
+    return date_range_dt
 
 
 def create_gmms(site: str, gmm_n_components: int, date_ranges: Sequence[str] | Sequence[datetime] = None) -> None:
@@ -190,7 +230,7 @@ if __name__ == "__main__":
     date_range_help = ("Date ranges for GMM models to be trained on.\n"
                        "Number of dates must be divisible by 2, \nwith the second later than the first. "
                        "\nDates should be formatted as YYYY-MM-DD. "
-                       f"\nSupported ranges in between {start_date_str} and {end_date_str}.")
+                       f"\nSupported ranges in between {START_DATE.strftime(DATE_FORMAT)} and {END_DATE.strftime(DATE_FORMAT)}.")
     parser.add_argument("--date_ranges", nargs="+", help=date_range_help)
 
     args = parser.parse_args()
