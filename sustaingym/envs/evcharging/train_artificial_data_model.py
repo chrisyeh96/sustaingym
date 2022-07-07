@@ -23,8 +23,10 @@ from __future__ import annotations
 
 import argparse
 from argparse import RawTextHelpFormatter
+from datetime import datetime
 import os
 from typing import Sequence
+from unittest.mock import DEFAULT
 
 import numpy as np
 import pandas as pd
@@ -104,7 +106,7 @@ def station_id_pct(df: pd.DataFrame, n2i: dict[str: int]) -> list[int]:
     return cnts
 
 
-def create_gmms(site: str, gmm_n_components: int, date_ranges: Sequence[str] = None) -> None:
+def create_gmms(site: str, gmm_n_components: int, date_ranges: Sequence[str] | Sequence[datetime] = None) -> None:
     """
     Creates gmms and saves in gmm_folder.
 
@@ -122,12 +124,11 @@ def create_gmms(site: str, gmm_n_components: int, date_ranges: Sequence[str] = N
     SAVE_DIR = os.path.join(GMM_DIR, site)
     n_components = gmm_n_components
 
-    date_range = ["2019-01-01", "2019-12-31", "2020-01-01", "2020-12-31", "2021-01-01", "2021-08-31"]
-    if date_ranges:
-        date_range = date_ranges
+    DEFAULT_DATE_RANGE = ["2019-01-01", "2019-12-31", "2020-01-01", "2020-12-31", "2021-01-01", "2021-08-31"]
+    if not date_ranges:
+        date_ranges = DEFAULT_DATE_RANGE
 
     print("\n--- Training GMMs ---\n")
-
     # Get stations
     if site == 'caltech':
         n2i = {station_id: i for i, station_id in enumerate(caltech_acn().station_ids)}
@@ -135,7 +136,8 @@ def create_gmms(site: str, gmm_n_components: int, date_ranges: Sequence[str] = N
         n2i = {station_id: i for i, station_id in enumerate(jpl_acn().station_ids)}
 
     # Get date ranges
-    date_range_dt = parse_string_date_list(date_range)
+    date_range_dt = parse_string_date_list(date_ranges)
+
     folder_names, dfs = [], []
     for begin, end in date_range_dt:
         range_str = begin.strftime(DATE_FORMAT) + " " + end.strftime(DATE_FORMAT)

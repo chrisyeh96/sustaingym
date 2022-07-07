@@ -1,264 +1,256 @@
 """
-This module contains the logic for generating events. It defines a method for
-generating real event traces and a class for generating artificial event
-traces.
+This module contains classes for trace generation. It defines the abstract
+class AbstractTraceGenerator, which is implemented by the RealTraceGenerator and
+ArtificialTraceGenerator. They generate traces by running simulations on real
+traces of data and sampling events from an artificial data model, respectively.
 """
 from __future__ import annotations
 
-from collections.abc import Set, Sequence
+from collections.abc import Sequence
 
 from datetime import datetime, timedelta
-import numpy as np
 import os
+from random import randrange
 import uuid
+
+import numpy as np
+import pandas as pd
 
 from acnportal.acnsim.events import PluginEvent, RecomputeEvent, EventQueue
 from acnportal.acnsim.models.battery import Battery, Linear2StageBattery
 from acnportal.acnsim.models.ev import EV
 from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
 
-from .utils import get_real_events, load_gmm, random_date, MINS_IN_DAY, REQ_ENERGY_SCALE
+from .train_artificial_data_model import create_gmms
+from .utils import DATE_FORMAT, find_potential_folder, get_real_events, load_gmm, MINS_IN_DAY, REQ_ENERGY_SCALE
 
 DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
 API_TOKEN = "DEMO_TOKEN"
 GMMS_PATH = os.path.join("sustaingym", "envs", "evcharging", "gmms")
-DEFAULT_DATE_RANGE = [(datetime(2018, 11, 5), datetime(2018, 11, 11))]
+DEFAULT_DATE_RANGE = ["2018-11-05", "2018-11-11"]
+ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 
 
-def datetime_to_timestamp(dt: datetime, period: int) -> int:
+class AbstractTraceGenerator:
     """
-    Helper function to get_sessions. Returns simulation timestamp of datetime.
-    """
-    return (dt.hour * 60 + dt.minute) // period
+    Abstract class for event queue generation.
 
-
-class RealTraceGenerator:
-    """
-    Class for event queue generation using real traces from ACNData.
-
-    Generate PlugIn events defined in acnportal.acnsim.events for an ACN
-    Simulator object. Unplug events are automatically internally and don't
-    need to be generated. Recompute events are added depending on the
-    argument recompute_freq.
-
-    Args:
-        station_ids: station ids in charging network to compare with.
-        site: either 'caltech' or 'jpl' garage to get events from
-        use_unclaimed: whether to use unclaimed data. If True
-            - Battery init_charge: 100 - session['kWhDelivered']
-            - estimated_departure: disconnect timestamp.
-        sequential: whether to draw sequentially or randomly
-        date_ranges: an even-length list of dates with each consecutive
-            pair of dates the start and end date of a period. Must be a
-            string and have format YYYY-MM-DD. Defaults to one date
-            range: 2018-11-05 to 2018-11-11.
-        period: number of minutes of each time interval in simulation
-        recompute_freq: number of periods for recurring recompute
-        requested_energy_cap: largest amount of requested energy allowed (kWh)
-
-    Parameters:
-        day: date of collection, only year, month, and day are
-            considered.
-
-    Assumes: TODO
-        sessions are in Pacific time.
-
-    Raises:
-        ValueError: length of date_range is odd
-        ValueError: begin date of pair is not before end date of pair
-        ValueError: begin and end date not in data's range
+    Subclasses are expected to implement the methods _update_day
+    and _create-events.
     """
     def __init__(self,
-                 station_ids: Set[str],
                  site: str,
-                 use_unclaimed: bool,
-                 sequential: bool,
-                 date_ranges: Sequence[str],
                  period: int,
                  recompute_freq: int,
+                 date_range: Sequence[str],
                  requested_energy_cap: float = 100):
-
-        self.station_ids = station_ids
         self.site = site
-        self.use_unclaimed = use_unclaimed
-        self.sequential = sequential
-        self.date_ranges = date_ranges
-        if not self.date_ranges:
-            self.date_ranges = DEFAULT_DATE_RANGE
         self.period = period
         self.recompute_freq = recompute_freq
+
+        if len(date_range) != 2:
+            raise ValueError(f"Expected date_range to have length 2, got {len(date_range)}")
+        if not date_range:
+            self.date_range = DEFAULT_DATE_RANGE
+        date_range = list(map(lambda x: datetime.strptime(x, DATE_FORMAT), date_range))  # convert strings to datetime objects
+        self.date_range: list[datetime] = date_range
+
         self.requested_energy_cap = requested_energy_cap
+        self.station_ids = caltech_acn().station_ids if site == 'caltech' else jpl_acn().station_ids
+        self.num_stations = len(self.station_ids)
 
-        if self.sequential:
-            self.day = self.date_ranges[0][0] - timedelta(days=1)
-        else:
-            self.day = self._random_day()
+    def _update_day(self) -> None:
+        raise NotImplementedError
 
-    def update_day(self) -> None:
-        """Update day based on how sequential is set. """
-        if self.sequential:
-            self.interval_idx = 0
-            self._next_day()
-        else:
-            self._random_day()
-
-    def _random_day(self) -> None:
-        """
-        Choose the next day at randomly by sampling the intervals uniformly
-        and the days within the interval uniformly.
-        """
-        self.interval_idx = np.random.choice(len(self.date_ranges))
-        start, end = self.date_ranges[self.interval_idx]
-        self.day = random_date(start, end)
-
-    def _next_day(self) -> None:
-        self.day += timedelta(days=1)
-        # case that day has exceeded the current range of days
-        if self.day > self.date_ranges[self.interval_idx][1]:
-            self.interval_idx += 1
-            self.interval_idx %= len(self.date_ranges)
-            self.day = self.date_ranges[self.interval_idx][0]
+    def _create_events(self) -> pd.DataFrame:
+        raise NotImplementedError
 
     def get_event_queue(self) -> EventQueue | int:
         """
-        Create an event queue from real traces in ACNData.
-
-        Generate PlugIn events defined in acnportal.acnsim.events for an ACN
-        Simulator object. Unplug events are automatically internally and don't
-        need to be generated. Recompute events are added depending on the
-        argument recompute_freq.
-
-        Args:
-            day: date of collection, only year, month, and day are
-                considered.
-            period: number of minutes of each time interval in simulation.
-            recompute_freq: number of periods for recurring recompute.
-            station_ids: station ids in charging network to compare with.
-            site: either 'caltech' or 'jpl' garage to get events from.
-            use_unclaimed: whether to use unclaimed data. If True
-                - Battery init_charge: 100 - session['kWhDelivered']
-                - estimated_departure: disconnect timestamp.
-            requested_energy_cap: largest amount of requested energy allowed (kWh)
+        Create an EventQueue object from samples by creating a list of
+        Plugin and Recompute events. Unplug events are generated internally
+        by the simulator and do not need to be explicitly added. Recompute
+        events are added every `recompute_freq` periods.
 
         Returns:
-            events used for acnportal simulator and number of plug in events.
-
-        Assumes: TODO
-            sessions are in Pacific time.
+            (EventQueue) event queue of EV charging sessions
+            (int) the number of plug in events, without counting recompute
+                events
         """
-        events_df = get_real_events(self.day, self.day, site=self.site)
-        if not self.use_unclaimed:
-            events_df = events_df[events_df['claimed']]
+        self._update_day()
+        samples: pd.DataFrame = self._create_events()
 
-        events = []
-
-        # monitor connection/departure so no recomputes are generated then
         non_recompute_timestamps = set()
-        for _, session in events_df.iterrows():
-            connection_timestamp = datetime_to_timestamp(session['arrival'],
-                                                         self.period)
-            disconnect_timestamp = datetime_to_timestamp(session['departure'],
-                                                         self.period)
-            # Discard sessions with disconnect - connection <= 0, which occurs when
-            # EV stays overnight
-            if session['arrival'].day != session['departure'].day:
-                continue
-
-            # Discard sessions with station id's not in dataset
-            if session['station_id'] not in self.station_ids:
-                continue
-
-            est_depart_timestamp = datetime_to_timestamp(session['estimated_departure'],
-                                                         self.period)
-            requested_energy = min(session['requested_energy (kWh)'], self.requested_energy_cap)
-
-            # Discard sessions with est_disconnect - connection <= 0
-            if est_depart_timestamp <= connection_timestamp:
-                continue
-                
-            non_recompute_timestamps.add(connection_timestamp)
-            non_recompute_timestamps.add(disconnect_timestamp)
+        events = []
+        for i in range(len(samples)):
+            requested_energy = min(samples['requested_energy (kWh)'].iloc[i], self.requested_energy_cap)
 
             battery = Battery(capacity=100,
                               init_charge=max(0, 100-requested_energy),
                               max_power=100)
-
             ev = EV(
-                arrival=connection_timestamp,
-                departure=disconnect_timestamp,
+                arrival=samples['arrival'].iloc[i],
+                departure=samples['departure'].iloc[i],
                 requested_energy=requested_energy,
-                station_id=session['station_id'],
-                session_id=session['session_id'],
+                station_id=samples['station_id'].iloc[i],
+                session_id=samples['session_id'].iloc[i],
                 battery=battery,
-                estimated_departure=est_depart_timestamp
+                estimated_departure=samples['estimated_departure'].iloc[i]
             )
 
-            event = PluginEvent(connection_timestamp, ev)
+            event = PluginEvent(samples['arrival'].iloc[i], ev)
             # no need for UnplugEvent as the simulator takes care of it
             events.append(event)
 
+            non_recompute_timestamps.add(samples['arrival'].iloc[i])
+            non_recompute_timestamps.add(samples['departure'].iloc[i])
+
         num_plugin = len(events)
 
-        # add recompute event every every `recompute_freq` periods
+        # add recompute event every `recompute_freq` periods
         for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
             recompute_timestamp = i * self.recompute_freq
             if recompute_timestamp not in non_recompute_timestamps:
-                event = RecomputeEvent(i * self.recompute_freq)
+                event = RecomputeEvent(recompute_timestamp)
                 events.append(event)
 
         events = EventQueue(events)
         return events, num_plugin
 
 
-ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
+class RealTraceGenerator(AbstractTraceGenerator):
+    """
+    Class for event queue generation using real traces from ACNData.
+
+    Args:
+        site: either 'caltech' or 'jpl' garage to get events from
+        period: number of minutes of each time interval in simulation
+        recompute_freq: number of periods for recurring recompute
+        date_range: sequence of length two that defines the start and end date
+            for event generation. Both elements must be a string and have
+            format YYYY-MM-DD. Defaults to ["2018-11-05", "2018-11-11"].
+        use_unclaimed: whether to use unclaimed data. Unclaimed data does not
+            specify requested energy or estimated departure. If set to True,
+            the generator will use the energy delivered in the session as the
+            requested energy and the disconnect time as the estimated
+            departure.
+        sequential: whether to draw sequentially or randomly
+        requested_energy_cap: largest amount of requested energy allowed (kWh)
+
+    Parameters:
+        day: date of the episode run
+
+    Assumes:
+        sessions are in Pacific time.
+
+    Raises:
+        ValueError: length of date_range is not 2
+        ValueError: entries of date_range are not in the correct format.
+    """
+    def __init__(self,
+                 site: str,
+                 date_range: Sequence[str] = None,
+                 sequential: bool = True,
+                 period: int = 5,
+                 recompute_freq: int = 2,
+                 use_unclaimed: bool = False,
+                 requested_energy_cap: float = 100):
+        super().__init__(site, period, recompute_freq, date_range, requested_energy_cap)
+        self.station_ids = set(self.station_ids)  # convert parent attribute to set
+        self.use_unclaimed = use_unclaimed
+        self.sequential = sequential
+        self.day = self.date_range[0] - timedelta(days=1) if sequential else self._update_day()
+
+    def _update_day(self) -> None:
+        """Either increment day or randomly sample from date range."""
+        if self.sequential:
+            self.day += timedelta(days=1)
+            if self.day > self.date_range[1]:  # cycle back when the day has exceeded the current range
+                self.day = self.date_range[0]
+        else:
+            interval_length = (self.date_range[1] - self.date_range[0]).days + 1  # make inclusive
+            self.day = self.date_range[0] + timedelta(randrange(interval_length))
+
+    def _create_events(self) -> pd.DataFrame:
+        """
+        Retrieve and filter real events on a given day.
+
+        Returns:
+            (pd.DataFrame) real sessions with datetimes in terms of timestamps.
+        """
+        df = get_real_events(self.day, self.day, site=self.site)  # Get events dataframe
+        if not self.use_unclaimed:
+            df = df[df['claimed']]
+
+        # Filter sessions where estimated departure / departure is not the same day as arrival
+        df['one_day'] = df['arrival'].apply(lambda x: x.day) == df['departure'].apply(lambda x: x.day)
+        df = df[df['one_day']]
+        df['one_day'] = df['arrival'].apply(lambda x: x.day) == df['estimated_departure'].apply(lambda x: x.day)
+        df = df[df['one_day']]
+
+        # convert arrival, departure , estimated departure to timestamps
+        def datetime_to_timestamp(dt: datetime, period: int) -> int:
+            """Return simulation timestamp of datetime."""
+            return (dt.hour * 60 + dt.minute) // period
+        df['arrival'] = df['arrival'].apply(lambda x: datetime_to_timestamp(x, self.period))
+        df['departure'] = df['departure'].apply(lambda x: datetime_to_timestamp(x, self.period))
+        df['estimated_departure'] = df['estimated_departure'].apply(lambda x: datetime_to_timestamp(x, self.period))
+
+        # Filter sessions that are not in the set of station ids
+        df['station_id_in_set'] = df['station_id'].apply(lambda x: x in self.station_ids)
+        df = df[df['station_id_in_set']]
+
+        # Filter sessions with estimated departure before connection
+        df = df[df['estimated_departure'] > df['arrival']]
+
+        return df.copy()
 
 
-class ArtificialTraceGenerator:
+class ArtificialTraceGenerator(AbstractTraceGenerator):
     """
     Class for event queue generation using random sampling from trained GMMs.
 
     Args:
+        site: either 'caltech' or 'jpl' garage to get events from
         period: number of minutes of each time interval in simulation
         recompute_freq: number of periods for recurring recompute
-        site: either 'caltech' or 'jpl' garage to get events from
-        gmm_folder: folder name where GMM parameters reside.
+        date_range: sequence of length two that defines the start and end date
+            for event generation. Both elements must be a string and have
+            format YYYY-MM-DD. Defaults to ["2018-11-05", "2018-11-11"].
+        n_components: number of components in use for GMM
         requested_energy_cap: largest amount of requested energy allowed (kWh)
-
     """
     def __init__(self,
-                 period: int,
-                 recompute_freq: int,
                  site: str,
-                 gmm_folder: str,
+                 date_range: Sequence[str] = None,
+                 n_components: int = 50,
+                 period: int = 5,
+                 recompute_freq: int = 2,
                  requested_energy_cap: float = 100):
-        self.period = period
-        self.recompute_freq = recompute_freq
-        self.site = site
-        self.requested_energy_cap = requested_energy_cap
-        self.gmm_path = os.path.join(GMMS_PATH, site, gmm_folder)
-        self.gmm = load_gmm(self.gmm_path)
-        self.cnt = np.load(os.path.join(self.gmm_path, "_cnts.npy"))
-        self.station_usage = np.load(os.path.join(self.gmm_path, "_station_usage.npy"))
-
-        if site == "caltech":
-            self.station_ids = caltech_acn().station_ids
-        else:
-            self.station_ids = jpl_acn().station_ids
-        self.num_stations = len(self.station_ids)
-
+        super().__init__(site, period, recompute_freq, date_range, requested_energy_cap)
+        self.n_components = n_components
+        # look for gmm if already trained
+        gmm_folder = find_potential_folder(self.date_range[0], self.date_range[1], n_components, site)
+        if not gmm_folder:
+            create_gmms(self.site, self.n_components, self.date_range)
+            gmm_folder = find_potential_folder(self.date_range[0], self.date_range[1], n_components, site)
+        gmm_path = os.path.join(GMMS_PATH, site, gmm_folder)
+        self.gmm = load_gmm(gmm_path)
+        self.cnt = np.load(os.path.join(gmm_path, "_cnts.npy"))  # number of sessions per day
+        self.station_usage = np.load(os.path.join(gmm_path, "_station_usage.npy"))  # number of sessions on stations
         now = datetime.now()
         self.day = datetime(now.year, now.month, now.day)
 
-    def update_day(self) -> None:
-        """Update day."""
+    def _update_day(self) -> None:
+        """Increment day counter indefinitely."""
         self.day += timedelta(days=1)
 
-    def sample(self, n: int) -> np.ndarray:
+    def _sample(self, n: int) -> np.ndarray:
         """
-        Return `n` samples from a single GMM at a given index.
+        Return samples from GMM.
 
         Args:
-            n: number of samples.
+            n: number of samples to generate.
 
         Returns:
             array of shape (n, 4) whose columns are arrival time in minutes,
@@ -273,8 +265,7 @@ class ArtificialTraceGenerator:
 
             # discard sample if arrival, departure, estimated departure or
             #  requested energy not in bound
-            if sample[0][ARRCOL] < 0 or sample[0][DEPCOL] >= 1 or \
-               sample[0][ESTCOL] >= 1 or sample[0][EREQCOL] < 0:
+            if sample[0][ARRCOL] < 0 or sample[0][DEPCOL] >= 1 or sample[0][ESTCOL] >= 1 or sample[0][EREQCOL] < 0:
                 continue
 
             # rescale arrival, departure, estimated departure
@@ -283,8 +274,7 @@ class ArtificialTraceGenerator:
             sample[0][ESTCOL] = MINS_IN_DAY * sample[0][ESTCOL] // self.period
 
             # discard sample if arrival >= departure or arrival >= estimated_departure
-            if sample[0][ARRCOL] >= sample[0][DEPCOL] or \
-               sample[0][ARRCOL] >= sample[0][ESTCOL]:
+            if sample[0][ARRCOL] >= sample[0][DEPCOL] or sample[0][ARRCOL] >= sample[0][ESTCOL]:
                 continue
 
             np.copyto(samples[i], sample)
@@ -294,91 +284,59 @@ class ArtificialTraceGenerator:
         samples[:, EREQCOL] *= REQ_ENERGY_SCALE
         return samples
 
-    def get_event_queue(self,
-                        station_uniform_sampling: bool = True
-                        ) -> EventQueue | int:
+    def _create_events(self) -> pd.DataFrame:
         """
-        Get event queue from artificially created data.
+        Fill in other attributes not generated by GMM.
 
-        Args:
-            station_uniform_sampling (bool) - if True, uniformly samples
-                station; otherwise, samples from the distribution of sessions
-                on stations.
-
-        Returns:
-            events used for acnportal simulator and number of plug in events.
+        First, call _sample to generate arrival, departure, estimated departure,
+        and requested energy fields. Then, create session_id and station_id
+        fields. The station_id is sampled from the empirical probability density
+        distribution of stations being taken.
         """
-        # generate samples, capping maximum at the number of stations
+        # generate samples from empirical pdf, capping maximum at the number of stations
         n = min(np.random.choice(self.cnt), self.num_stations)
-        samples = self.sample(n)
+        samples = self._sample(n)
 
-        if station_uniform_sampling:
-            station_id_idx = {station_id: i for i, station_id in enumerate(self.station_ids)}
-            station_id_names = [station_id for station_id in self.station_ids]
-        else:
-            station_ids = list(self.station_ids)
-            station_cnts = self.station_usage.tolist()
+        events = {}
+        events['arrival'] = list(map(int, samples[:, ARRCOL]))
+        events['departure'] = list(map(int, samples[:, DEPCOL]))
+        events['estimated_departure'] = list(map(int, samples[:, ESTCOL]))
+        events['requested_energy (kWh)'] = np.clip(samples[:, EREQCOL], 0, self.requested_energy_cap)
+        events['session_id'] = [str(uuid.uuid4()) for _ in range(n)]
+        events = pd.DataFrame(events)
+        # sort by arrival time for probabilistic sampling of stations
+        events.sort_values('arrival', inplace=True)
 
-        events = []
+        # sample stations according their popularity
+        station_ids_left = self.station_ids.copy()
+        station_cnts = self.station_usage / self.station_usage.sum()
 
-        # monitor connection/departure so no recomputes are generated then
-        non_recompute_timestamps = set()
+        station_ids = []
+        for _ in range(n):
+            idx = np.random.choice(len(station_ids_left), p=station_cnts)
+            station_ids_left[idx], station_ids_left[-1] = station_ids_left[-1], station_ids_left[idx]
+            station_ids.append(station_ids_left.pop())
+            station_cnts[idx], station_cnts[-1] = station_cnts[-1], station_cnts[idx]
+            station_cnts = np.delete(station_cnts, -1)
+            if sum(station_cnts) == 0:  # all stations are zero in empirical pdf -> sample uniformly
+                station_cnts = [1 / len(station_cnts) for _ in range(len(station_cnts))]
+            else:  # otherwise, normalize the probabilities after removal
+                station_cnts = [station_cnts[i] / sum(station_cnts) for i in range(len(station_cnts))]
+        events['station_id'] = station_ids
+        return events
 
-        for arrival, departure, est_departure, energy in samples:
-            if station_uniform_sampling:
-                # remove station id with uniformly random probability
-                idx = np.random.choice(len(station_id_names))
-                station_id_names[idx], station_id_names[-1] = station_id_names[-1], station_id_names[idx]
-                station_id_idx[station_id_names[idx]] = idx
-                del station_id_idx[station_id_names[-1]]
-                station_id = station_id_names.pop()
-            else:
-                # sample station id, remove from both lists
-                idx = np.random.choice(len(station_ids), p=station_cnts)
-                station_ids[idx], station_ids[-1] = station_ids[-1], station_ids[idx]
-                station_id = station_ids.pop()
-                station_cnts[idx], station_cnts[-1] = station_cnts[-1], station_cnts[idx]
-                station_cnts.pop(idx)
 
-                # normalize station_cnts probabilities
-                if sum(station_cnts) == 0:
-                    station_cnts = [1 / len(station_cnts) for _ in range(len(station_cnts))]
-                else:
-                    station_cnts = [station_cnts[i] / sum(station_cnts) for i in range(len(station_cnts))]
+if __name__ == "__main__":
+    import time
+    november_week = ['2018-11-05', '2018-11-11']
+    atg = ArtificialTraceGenerator('caltech', date_range=november_week, n_components=50, period=10, recompute_freq=3)
+    rtg1 = RealTraceGenerator('caltech', date_range=november_week, sequential=True)
+    rtg2 = RealTraceGenerator('caltech', date_range=november_week, sequential=False, use_unclaimed=True)
 
-            arrival, departure, est_departure = int(arrival), int(departure), int(est_departure)
-
-            # cap energy
-            energy = min(self.requested_energy_cap, energy)
-
-            non_recompute_timestamps.add(arrival)
-            non_recompute_timestamps.add(departure)
-
-            battery = Battery(capacity=100,
-                              init_charge=max(0, 100-energy),
-                              max_power=100)
-
-            ev = EV(
-                arrival=arrival,
-                departure=departure,
-                requested_energy=energy,
-                station_id=station_id,
-                session_id=str(uuid.uuid4()),
-                battery=battery,
-                estimated_departure=est_departure
-            )
-
-            event = PluginEvent(arrival, ev)
-            events.append(event)
-
-        num_plugin = len(events)
-
-        # add recompute event every every `recompute_freq` periods
-        for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
-            recompute_timestamp = i * self.recompute_freq
-            if recompute_timestamp not in non_recompute_timestamps:
-                event = RecomputeEvent(i * self.recompute_freq)
-                events.append(event)
-
-        events = EventQueue(events)
-        return events, num_plugin
+    for generator in [atg, rtg1, rtg2]:
+        start = time.time()
+        for _ in range(10):
+            eq, num_events = generator.get_event_queue()
+            print(num_events)
+        end = time.time()
+        print(f"generator {generator} time", end - start)

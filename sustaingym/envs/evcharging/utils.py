@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import timedelta, datetime
 import os
-from random import randrange
 from typing import Sequence
 
 import numpy as np
@@ -25,14 +24,6 @@ REQ_ENERGY_SCALE = 100
 START_DATE = datetime(2018, 11, 1)
 start_date_str, end_date_str = START_DATE.strftime(DATE_FORMAT), END_DATE.strftime(DATE_FORMAT)
 GMM_DIR = os.path.join("sustaingym", "envs", "evcharging", "gmms")
-
-
-def random_date(start: datetime, end: datetime) -> datetime:
-    """Return a random datetime between two datetime objects."""
-    delta = end - start
-    days_interval = delta.days + 1
-    random_day = randrange(days_interval)
-    return start + timedelta(random_day)
 
 
 def get_sessions(start_date: datetime,
@@ -184,14 +175,14 @@ def load_gmm(path: str) -> GaussianMixture:
     return loaded_gmm
 
 
-def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime]]:
+def parse_string_date_list(date_range: Sequence[str] | Sequence[datetime]) -> Sequence[tuple[datetime]]:
     """
     Parse a list of strings and return a list of datetimes.
 
     Args:
         date_range: an even-length list of dates with each consecutive
             pair of dates the start and end date of a period. Must be a
-            string and have format YYYY-MM-DD
+            string and have format YYYY-MM-DD, or a datetime object.
 
     Returns:
         A sequence of 2-tuples that contains a begin and end datetime.
@@ -206,8 +197,11 @@ def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime
 
     date_range_dt = []
     for i in range(len(date_range) // 2):
-        begin = datetime.strptime(date_range[2 * i], DATE_FORMAT)
-        end = datetime.strptime(date_range[2 * i + 1], DATE_FORMAT)
+        begin, end = date_range[2 * i], date_range[2 * i + 1]
+        if type(begin) == str:
+            begin = datetime.strptime(begin, DATE_FORMAT)
+        if type(end) == str:
+            end = datetime.strptime(end, DATE_FORMAT)
 
         if begin > end:
             raise ValueError(f"beginning of date range {date_range[2 * i]} later than end {date_range[2 * i + 1]}")

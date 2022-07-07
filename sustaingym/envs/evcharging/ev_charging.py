@@ -169,10 +169,8 @@ class EVChargingEnv(gym.Env):
         If using real traces, update internal day variable and fetch data from
         ACNData. If using generated traces, sample from a GMM model.
         """
-
-        self.generator.update_day()
-        self.day = self.generator.day
         self.events, num_plugs = self.generator.get_event_queue()
+        self.day = self.generator.day
 
         if self.verbose >= 1:
             print(f"Simulating day {self.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ")
