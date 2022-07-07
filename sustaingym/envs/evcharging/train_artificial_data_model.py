@@ -81,7 +81,7 @@ def filter_unclaimed_sessions(df: pd.DataFrame) -> pd.DataFrame:
     return df[df['claimed']].copy()
 
 
-def station_id_pct(df: pd.DataFrame, n2i: dict[str: int]) -> list[int]:
+def station_id_pct(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
     """
     Returns percentage usage of station ids. Helper function to script.
 

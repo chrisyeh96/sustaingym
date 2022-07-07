@@ -1,12 +1,10 @@
-"""
-This module contains the method that scores how well the agent is doing.
-"""
+"""This module contains functions to calculate rewards."""
 from __future__ import annotations
 
 from typing import Any
 
 from acnportal.acnsim.events import UnplugEvent
-from acnportal.acnsim.simulator import Simulator, Interface
+from acnportal.acnsim.simulator import Interface
 from acnportal.acnsim.events import Event
 import numpy as np
 

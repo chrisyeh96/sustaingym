@@ -1,6 +1,4 @@
-"""
-This module contains the class for the central EV Charging environment.
-"""
+"""This module contains the class for the central EV Charging environment."""
 from __future__ import annotations
 
 from typing import Any
@@ -23,33 +21,18 @@ class EVChargingEnv(gym.Env):
     """
     Central class for the EV Charging gym.
 
-    This class uses the Simulator class in the acnportal.acnsim package to
+    This class uses the Simulator class in the acnportal package to
     simulate a day of charging. The simulation can be done using real data
     from Caltech's ACNData or a Gaussian mixture model (GMM) trained on
     that data (script is located in train_artificial_data_model.py). The
     gym has support for the Caltech and JPL site.
 
     Args:
-        site: the charging site, currently supports either 'caltech' or 'jpl'
-        date_range: a sequence of length 2 that gives the start and end date of
-            a period. Must be a string and have format YYYY-MM-DD.
-        period: the number of minutes for the timestep interval. Should divide
-            evenly into the number of minutes in a day. Default: 5
-        recompute_freq: number of periods elapsed to make the scheduler
-            recompute pilot signals, which is in addition to the compute events
-            when there is a plug in or unplug. Default: 2
-        real_traces: if True, uses real traces for the simulation;
-            otherwise, uses Gaussian mixture model (GMM) samples. Default: False
-        sequential: if True, simulates days sequentially from the start
-            and end date of the data; otherwise, randomly samples a day at the
-            beginning of each episode. Ignored when real_traces is False. Default:
-            True
-        n_components: number of components for GMM
+        data_generator: an object that generates events in an EventQueue
         action_type: either 'continuous' or 'discrete'. If 'discrete' the action
-            space is {0, 1, 2, 3, 4} to signify charging rates of 0 A, 8 A, 16 A,
-            24 A, and 32 A. If 'continuous', the action space is [0, 1] to signify
-            charging rates from 0 A to 32 A. If a charging rate does not achieve
-            the minimum pilot signal, it is set to zero.
+            space is {0, 1, 2, 3, 4}. If 'continuous' it is [0, 4]. These are
+            then scaled to charging rates from 0 A to 32 A. If a charging rate
+            does not achieve the minimum pilot signal, it is set to zero.
         verbose: whether to print out warnings when constraints are being violated
 
     Attributes: TODO??????????? - how to comment attribute type
@@ -103,9 +86,9 @@ class EVChargingEnv(gym.Env):
         observation, reward, done, info tuple required by OpenAI gym.
 
         Args:
-        action: array of shape (number of stations,) with entries in the set
-            {0, 1, 2, 3, 4} if action_type == 'discrete'; otherwise, entries
-            should fall in the range [0, 1]
+            action: array of shape (number of stations,) with entries in the
+                set {0, 1, 2, 3, 4} if action_type == 'discrete'; otherwise,
+                entries should fall in the range [0, 4]
 
         Returns:
             observation: dict
@@ -215,11 +198,7 @@ class EVChargingEnv(gym.Env):
         raise NotImplementedError
 
     def close(self) -> None:
-        """
-        Close the environment.
-
-        Delete simulator, interface, events, and charging network.
-        """
+        """Close the environment. Delete internal variables."""
         del self.simulator, self.interface, self.events, self.cn
 
 
@@ -278,7 +257,7 @@ if __name__ == "__main__":
     #  charging reward 32 - 96
     #  constraint punishment -411
     #  remaining amp periods -10 to -60
-    # 3 
+    # 3
     #  charging cost -2592
     #  charging reward 48 - 144
     #  constraint punishment -1374

@@ -1,32 +1,30 @@
 """
-This module contains methods for defining the action space of the simulation
-and converting actions to usable pilot signals for the Simulator class in
-acnportal.acnsim.
+This module contains methods that define the action space and convert actions
+to usable pilot signals for the Simulator class in acnportal.acnsim.
 """
 from __future__ import annotations
 
+from acnportal.acnsim.network import ChargingNetwork
 from gym import spaces
 import numpy as np
 
-from acnportal.acnsim.network import ChargingNetwork
-
-
-ACTION_DISCRETIZATION_FACTOR = 8
-MIN_PILOT_SIGNAL = 8
+ACTION_SCALING_FACTOR = 8
+DISCRETE_MULTIPLE = 8
+MIN_PILOT_SIGNAL = 6
 MAX_PILOT_SIGNAL = 32
 
 
 def get_action_space(cn: ChargingNetwork, action_type: str) -> spaces.MultiDiscrete:
     """
-    Return discretized action space for a charging network.
+    Return action space for a charging network.
 
     Args:
-        num_stations: number of evse charging stations in network
+        cn: charging network in environment simulation
         action_type: either 'discrete' or 'continuous'
 
     Returns:
-        a space of shape (cn.station_ids,) where each entry
-            takes on values in the set {0, 1, 2, 3, 4}
+        a space of shape (cn.station_ids,) where each entry takes on values in
+        the set {0, 1, 2, 3, 4} or [0, 4], depending on action_type
     """
     if action_type == 'discrete':
         return spaces.MultiDiscrete(
@@ -34,7 +32,7 @@ def get_action_space(cn: ChargingNetwork, action_type: str) -> spaces.MultiDiscr
         )
     elif action_type == 'continuous':
         return spaces.Box(
-            low=0, high=1, shape=(num_stations,), dtype=np.float32
+            low=0, high=4, shape=(len(cn.station_ids),), dtype=np.float32
         )
     else:
         raise ValueError("Only 'discrete' and 'continuous' action_types are allowed. ")
@@ -42,30 +40,37 @@ def get_action_space(cn: ChargingNetwork, action_type: str) -> spaces.MultiDiscr
 
 def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: str) -> dict[str, list[float]]:
     """
-    Returns a dictionary for pilot signals given the action.
+    Given a numpy action, return a dictionary usable for the Simulator class.
 
-    Entries of an action are in the set {0, 1, 2, 3, 4}, and they are scaled
-    up by a factor of 8 to the set {0, 8, 16, 24, 32}, a discretization of the
-    set of allowed currents for AV (AeroVironment) and CC (ClipperCreek).
+    Discrete actions are scaled up by a factor of 8 to the set
+    {0, 8, 16, 24, 32}, a discretization of the set of allowed currents for AV
+    (AeroVironment) and CC (ClipperCreek). Continuous actions are also scaled
+    up by a factor of 8.
 
     Args:
         action: np.ndarray of shape (len(evses),)
-            entries of action are pilot signals from {0, 1, 2, 3, 4}
-        evses: list of names of charging stations TODO
+            If action_type is 'discrete', expects actions in the set
+                {0, 1, 2, 3, 4}.
+            If action_type is 'continuous', expects actions in [0, 4].
+        cn: charging network in environment simulation
         action_type: either 'discrete' or 'continuous'
-
 
     Returns:
         a dictionary mapping station ids to a schedule of pilot signals, as
-            required by the step function of
-            acnportal.acnsim.simulator.Simulator
+            required by acnportal's Simulator
     """
-    evses = cn.station_ids
     if action_type == 'discrete':
-        return {e: [ACTION_DISCRETIZATION_FACTOR * a] for a, e in zip(action, evses)}
+        return {e: [ACTION_SCALING_FACTOR * a] for a, e in zip(action, cn.station_ids)}
     elif action_type == 'continuous':
-        action = np.round(action * MAX_PILOT_SIGNAL)
-        action = np.where(action > MIN_PILOT_SIGNAL, action, 0)
-        return {e: [a] for a, e in zip(action, evses)}
+        action = np.round(action * ACTION_SCALING_FACTOR).astype(np.int32)
+        pilot_signals = {}
+        for i in range(len(cn.station_ids)):
+            station_id = cn.station_ids[i]
+            # hacky way to determine allowable rates
+            if cn._EVSEs[station_id].allowable_rates[1] == MIN_PILOT_SIGNAL:
+                pilot_signals[station_id] = action[i] if action[i] >= MIN_PILOT_SIGNAL else 0  # signals less than minimum are set to zero
+            else:
+                pilot_signals[station_id] = (np.round(action[i] / DISCRETE_MULTIPLE) * DISCRETE_MULTIPLE).astype(np.int32)  # set to {0, 8, 16, 24, 32}
+        return pilot_signals
     else:
         raise ValueError("Only 'discrete' and 'continuous' action_types are allowed. ")

@@ -220,7 +220,6 @@ class RealTraceGenerator(AbstractTraceGenerator):
 
         # Filter sessions with estimated departure before connection
         df = df[df['estimated_departure'] > df['arrival']]
-
         return df.copy()
 
 
@@ -326,6 +325,9 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
         and requested energy fields. Then, create session_id and station_id
         fields. The station_id is sampled from the empirical probability density
         distribution of stations being taken.
+
+        Returns:
+            (pd.DataFrame) DataFrame of artificial sessions.
         """
         # generate samples from empirical pdf, capping maximum at the number of stations
         n = min(np.random.choice(self.cnt), self.num_stations)

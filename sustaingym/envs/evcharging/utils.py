@@ -4,7 +4,6 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import timedelta, datetime
 import os
-from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -24,7 +23,7 @@ START_DATE, END_DATE = datetime(2018, 11, 1), datetime(2021, 8, 31)
 GMM_DIR = os.path.join("sustaingym", "envs", "evcharging", "gmms")
 
 
-def get_folder_name(begin: datetime, end: datetime, n_components: int):
+def get_folder_name(begin: datetime, end: datetime, n_components: int) -> str:
     """Return predefined folder name for a trained GMM."""
     return begin.strftime(DATE_FORMAT) + " " + end.strftime(DATE_FORMAT) + " " + str(n_components)
 
@@ -98,7 +97,6 @@ def get_real_events(start_date: datetime, end_date: datetime,
 
     for session in sessions:
         userInputs = session['userInputs']
-
         connection = session['connectionTime']
         disconnect = session['disconnectTime']
 
