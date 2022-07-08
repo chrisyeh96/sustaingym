@@ -68,9 +68,9 @@ def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: str) -> di
             station_id = cn.station_ids[i]
             # hacky way to determine allowable rates
             if cn._EVSEs[station_id].allowable_rates[1] == MIN_PILOT_SIGNAL:
-                pilot_signals[station_id] = action[i] if action[i] >= MIN_PILOT_SIGNAL else 0  # signals less than minimum are set to zero
+                pilot_signals[station_id] = [action[i] if action[i] >= MIN_PILOT_SIGNAL else 0]  # signals less than minimum are set to zero
             else:
-                pilot_signals[station_id] = (np.round(action[i] / DISCRETE_MULTIPLE) * DISCRETE_MULTIPLE).astype(np.int32)  # set to {0, 8, 16, 24, 32}
+                pilot_signals[station_id] = [(np.round(action[i] / DISCRETE_MULTIPLE) * DISCRETE_MULTIPLE).astype(np.int32)]  # set to {0, 8, 16, 24, 32}
         return pilot_signals
     else:
         raise ValueError("Only 'discrete' and 'continuous' action_types are allowed. ")

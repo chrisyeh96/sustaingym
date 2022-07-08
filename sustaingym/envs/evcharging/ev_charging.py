@@ -55,7 +55,7 @@ class EVChargingEnv(gym.Env):
     metadata: dict = {"render_modes": []}
 
     def __init__(self, data_generator: AbstractTraceGenerator,
-                 action_type: str = 'discrete',
+                 action_type: str = 'discrete',  #TODO
                  verbose: int = 0):
         self.data_generator = data_generator
         self.day = self.data_generator.day
@@ -132,7 +132,7 @@ class EVChargingEnv(gym.Env):
         """
         # TODO: make action fit constraints somehow? or nah
         # Step internal simulator
-        schedule = to_schedule(action, self.cn, self.action_type)
+        schedule = to_schedule(action, self.cn, self.action_type)  # transform action to pilot signals
         if self.simulator.event_queue.empty():
             done = True
             cur_event = None
@@ -144,10 +144,11 @@ class EVChargingEnv(gym.Env):
         next_timestamp = self.max_timestamp if done else self.simulator.event_queue.queue[0][0]
         # Retrieve environment information
         observation, info = get_observation(self.interface, self.evse_name_to_idx)
-        reward, reward_info = get_rewards(self.interface, schedule, self.prev_timestamp, self.timestamp, next_timestamp, cur_event)
+        reward, reward_info = get_rewards(self.interface, schedule, self.prev_timestamp, self.timestamp, next_timestamp, self.period, cur_event)
         # Update timestamps
         self.prev_timestamp, self.timestamp = self.timestamp, next_timestamp
         info.update(reward_info)
+
         return observation, reward, done, info
 
     def reset(self, *,
@@ -205,27 +206,36 @@ class EVChargingEnv(gym.Env):
 if __name__ == "__main__":
     from collections import defaultdict
     from .event_generation import RealTraceGenerator, ArtificialTraceGenerator
+    from acnportal.acnsim.events import PluginEvent
 
     np.random.seed(42)
     import random
     random.seed(42)
 
-    rtg1 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-11'], sequential=True)
-    rtg2 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-13'], sequential=False)
-    atg = ArtificialTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-15'], n_components=50)
+    rtg1 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-11'], sequential=True, period=5)
+    rtg2 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-11'], sequential=True, period=10)
+    # rtg2 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-13'], sequential=False)
+    # atg = ArtificialTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-15'], n_components=50)
 
-    for generator in [rtg1, rtg2, atg]:
+    for generator in [rtg1, rtg2]:  #[rtg1, rtg2, atg]:
         print("----------------------------")
         print("----------------------------")
         print("----------------------------")
         print("----------------------------")
         print(generator.site)
         env = EVChargingEnv(generator, action_type='discrete')
-        for _ in range(10):
+        for _ in range(2):
             observation = env.reset()
-            all_timestamps = sorted([event[0] for event in env.events._queue])
+            # all_timestamps = sorted([event[0] for event in env.events._queue])
 
-            rewards = 0
+            offline_reward_calc = 0
+            for event in env.events.queue:
+                if isinstance(event[1], PluginEvent):
+                    amt_amp_mins = min(env.interface._convert_to_amp_periods(event[1].ev.requested_energy, event[1].ev.station_id) * env.period,
+                                       (event[1].ev.departure - event[1].ev.arrival) * env.period * 16)
+                    # offline_reward_calc += amt_amp_mins# (event[1].ev.departure - event[1].ev.arrival) * env.period * 16
+
+            rewards = 0.
             done = False
             i = 0
             action = np.ones(shape=(54,), ) * 2

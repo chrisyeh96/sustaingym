@@ -31,7 +31,7 @@ DEFAULT_DATE_RANGE = ["2018-11-05", "2018-11-11"]
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 
 
-def find_potential_folder(begin: datetime, end: datetime, n_components: int, site: str):
+def find_potential_folder(begin: datetime, end: datetime, n_components: int, site: str) -> str:
     """Return potential folders that contain trained GMMs."""
     folder_prefix = begin.strftime(DATE_FORMAT) + " " + end.strftime(DATE_FORMAT)
     # check overall directory existence
@@ -67,7 +67,7 @@ class AbstractTraceGenerator:
             raise ValueError(f"Expected date_range to have length 2, got {len(date_range)}")
         if not date_range:
             self.date_range = DEFAULT_DATE_RANGE
-        date_range = list(map(lambda x: datetime.strptime(x, DATE_FORMAT), date_range))  # convert strings to datetime objects
+        date_range: list[datetime] = list(map(lambda x: datetime.strptime(x, DATE_FORMAT), date_range))  # convert strings to datetime objects
         self.date_range: list[datetime] = date_range
 
         self.requested_energy_cap = requested_energy_cap

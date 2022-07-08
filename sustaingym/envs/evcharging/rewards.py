@@ -4,15 +4,15 @@ from __future__ import annotations
 from typing import Any
 
 from acnportal.acnsim.events import UnplugEvent
-from acnportal.acnsim.simulator import Interface
+from acnportal.acnsim.simulator import Interface, Simulator
 from acnportal.acnsim.events import Event
 import numpy as np
 
 
-CHARGE_COST_WEIGHT = 0.025
-DELIVERED_CHARGE_WEIGHT = 10
-CONSTRAINT_VIOLATION_WEIGHT = 2.5
-UNCHARGED_WEIGHT = 10
+CHARGE_COST_WEIGHT = 1
+DELIVERED_CHARGE_WEIGHT = 1
+CONSTRAINT_VIOLATION_WEIGHT = 1
+UNCHARGED_WEIGHT = 1
 
 
 def get_rewards(interface: Interface,
@@ -20,6 +20,7 @@ def get_rewards(interface: Interface,
                 prev_timestamp: int,
                 timestamp: int,
                 next_timestamp: int,
+                period: int,
                 cur_event: Event = None,
                 get_info: bool = True,
                 ) -> float | tuple[float, dict[str, Any]]:
@@ -38,6 +39,7 @@ def get_rewards(interface: Interface,
             compute reward from charge received by EVs
         timestamp: timestamp of current action taken
         next_timestamp: timestamp of next action to be taken
+        period: number of minutes per period
         cur_event: index of unplugged station
         get_info: whether to return information about how reward is calculated
 
@@ -45,15 +47,29 @@ def get_rewards(interface: Interface,
         - total reward awarded to current timestep
         - information on how reward is calculated
     """
-    simulator = interface._simulator
-    timestamp_diff = next_timestamp - timestamp
-
+    simulator: Simulator = interface._simulator
     schedule = schedule_to_numpy(schedule)
-    # Find charging cost based on amount of charge delivered
-    charging_cost = - CHARGE_COST_WEIGHT * sum(schedule) * timestamp_diff
 
-    # Get charging reward based on charging rates for previous interval
-    charging_reward = DELIVERED_CHARGE_WEIGHT * np.sum(simulator.charging_rates[:, prev_timestamp:timestamp])
+    next_interval_mins = (next_timestamp - timestamp) * period
+
+    # Charging cost: amount of charge sent out at current timestamp (A * mins)
+    charging_cost = - CHARGE_COST_WEIGHT * np.sum(schedule) * next_interval_mins
+
+    # Immediate charging reward: amount of charge delivered to vehicles at previous timestamp (A * mins)
+    charging_reward = DELIVERED_CHARGE_WEIGHT * np.sum(simulator.charging_rates[:, prev_timestamp:timestamp]) * period
+
+    # Customer satisfaction reward: margin between energy requested and delivered
+    if cur_event and isinstance(cur_event, UnplugEvent):
+        # punish by how much more energy is requested than is actually delivered
+        charge_left_kwh = min(0, cur_event.ev.energy_delivered - cur_event.ev.requested_energy)
+        charge_left_amp_mins = interface._convert_to_amp_periods(charge_left_kwh, cur_event.ev.station_id) * period
+        remaining_charge_punishment = UNCHARGED_WEIGHT * charge_left_amp_mins
+        departure_event = True
+    else:
+        departure_event = False
+        remaining_charge_punishment = 0
+
+    timestamp_diff = next_timestamp - timestamp
 
     # Find negative reward for current violation by finding sum of current
     # going over the constraints
@@ -62,20 +78,13 @@ def get_rewards(interface: Interface,
     over_current = np.maximum(current_sum - magnitudes, 0)
     constraint_punishment = - CONSTRAINT_VIOLATION_WEIGHT * sum(over_current) * timestamp_diff
 
-    # reward for how much charge a vehicle that is leaving has left with
-    if cur_event and isinstance(cur_event, UnplugEvent):
-        # punish by how much more energy is requested than is actually delivered
-        remaining_amp_periods_punishment = UNCHARGED_WEIGHT * min(0, cur_event.ev.energy_delivered - cur_event.ev.requested_energy)
-        departure_event = True
-    else:
-        departure_event = False
-        remaining_amp_periods_punishment = 0
 
     # Get total reward
-    total_reward = charging_cost + charging_reward + constraint_punishment + remaining_amp_periods_punishment
+    # total_reward = charging_cost + charging_reward + constraint_punishment + remaining_amp_periods_punishment
+    total_reward = remaining_charge_punishment
 
     # normalize by number of charging stations
-    total_reward /= len(simulator.network.station_ids)
+    # total_reward /= len(simulator.network.station_ids)
 
     if get_info:
         info = {
@@ -86,7 +95,7 @@ def get_rewards(interface: Interface,
             "charging_cost": charging_cost,
             "charging_reward": charging_reward,
             "constraint_punishment": constraint_punishment,
-            "remaining_amp_periods_punishment": remaining_amp_periods_punishment,
+            "remaining_amp_periods_punishment": remaining_charge_punishment,
             "departure_event": departure_event,
             "charge_cost_weight": CHARGE_COST_WEIGHT,
             "delivered_charge_weight": DELIVERED_CHARGE_WEIGHT,
