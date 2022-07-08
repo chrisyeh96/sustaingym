@@ -6,28 +6,27 @@ traces of data and sampling events from an artificial data model, respectively.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
-
+from collections.abc import Iterator, Sequence
 from datetime import datetime, timedelta
 import os
 from random import randrange
 import uuid
+from typing import Any
 
-import numpy as np
-import pandas as pd
-
+import acnportal.acndata as acnd
 from acnportal.acnsim.events import PluginEvent, RecomputeEvent, EventQueue
 from acnportal.acnsim.models.battery import Battery, Linear2StageBattery
 from acnportal.acnsim.models.ev import EV
-from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
+import numpy as np
+import pandas as pd
 
 from .train_artificial_data_model import create_gmms
-from .utils import DATE_FORMAT, get_real_events, load_gmm, MINS_IN_DAY, REQ_ENERGY_SCALE, GMM_DIR
+from .utils import DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, GMM_DIR, SiteStr, load_gmm, site_str_to_site, get_real_events
 
 DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
 API_TOKEN = "DEMO_TOKEN"
 GMMS_PATH = os.path.join("sustaingym", "envs", "evcharging", "gmms")
-DEFAULT_DATE_RANGE = ["2018-11-05", "2018-11-11"]
+DEFAULT_DATE_RANGE = ("2018-11-05", "2018-11-11")
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 
 
@@ -48,44 +47,43 @@ class AbstractTraceGenerator:
     """
     Abstract class for event queue generation.
 
-    Subclasses are expected to implement the methods _update_day
-    and _create-events.
+    Subclasses are expected to implement the methods _update_day()
+    and _create_events().
+
+    TODO: document arguments
     """
     def __init__(self,
-                 site: str,
+                 site: SiteStr,
                  period: int,
                  recompute_freq: int,
-                 date_range: Sequence[str],
+                 date_range: tuple[str, str] = DEFAULT_DATE_RANGE,
                  requested_energy_cap: float = 100):
-        self.site = site
         if MINS_IN_DAY % period != 0:
             raise ValueError(f"Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0")
-        self.period = period
 
+        self.site = site
+        self.period = period
         self.recompute_freq = recompute_freq
-        if len(date_range) != 2:
-            raise ValueError(f"Expected date_range to have length 2, got {len(date_range)}")
-        if not date_range:
-            self.date_range = DEFAULT_DATE_RANGE
-        date_range: list[datetime] = list(map(lambda x: datetime.strptime(x, DATE_FORMAT), date_range))  # convert strings to datetime objects
-        self.date_range: list[datetime] = date_range
+        self.date_range = (datetime.strptime(x, DATE_FORMAT) for x in date_range)  # convert strings to datetime objects
 
         self.requested_energy_cap = requested_energy_cap
-        self.station_ids = caltech_acn().station_ids if site == 'caltech' else jpl_acn().station_ids
+        self.station_ids = site_str_to_site(site).station_ids
         self.num_stations = len(self.station_ids)
 
-        now = datetime.now()
-        self.day = datetime(now.year, now.month, now.day)
+        # now = datetime.now()
+        # self.day = datetime(now.year, now.month, now.day)
 
     def _update_day(self) -> None:
+        """TODO: add documentation for what this should do"""
         raise NotImplementedError
 
     def _create_events(self) -> pd.DataFrame:
+        """TODO: add documentation for what this should do"""
         raise NotImplementedError
 
-    def get_event_queue(self) -> EventQueue | int:
+    def get_event_queue(self) -> tuple[EventQueue, int]:
         """
-        Create an EventQueue object from samples by creating a list of
+        Creates an EventQueue object from samples by creating a list of
         Plugin and Recompute events. Unplug events are generated internally
         by the simulator and do not need to be explicitly added. Recompute
         events are added every `recompute_freq` periods.
@@ -96,7 +94,7 @@ class AbstractTraceGenerator:
                 events
         """
         self._update_day()
-        samples: pd.DataFrame = self._create_events()
+        samples = self._create_events()
 
         non_recompute_timestamps = set()
         events = []
@@ -200,26 +198,21 @@ class RealTraceGenerator(AbstractTraceGenerator):
         if not self.use_unclaimed:
             df = df[df['claimed']]
 
-        # Filter sessions where estimated departure / departure is not the same day as arrival
-        df['one_day'] = df['arrival'].apply(lambda x: x.day) == df['departure'].apply(lambda x: x.day)
-        df = df[df['one_day']]
-        df['one_day'] = df['arrival'].apply(lambda x: x.day) == df['estimated_departure'].apply(lambda x: x.day)
-        df = df[df['one_day']]
+        # remove sessions that are not in the set of station ids
+        df = df[df['station_id'].isin(self.station_ids)]
 
-        # convert arrival, departure , estimated departure to timestamps
-        def datetime_to_timestamp(dt: datetime, period: int) -> int:
-            """Return simulation timestamp of datetime."""
-            return (dt.hour * 60 + dt.minute) // period
-        df['arrival'] = df['arrival'].apply(lambda x: datetime_to_timestamp(x, self.period))
-        df['departure'] = df['departure'].apply(lambda x: datetime_to_timestamp(x, self.period))
-        df['estimated_departure'] = df['estimated_departure'].apply(lambda x: datetime_to_timestamp(x, self.period))
+        # remove sessions where estimated departure / departure is not the same day as arrival
+        max_depart = np.maximum(df['departure'], df['estimated_departure'])
+        mask = (df['arrival'].dt.day == max_depart.dt.day)
+        df = df[mask]
 
-        # Filter sessions that are not in the set of station ids
-        df['station_id_in_set'] = df['station_id'].apply(lambda x: x in self.station_ids)
-        df = df[df['station_id_in_set']]
+        # convert arrival, departure, estimated departure to timestamps
+        for col in ['arrival', 'departure', 'estimated_departure']:
+            df[col] = (df[col].dt.hour * 60 + df[col].dt.minute) // self.period
 
-        # Filter sessions with estimated departure before connection
+        # remove sessions with estimated departure before connection
         df = df[df['estimated_departure'] > df['arrival']]
+
         return df.copy()
 
 
@@ -257,13 +250,14 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
     """
     def __init__(self,
                  site: str,
-                 date_range: Sequence[str] = None,
+                 date_range: tuple[str, str] = DEFAULT_DATE_RANGE,
                  n_components: int = 50,
                  period: int = 5,
                  recompute_freq: int = 2,
                  requested_energy_cap: float = 100):
         super().__init__(site, period, recompute_freq, date_range, requested_energy_cap)
         self.n_components = n_components
+
         # look for gmm if already trained
         gmm_folder = find_potential_folder(self.date_range[0], self.date_range[1], n_components, site)
         if not gmm_folder:
@@ -290,7 +284,7 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
             departure time in minutes, estimated departure time in minutes,
             and requested energy in kWh, respectively.
         """
-        samples = np.zeros(shape=(n, 4), dtype=np.float32)
+        samples = np.zeros((n, 4), dtype=np.float32)
         # use while loop for quality check
         i = 0
         while i < n:

@@ -4,14 +4,14 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import timedelta, datetime
 import os
+from typing import Any, Literal
 
+import acnportal.acndata as acnd
+import acnportal.acnsim as acns
 import numpy as np
 import pandas as pd
 import pytz
 from sklearn.mixture import GaussianMixture
-
-from acnportal.acndata.data_client import DataClient
-from acnportal.acndata.utils import parse_http_date
 
 
 API_TOKEN = "DEMO_TOKEN"
@@ -22,6 +22,17 @@ REQ_ENERGY_SCALE = 100
 START_DATE, END_DATE = datetime(2018, 11, 1), datetime(2021, 8, 31)
 GMM_DIR = os.path.join("sustaingym", "envs", "evcharging", "gmms")
 
+SiteStr = Literal['caltech', 'jpl']
+
+
+def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
+    if site == 'caltech':
+        return acns.network.sites.caltech_acn()
+    elif site == 'jpl':
+        return acns.network.sites.jpl_acn()
+    else:
+        return ValueError(f'Requested site {site} not one of ["caltech", "jpl"].')
+
 
 def get_folder_name(begin: datetime, end: datetime, n_components: int) -> str:
     """Return predefined folder name for a trained GMM."""
@@ -30,9 +41,9 @@ def get_folder_name(begin: datetime, end: datetime, n_components: int) -> str:
 
 def get_sessions(start_date: datetime,
                  end_date: datetime,
-                 site: str = "caltech",
+                 site: SiteStr = "caltech",
                  return_count: bool = True
-                 ) -> Iterator[dict] | tuple[Iterator[dict], int]:
+                 ) -> Iterator[dict[str, Any]] | tuple[Iterator[dict[str, Any]], int]:
     """
     Retrieve charging sessions using ACNData.
 
@@ -58,7 +69,7 @@ def get_sessions(start_date: datetime,
     end_time = end_date.strftime(DT_STRING_FORMAT)
 
     cond = f'connectionTime>="{start_time}" and connectionTime<="{end_time}"'
-    data_client = DataClient(api_token=API_TOKEN)
+    data_client = acnd.DataClient(api_token=API_TOKEN)
     sessions = data_client.get_sessions(site, cond=cond)
 
     if return_count:
@@ -69,7 +80,7 @@ def get_sessions(start_date: datetime,
 
 
 def get_real_events(start_date: datetime, end_date: datetime,
-                    site: str) -> pd.DataFrame:
+                    site: SiteStr) -> pd.DataFrame:
     """
     Return a pandas DataFrame of charging events.
 
@@ -80,6 +91,14 @@ def get_real_events(start_date: datetime, end_date: datetime,
 
     Returns:
         DataFrame containing charging info.
+            arrival                   datetime64[ns, America/Los_Angeles]
+            departure                 datetime64[ns, America/Los_Angeles]
+            requested_energy (kWh)    float64
+            delivered_energy (kWh)    float64
+            station_id                str
+            session_id                str
+            estimated_departure       object  # TODO: convert to datetime64 object
+            claimed                   bool
 
     Assumes:
         sessions are in Pacific time
@@ -97,26 +116,25 @@ def get_real_events(start_date: datetime, end_date: datetime,
 
     for session in sessions:
         userInputs = session['userInputs']
-        connection = session['connectionTime']
-        disconnect = session['disconnectTime']
+        arrival = session['connectionTime']
+        depart = session['disconnectTime']
 
-        if userInputs:
+        if userInputs is None:
+            requested_energy = session['kWhDelivered']
+            est_depart_dt = depart
+            claimed = False
+        else:
             requested_energy = userInputs[0]['kWhRequested']
             est_depart_time = userInputs[0]['requestedDeparture']
-            est_depart_dt = parse_http_date(est_depart_time,
-                                            pytz.timezone('US/Pacific'))
+            est_depart_dt = acnd.utils.parse_http_date(est_depart_time, pytz.timezone('US/Pacific'))
             claimed = True
-        else:
-            requested_energy = session['kWhDelivered']
-            est_depart_dt = disconnect
-            claimed = False
 
         delivered_energy = session['kWhDelivered']
         station_id = session['spaceID']
         session_id = session['sessionID']
 
-        arrivals.append(connection)
-        departures.append(disconnect)
+        arrivals.append(arrival)
+        departures.append(depart)
         requested_energies.append(requested_energy)
         delivered_energies.append(delivered_energy)
         station_ids.append(station_id)
