@@ -58,6 +58,12 @@ def get_rewards(interface: Interface,
     # Immediate charging reward: amount of charge delivered to vehicles at previous timestamp (A * mins)
     charging_reward = DELIVERED_CHARGE_WEIGHT * np.sum(simulator.charging_rates[:, prev_timestamp:timestamp]) * period
 
+    # Network constraint violation punishment: amount of charge over maximum allowed rates (A * mins)
+    current_sum = np.abs(simulator.network.constraint_current(schedule, linear=True))
+    over_current = np.maximum(current_sum - simulator.network.magnitudes, 0)
+    constraint_punishment = - CONSTRAINT_VIOLATION_WEIGHT * sum(over_current) * next_interval_mins
+
+    # TODO TODO TODO simulator may execute multiple events at once, don't know if an unplug event already got executed
     # Customer satisfaction reward: margin between energy requested and delivered
     if cur_event and isinstance(cur_event, UnplugEvent):
         # punish by how much more energy is requested than is actually delivered
@@ -71,13 +77,6 @@ def get_rewards(interface: Interface,
 
     timestamp_diff = next_timestamp - timestamp
 
-    # Find negative reward for current violation by finding sum of current
-    # going over the constraints
-    current_sum = np.abs(simulator.network.constraint_current(schedule, linear=False))
-    magnitudes = simulator.network.magnitudes
-    over_current = np.maximum(current_sum - magnitudes, 0)
-    constraint_punishment = - CONSTRAINT_VIOLATION_WEIGHT * sum(over_current) * timestamp_diff
-
 
     # Get total reward
     # total_reward = charging_cost + charging_reward + constraint_punishment + remaining_amp_periods_punishment
@@ -90,7 +89,7 @@ def get_rewards(interface: Interface,
         info = {
             "schedule": schedule,
             "current_sum": current_sum,
-            "magnitudes": magnitudes,
+            "magnitudes": simulator.network.magnitudes,
             "constraint_violation": over_current,
             "charging_cost": charging_cost,
             "charging_reward": charging_reward,
