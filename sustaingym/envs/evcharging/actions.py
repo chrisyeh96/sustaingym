@@ -16,7 +16,7 @@ MAX_PILOT_SIGNAL = 32
 
 def get_action_space(cn: ChargingNetwork, action_type: str) -> spaces.MultiDiscrete:
     """
-    Return action space for a charging network.
+    Returns action space for the charging network.
 
     Args:
         cn: charging network in environment simulation
@@ -40,7 +40,7 @@ def get_action_space(cn: ChargingNetwork, action_type: str) -> spaces.MultiDiscr
 
 def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: str) -> dict[str, list[float]]:
     """
-    Given a numpy action, return a dictionary usable for the Simulator class.
+    Given a numpy action, returns a dictionary usable for the Simulator class.
 
     Discrete actions are scaled up by a factor of 8 to the set
     {0, 8, 16, 24, 32}, a discretization of the set of allowed currents for AV
@@ -62,13 +62,13 @@ def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: str) -> di
     if action_type == 'discrete':
         return {e: [ACTION_SCALING_FACTOR * a] for a, e in zip(action, cn.station_ids)}
     elif action_type == 'continuous':
-        action = np.round(action * ACTION_SCALING_FACTOR).astype(np.int32)
+        action = np.round(action * ACTION_SCALING_FACTOR).astype(np.int32)  # round to nearest integer rate
         pilot_signals = {}
         for i in range(len(cn.station_ids)):
             station_id = cn.station_ids[i]
             # hacky way to determine allowable rates
             if cn._EVSEs[station_id].allowable_rates[1] == MIN_PILOT_SIGNAL:
-                pilot_signals[station_id] = [action[i] if action[i] >= MIN_PILOT_SIGNAL else 0]  # signals less than minimum are set to zero
+                pilot_signals[station_id] = [action[i] if action[i] >= MIN_PILOT_SIGNAL else 0]  # signals less than minimum (of 6) are set to zero, rest are in action space
             else:
                 pilot_signals[station_id] = [(np.round(action[i] / DISCRETE_MULTIPLE) * DISCRETE_MULTIPLE).astype(np.int32)]  # set to {0, 8, 16, 24, 32}
         return pilot_signals
