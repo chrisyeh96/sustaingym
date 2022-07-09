@@ -18,11 +18,12 @@ from sklearn.mixture import GaussianMixture
 API_TOKEN = "DEMO_TOKEN"
 DATE_FORMAT = "%Y-%m-%d"
 DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
+GMM_DIR = os.path.join("sustaingym", "envs", "evcharging", "gmms")
 MINS_IN_DAY = 1440
 REQ_ENERGY_SCALE = 100
 START_DATE, END_DATE = datetime(2018, 11, 1), datetime(2021, 8, 31)
-GMM_DIR = os.path.join("sustaingym", "envs", "evcharging", "gmms")
 
+ActionType = Literal['discrete', 'continuous']
 SiteStr = Literal['caltech', 'jpl']
 
 

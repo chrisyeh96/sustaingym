@@ -8,13 +8,15 @@ from acnportal.acnsim.network import ChargingNetwork
 from gym import spaces
 import numpy as np
 
+from .utils import ActionType
+
 ACTION_SCALING_FACTOR = 8
 DISCRETE_MULTIPLE = 8
 MIN_PILOT_SIGNAL = 6
 MAX_PILOT_SIGNAL = 32
 
 
-def get_action_space(cn: ChargingNetwork, action_type: str) -> spaces.MultiDiscrete:
+def get_action_space(cn: ChargingNetwork, action_type: ActionType) -> spaces.MultiDiscrete:
     """
     Returns action space for the charging network.
 
@@ -38,7 +40,7 @@ def get_action_space(cn: ChargingNetwork, action_type: str) -> spaces.MultiDiscr
         raise ValueError("Only 'discrete' and 'continuous' action_types are allowed. ")
 
 
-def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: str) -> dict[str, list[float]]:
+def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: ActionType) -> dict[str, list[float]]:
     """
     Given a numpy action, returns a dictionary usable for the Simulator class.
 

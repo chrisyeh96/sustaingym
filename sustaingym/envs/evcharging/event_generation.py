@@ -29,9 +29,9 @@ DEFAULT_DATE_RANGE = ("2018-11-05", "2018-11-11")
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 
 
-def find_potential_folder(begin: datetime, end: datetime, n_components: int, site: SiteStr) -> str:
+def find_potential_folder(begin: str, end: str, n_components: int, site: SiteStr) -> str:
     """Return potential folders that contain trained GMMs."""
-    folder_prefix = begin.strftime(DATE_FORMAT) + " " + end.strftime(DATE_FORMAT)
+    folder_prefix = begin + " " + end
     # check overall directory existence
     if not os.path.exists(os.path.join(GMM_DIR, site)):
         return ""
@@ -300,10 +300,11 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
         self.n_components = n_components
 
         # look for gmm if already trained
-        gmm_folder = find_potential_folder(self.date_range[0], self.date_range[1], n_components, site)
+        gmm_folder = find_potential_folder(date_range[0], date_range[1], n_components, site)
         if not gmm_folder:
-            create_gmms(self.site, self.n_components, self.date_range)
-            gmm_folder = find_potential_folder(self.date_range[0], self.date_range[1], n_components, site)
+            create_gmms(site, n_components, date_range)
+            gmm_folder = find_potential_folder(date_range[0], date_range[1], n_components, site)
+
         model_path = os.path.join(GMMS_PATH, site, gmm_folder)
         self.gmm = load_gmm(model_path)
         self.cnt = np.load(os.path.join(model_path, "_cnts.npy"))  # number of sessions per day
@@ -414,4 +415,5 @@ if __name__ == "__main__":
             eq, num_events = generator.get_event_queue()
             print(num_events)
         end = time.time()
-        print(f"generator {generator} time", end - start)
+        print(generator)
+        print("time: ", end - start)

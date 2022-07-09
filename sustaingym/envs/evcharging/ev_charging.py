@@ -1,6 +1,7 @@
 """This module contains the class for the central EV Charging environment."""
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 import warnings
 
@@ -11,10 +12,10 @@ import gym
 import numpy as np
 
 from .actions import get_action_space, to_schedule
-from .event_generation import AbstractTraceGenerator
+from .event_generation import AbstractTraceGenerator, RealTraceGenerator
 from .observations import get_observation_space, get_observation
 from .rewards import get_rewards
-from .utils import MINS_IN_DAY, DATE_FORMAT
+from .utils import MINS_IN_DAY, DATE_FORMAT, ActionType
 
 
 class EVChargingEnv(gym.Env):
@@ -24,25 +25,25 @@ class EVChargingEnv(gym.Env):
     This class uses the Simulator class in the acnportal package to
     simulate a day of charging. The simulation can be done using real data
     from Caltech's ACNData or a Gaussian mixture model (GMM) trained on
-    that data (script is located in train_artificial_data_model.py). The
-    gym has support for the Caltech and JPL site.
+    that data (see train_artificial_data_model.py). The gym supports the
+    Caltech and JPL sites.
 
     Args:
-        data_generator: an object that generates events in an EventQueue
+        data_generator: a subclass of AbstractTraceGenerator
         action_type: either 'continuous' or 'discrete'. If 'discrete' the action
             space is {0, 1, 2, 3, 4}. If 'continuous' it is [0, 4]. These are
             then scaled to charging rates from 0 A to 32 A. If a charging rate
             does not achieve the minimum pilot signal, it is set to zero.
         verbose: whether to print out warnings when constraints are being violated
 
-    Attributes: TODO??????????? - how to comment attribute type
+    Attributes:
         max_timestamp: maximum timestamp in a day's simulation
         constraint_matrix: constraint matrix of charging garage
         num_constraints: number of constraints in constraint_matrix
         num_stations: number of EVSEs in the garage
         day: only present when self.real_traces is True. The actual day that
             the simulator is simulating.
-        generator: (ArtificialTraceGenerator) a class whose instances can
+        generator: (AbstractTraceGenerator) a class whose instances can
             sample events that populate the event queue.
         observation_space: the space of available observations
         action_space: the space of actions. Note that not all actions in the
@@ -55,10 +56,8 @@ class EVChargingEnv(gym.Env):
     metadata: dict = {"render_modes": []}
 
     def __init__(self, data_generator: AbstractTraceGenerator,
-                 action_type: str = 'discrete',  #TODO
-                 verbose: int = 0):
+                 action_type: ActionType = 'discrete', verbose: int = 0):
         self.data_generator = data_generator
-        self.day = self.data_generator.day
         self.site = data_generator.site
         self.period = data_generator.period
         self.max_timestamp = MINS_IN_DAY // self.period
@@ -88,7 +87,7 @@ class EVChargingEnv(gym.Env):
         Args:
             action: array of shape (number of stations,) with entries in the
                 set {0, 1, 2, 3, 4} if action_type == 'discrete'; otherwise,
-                entries should fall in the range [0, 4]
+                entries should fall in the range [0, 4].
 
         Returns:
             observation: dict
@@ -174,20 +173,28 @@ class EVChargingEnv(gym.Env):
                 sequence of floats of length 3 that sum up to 1. Ignored when
                 self.real_traces is True. TODO
         """
+        # super().reset(seed=seed) TODO
         if options:
             if "verbose" in options:
                 self.verbose = options["verbose"]
-        # super().reset(seed=seed)
 
         # Initialize charging network
         self.cn = caltech_acn() if self.site == 'caltech' else jpl_acn()
         # Initialize event queue
         self.events, num_plugs = self.data_generator.get_event_queue()
-        self.day = self.data_generator.day
+
         if self.verbose >= 1:
-            print(f"Simulating day {self.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ")
+            if type(self.data_generator) is RealTraceGenerator:
+                print(f"Simulating day {self.data_generator.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ")
+            else:
+                print(f"Simulating {num_plugs} plug in events. ")
+        
         # Initialize simulator and interface
-        self.simulator = Simulator(network=self.cn, scheduler=None, events=self.events, start=self.day, period=self.period, verbose=False)
+        if type(self.data_generator) is RealTraceGenerator:
+            day = self.data_generator.day
+        else:
+            day = datetime.now()
+        self.simulator = Simulator(network=self.cn, scheduler=None, events=self.events, start=day, period=self.period, verbose=False)
         self.interface = Interface(self.simulator)
         # Initialize time steps
         self.prev_timestamp, self.timestamp = 0, self.simulator.event_queue.queue[0][0]
@@ -212,8 +219,8 @@ if __name__ == "__main__":
     import random
     random.seed(42)
 
-    rtg1 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-11'], sequential=True, period=5)
-    rtg2 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-11'], sequential=True, period=10)
+    rtg1 = RealTraceGenerator(site='caltech', date_range=('2018-11-05', '2018-11-11'), sequential=True, period=5)
+    rtg2 = RealTraceGenerator(site='caltech', date_range=('2018-11-05', '2018-11-11'), sequential=True, period=10)
     # rtg2 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-13'], sequential=False)
     # atg = ArtificialTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-15'], n_components=50)
 
@@ -239,7 +246,7 @@ if __name__ == "__main__":
             done = False
             i = 0
             action = np.ones(shape=(54,), ) * 2
-            d = defaultdict(list)
+            # d = defaultdict(list)
             while not done:
                 observation, reward, done, info = env.step(action)
                 # for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:

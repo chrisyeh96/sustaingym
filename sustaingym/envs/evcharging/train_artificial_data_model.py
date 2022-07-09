@@ -202,7 +202,6 @@ def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = D
     for date_range_dt in date_range_dts:
         create_gmm(site, n_components, date_range=date_range_dt)
     
-    print()
     print("--- Training complete. ---\n")
 
 
