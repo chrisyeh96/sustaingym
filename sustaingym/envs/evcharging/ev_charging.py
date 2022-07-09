@@ -5,9 +5,7 @@ from datetime import datetime
 from typing import Any
 import warnings
 
-from acnportal.acnsim.interface import Interface
-from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
-from acnportal.acnsim.simulator import Simulator
+import acnportal.acnsim as acns
 import gym
 import numpy as np
 
@@ -15,7 +13,7 @@ from .actions import get_action_space, to_schedule
 from .event_generation import AbstractTraceGenerator, RealTraceGenerator
 from .observations import get_observation_space, get_observation
 from .rewards import get_rewards
-from .utils import MINS_IN_DAY, DATE_FORMAT, ActionType
+from .utils import MINS_IN_DAY, DATE_FORMAT, ActionType, site_str_to_site
 
 
 class EVChargingEnv(gym.Env):
@@ -30,10 +28,11 @@ class EVChargingEnv(gym.Env):
 
     Args:
         data_generator: a subclass of AbstractTraceGenerator
-        action_type: either 'continuous' or 'discrete'. If 'discrete' the action
-            space is {0, 1, 2, 3, 4}. If 'continuous' it is [0, 4]. These are
-            then scaled to charging rates from 0 A to 32 A. If a charging rate
-            does not achieve the minimum pilot signal, it is set to zero.
+        action_type: either 'continuous' or 'discrete'. If 'discrete', the
+            action space is {0, 1, 2, 3, 4}. If 'continuous', it is [0, 4].
+            These are then scaled to charging rates from 0 A to 32 A. If a
+            charging rate does not achieve the minimum pilot signal, it is set
+            to zero.
         verbose: whether to print out warnings when constraints are being violated
 
     Attributes:
@@ -67,7 +66,7 @@ class EVChargingEnv(gym.Env):
             warnings.filterwarnings("ignore")
 
         # Set up charging network parameters
-        self.cn = caltech_acn() if self.site == 'caltech' else jpl_acn()
+        self.cn = site_str_to_site(self.site)
         self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
 
         # Define observation space and action space
@@ -175,27 +174,27 @@ class EVChargingEnv(gym.Env):
         """
         # super().reset(seed=seed) TODO
         if options:
-            if "verbose" in options:
-                self.verbose = options["verbose"]
+            if 'verbose' in options:
+                self.verbose = options['verbose']
 
         # Initialize charging network
-        self.cn = caltech_acn() if self.site == 'caltech' else jpl_acn()
+        self.cn = site_str_to_site(self.site)
         # Initialize event queue
         self.events, num_plugs = self.data_generator.get_event_queue()
 
         if self.verbose >= 1:
             if type(self.data_generator) is RealTraceGenerator:
-                print(f"Simulating day {self.data_generator.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ")
+                print(f'Simulating day {self.data_generator.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ')
             else:
-                print(f"Simulating {num_plugs} plug in events. ")
-        
+                print(f'Simulating {num_plugs} plug in events. ')
+
         # Initialize simulator and interface
         if type(self.data_generator) is RealTraceGenerator:
             day = self.data_generator.day
         else:
             day = datetime.now()
-        self.simulator = Simulator(network=self.cn, scheduler=None, events=self.events, start=day, period=self.period, verbose=False)
-        self.interface = Interface(self.simulator)
+        self.simulator = acns.Simulator(network=self.cn, scheduler=None, events=self.events, start=day, period=self.period, verbose=False)
+        self.interface = acns.Interface(self.simulator)
         # Initialize time steps
         self.prev_timestamp, self.timestamp = 0, self.simulator.event_queue.queue[0][0]
         # Retrieve environment information
@@ -211,8 +210,7 @@ class EVChargingEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    from collections import defaultdict
-    from .event_generation import RealTraceGenerator, ArtificialTraceGenerator
+    from .event_generation import GMMsTraceGenerator
     from acnportal.acnsim.events import PluginEvent
 
     np.random.seed(42)
@@ -222,9 +220,9 @@ if __name__ == "__main__":
     rtg1 = RealTraceGenerator(site='caltech', date_range=('2018-11-05', '2018-11-11'), sequential=True, period=5)
     rtg2 = RealTraceGenerator(site='caltech', date_range=('2018-11-05', '2018-11-11'), sequential=True, period=10)
     # rtg2 = RealTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-13'], sequential=False)
-    # atg = ArtificialTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-15'], n_components=50)
+    # atg = GMMsTraceGenerator(site='caltech', date_range=['2018-11-05', '2018-11-15'], n_components=50)
 
-    for generator in [rtg1, rtg2]:  #[rtg1, rtg2, atg]:
+    for generator in [rtg1, rtg2]:  # [rtg1, rtg2, atg]:
         print("----------------------------")
         print("----------------------------")
         print("----------------------------")

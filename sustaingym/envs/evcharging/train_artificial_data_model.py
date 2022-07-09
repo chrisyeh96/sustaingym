@@ -27,7 +27,6 @@ from datetime import datetime
 import os
 from typing import Sequence
 
-from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
 import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
@@ -56,7 +55,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     # Get arrival time, departure time, estimated departure time from datetimes and normalize between [0, 1]
     for col in ['arrival', 'departure', 'estimated_departure']:
         df[col + "_time"] = (df[col].dt.hour * 60 + df[col].dt.minute) / MINS_IN_DAY
-    
+
     # Normalize requested energy
     df['requested_energy (kWh)'] /= REQ_ENERGY_SCALE
 
@@ -201,7 +200,7 @@ def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = D
 
     for date_range_dt in date_range_dts:
         create_gmm(site, n_components, date_range=date_range_dt)
-    
+
     print("--- Training complete. ---\n")
 
 

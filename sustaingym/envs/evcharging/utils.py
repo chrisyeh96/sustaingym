@@ -5,7 +5,7 @@ from collections.abc import Iterator
 from datetime import timedelta, datetime
 import os
 import pickle
-from typing import Any, List, Literal
+from typing import Any, Literal
 
 import acnportal.acndata as acnd
 import acnportal.acnsim as acns
@@ -15,10 +15,10 @@ import pytz
 from sklearn.mixture import GaussianMixture
 
 
-API_TOKEN = "DEMO_TOKEN"
-DATE_FORMAT = "%Y-%m-%d"
-DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
-GMM_DIR = os.path.join("sustaingym", "envs", "evcharging", "gmms")
+API_TOKEN = 'DEMO_TOKEN'
+DATE_FORMAT = '%Y-%m-%d'
+DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
+GMM_DIR = os.path.join('sustaingym', 'envs', 'evcharging', 'gmms')
 MINS_IN_DAY = 1440
 REQ_ENERGY_SCALE = 100
 START_DATE, END_DATE = datetime(2018, 11, 1), datetime(2021, 8, 31)
@@ -40,8 +40,7 @@ def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
 def get_sessions(start_date: datetime, end_date: datetime,
                  site: SiteStr = "caltech",
                  ) -> tuple[Iterator[dict[str, Any]], int]:
-    """
-    Retrieve charging sessions using ACNData.
+    """Retrieves charging sessions using ACNData.
 
     Args:
         start_date: beginning time of interval
@@ -73,8 +72,7 @@ def get_sessions(start_date: datetime, end_date: datetime,
 
 def get_real_events(start_date: datetime, end_date: datetime,
                     site: SiteStr) -> pd.DataFrame:
-    """
-    Returns a pandas DataFrame of charging events.
+    """Returns a pandas DataFrame of charging events.
 
     Args:
         start_date: beginning time of interval
@@ -97,20 +95,22 @@ def get_real_events(start_date: datetime, end_date: datetime,
     """
     sessions, _ = get_sessions(start_date, end_date + timedelta(days=1), site=site)
 
-    d: dict[str, List[Any]] = {}
-    d["arrival"] = []
-    d["departure"] = []
-    d["requested_energy (kWh)"] = []
-    d["delivered_energy (kWh)"] = []
-    d["station_id"] = []
-    d["session_id"] = []
-    d["estimated_departure"] = []
-    d["claimed"] = []
+    # TODO(chris): explore more efficient ways to convert JSON-like data to DataFrame
+
+    d: dict[str, list[Any]] = {}
+    d['arrival'] = []
+    d['departure'] = []
+    d['requested_energy (kWh)'] = []
+    d['delivered_energy (kWh)'] = []
+    d['station_id'] = []
+    d['session_id'] = []
+    d['estimated_departure'] = []
+    d['claimed'] = []
 
     for session in sessions:
         userInputs = session['userInputs']
-        d["arrival"].append(session['connectionTime'])
-        d["departure"].append(session['disconnectTime'])
+        d['arrival'].append(session['connectionTime'])
+        d['departure'].append(session['disconnectTime'])
 
         if userInputs is None:
             requested_energy = session['kWhDelivered']
@@ -122,47 +122,39 @@ def get_real_events(start_date: datetime, end_date: datetime,
             est_depart_dt = acnd.utils.parse_http_date(est_depart_time, pytz.timezone('UTC'))
             claimed = True
 
-        d["requested_energy (kWh)"].append(requested_energy)
-        d["delivered_energy (kWh)"].append(session['kWhDelivered'])
-        d["station_id"].append(session['spaceID'])
-        d["session_id"].append(session['sessionID'])
-        d["estimated_departure"].append(est_depart_dt)
-        d["claimed"].append(claimed)
+        d['requested_energy (kWh)'].append(requested_energy)
+        d['delivered_energy (kWh)'].append(session['kWhDelivered'])
+        d['station_id'].append(session['spaceID'])
+        d['session_id'].append(session['sessionID'])
+        d['estimated_departure'].append(est_depart_dt)
+        d['claimed'].append(claimed)
 
-    d["estimated_departure"] = np.array(d["estimated_departure"], dtype='datetime64')
+    d['estimated_departure'] = np.array(d['estimated_departure'], dtype='datetime64')
     df = pd.DataFrame(d)
-    df["estimated_departure"] = df['estimated_departure'].dt.tz_localize('UTC').dt.tz_convert('America/Los_Angeles')
+    df['estimated_departure'] = df['estimated_departure'].dt.tz_localize('UTC').dt.tz_convert('America/Los_Angeles')
     return df
 
 
 def save_gmm(gmm: GaussianMixture, save_dir: str) -> None:
-    """
-    Save gmm, presumably trained, to directory.
+    """Save GMM (presumably trained) to directory.
 
     Args:
         gmm: trained Gaussian Mixture Model
         save_dir: save directory of gmm
     """
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-    
+    os.makedirs(save_dir, exist_ok=True)
     with open(os.path.join(save_dir, 'model.pkl'), 'wb') as f:
         pickle.dump(gmm, f)
 
 
 def load_gmm(save_dir: str) -> GaussianMixture:
-    """
-    Load gmm from path.
+    """Load pickled GMM from folder.
 
-    Arguments:
+    Args:
         save_dir: save directory of gmm
 
     Returns:
         gmm: trained gmm with parameters of those in path
     """
-    if not os.path.exists(save_dir):
-        print("Directory does not exist: ", save_dir)
-        return
-    
-    with open(os.path.join(save_dir, "model.pkl"), 'rb') as f:
+    with open(os.path.join(save_dir, 'model.pkl'), 'rb') as f:
         return pickle.load(f)
