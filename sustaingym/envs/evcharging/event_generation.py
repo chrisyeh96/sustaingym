@@ -46,7 +46,8 @@ class AbstractTraceGenerator:
     """
     Abstract class for event queue generation.
 
-    Subclasses are expected to implement the method _create_events().
+    Subclasses are expected to implement the method _create_events()
+    and __repr__().
 
     Attributes:
         site: either 'caltech' or 'jpl' garage to get events from
@@ -75,6 +76,12 @@ class AbstractTraceGenerator:
         self.requested_energy_cap = requested_energy_cap
         self.station_ids = site_str_to_site(site).station_ids
         self.num_stations = len(self.station_ids)
+    
+    def __repr__(self) -> str:
+        """
+        Returns the string representation of the generator object.
+        """
+        raise NotImplementedError
 
     def _create_events(self) -> pd.DataFrame:
         """
@@ -197,6 +204,13 @@ class RealTraceGenerator(AbstractTraceGenerator):
             self.day = self.date_range[0] - timedelta(days=1)
         else:
             self._update_day()
+    
+    def __repr__(self):
+        """Returns string representation of RealTracesGenerator."""
+        site = f"{self.site.capitalize()} site"
+        dr = f"from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}"
+        day = f"{self.day.strftime(DATE_FORMAT)}"
+        return f"RealTracesGenerator from the {site} {dr}. Current day {day}. "
 
     def _update_day(self) -> None:
         """Either increments day or randomly samples from date range."""
@@ -294,6 +308,12 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
         self.gmm = load_gmm(model_path)
         self.cnt = np.load(os.path.join(model_path, "_cnts.npy"))  # number of sessions per day
         self.station_usage = np.load(os.path.join(model_path, "_station_usage.npy"))  # number of sessions on stations
+
+    def __repr__(self):
+        """Returns string representation of ArtificialTracesGenerator."""
+        site = f"{self.site.capitalize()} site"
+        dr = f"from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}"
+        return f"ArtificialTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. "
 
     def _sample(self, n: int) -> np.ndarray:
         """
