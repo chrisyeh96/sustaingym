@@ -25,11 +25,11 @@ def get_rewards(interface: Interface,
                 get_info: bool = True,
                 ) -> float | tuple[float, dict[str, Any]]:
     """
-    Return reward for scheduler's performance.
+    Returns reward for scheduler's performance.
 
     Gets reward for charging EVs in previous timestep minus costs of
-        violation constraints and amount of charge delivered in current
-        timestep.
+    violation constraints and amount of charge delivered in current
+    timestep.
 
     Args:
         interface: acnportal.acnsim interface object
@@ -110,7 +110,7 @@ def get_rewards(interface: Interface,
 
 def schedule_to_numpy(schedule: dict) -> np.ndarray:
     """
-    Convert schedule dictionary to usable numpy array. Helper to get_rewards.
+    Converts schedule dictionary to usable numpy array.
 
     Args:
         schedule: dictionary mapping EVSE charger to a single-element list of

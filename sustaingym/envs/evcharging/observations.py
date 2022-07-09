@@ -18,7 +18,7 @@ MINS_IN_DAY = 1440
 
 def get_observation_space(cn: ChargingNetwork) -> spaces.Dict:
     """
-    Return dictionary concerning the observation space for the network.
+    Returns dictionary concerning the observation space for the network.
 
     Args:
         cn: charging network
@@ -43,7 +43,7 @@ def get_observation(interface: Interface,
                     get_info: bool = True
                     ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
     """
-    Return dictionary of observations.
+    Returns dictionary of observations.
 
     Args:
         interface: interface of acnportal.acnsim Simulator.
