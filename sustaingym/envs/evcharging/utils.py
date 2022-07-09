@@ -36,11 +36,6 @@ def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
         return ValueError(f'Requested site {site} not one of ["caltech", "jpl"].')
 
 
-def get_folder_name(begin: datetime, end: datetime, n_components: int) -> str:
-    """Returns folder name for a trained GMM."""
-    return begin.strftime(DATE_FORMAT) + " " + end.strftime(DATE_FORMAT) + " " + str(n_components)
-
-
 def get_sessions(start_date: datetime, end_date: datetime,
                  site: SiteStr = "caltech",
                  ) -> tuple[Iterator[dict[str, Any]], int]:

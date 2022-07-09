@@ -27,58 +27,40 @@ from datetime import datetime
 import os
 from typing import Sequence
 
+from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
 import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 
-from acnportal.acnsim.network.sites import caltech_acn, jpl_acn
+from .utils import get_real_events, save_gmm, site_str_to_site, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, GMM_DIR, SiteStr
 
-from .utils import get_real_events, get_folder_name, save_gmm, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, GMM_DIR
+
+DEFAULT_DATE_RANGE = ["2018-11-01", "2018-11-07", "2019-11-01", "2019-11-07", "2020-11-01", "2020-11-07"]
 
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Helper function for script to preprocess DataFrame containing real event sessions.
+    Preprocessing script for real event sessions before GMM modeling.
 
     Args:
-        df: DataFrame that is expected to be from get_real_events from the
-            .utils module.
+        df: DataFrame of charging events, expected to be gotten from
+            get_real_events in the .utils module.
 
     Returns:
-        Copy of DataFrame with normalized parameters for GMM.
+        Filtered copy of DataFrame with normalized parameters.
     """
     # Filter cars staying overnight
-    df['same_day'] = df['arrival'].map(lambda x: x.day) == df['departure'].map(lambda x: x.day)
-    df = df[df['same_day']].copy()
+    mask = (df['arrival'].dt.day == df['estimated_departure'].dt.day)
+    df = df[mask].copy()
 
-    # Arrival time, departure time, estimated departure time
-    df['arrival_time'] = df['arrival'].map(lambda x: x.hour * 60 + x.minute)
-    df['departure_time'] = df['departure'].map(lambda x: x.hour * 60 + x.minute)
-    df['estimated_departure_time'] = df['estimated_departure'].map(lambda x: x.hour * 60 + x.minute)
-
-    df = df[['arrival_time', 'departure_time', 'estimated_departure_time', 'requested_energy (kWh)']].copy()
-
-    # normalize using heuristics
-    df['arrival_time'] /= MINS_IN_DAY
-    df['departure_time'] /= MINS_IN_DAY
-    df['estimated_departure_time'] /= MINS_IN_DAY
+    # Get arrival time, departure time, estimated departure time from datetimes and normalize between [0, 1]
+    for col in ['arrival', 'departure', 'estimated_departure']:
+        df[col + "_time"] = (df[col].dt.hour * 60 + df[col].dt.minute) / MINS_IN_DAY
+    
+    # Normalize requested energy
     df['requested_energy (kWh)'] /= REQ_ENERGY_SCALE
 
-    return df
-
-
-def filter_unclaimed_sessions(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Returns only claimed sessions. Helper function in script.
-
-    Args:
-        df: DataFrame that is expected to be from get_real_events from the
-            .utils module.
-
-    Returns:
-        Copy of DataFrame with only claimed sessions.
-    """
-    return df[df['claimed']].copy()
+    return df[['arrival_time', 'departure_time', 'estimated_departure_time', 'requested_energy (kWh)']].copy()
 
 
 def station_id_pct(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
@@ -105,9 +87,9 @@ def station_id_pct(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
     return cnts
 
 
-def parse_string_date_list(date_range: Sequence[str] | Sequence[datetime]) -> Sequence[tuple[datetime]]:
+def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime, datetime]]:
     """
-    Parse a list of strings and return a list of datetimes.
+    Parses a list of strings and return a list of datetimes.
 
     Args:
         date_range: an even-length list of dates with each consecutive
@@ -125,102 +107,103 @@ def parse_string_date_list(date_range: Sequence[str] | Sequence[datetime]) -> Se
     if len(date_range) % 2 != 0:
         raise ValueError(f"Number of dates must be divisible by 2, found length {len(date_range)} with the second later than the first.")
 
-    date_range_dt = []
+    date_range_dt = [datetime.strptime(date_str, DATE_FORMAT) for date_str in date_range]
+    date_ranges = []
     for i in range(len(date_range) // 2):
-        begin, end = date_range[2 * i], date_range[2 * i + 1]
-        if type(begin) == str:
-            begin = datetime.strptime(begin, DATE_FORMAT)
-        if type(end) == str:
-            end = datetime.strptime(end, DATE_FORMAT)
-
-        if begin > end:
-            raise ValueError(f"beginning of date range {date_range[2 * i]} later than end {date_range[2 * i + 1]}")
-
-        date_range_dt.append((begin, end))
+        begin, end = date_range_dt[2 * i], date_range_dt[2 * i + 1]
 
         if begin < START_DATE:
             raise ValueError(f"beginning of date range {date_range[2 * i]} before data's start date {START_DATE.strftime(DATE_FORMAT)}")
-
         if end > END_DATE:
             raise ValueError(f"end of date range {date_range[2 * i + 1]} after data's end date {END_DATE.strftime(DATE_FORMAT)}")
-    return date_range_dt
+        if begin > end:
+            raise ValueError(f"beginning of date range {date_range[2 * i]} later than end {date_range[2 * i + 1]}")
+
+        date_ranges.append((begin, end))
+
+    return date_ranges
 
 
-def create_gmms(site: str, gmm_n_components: int, date_ranges: Sequence[str] | Sequence[datetime] = None) -> None:
+def get_folder_name(begin: str, end: str, n_components: int) -> str:
+    """Returns folder name for a trained GMM."""
+    return begin + " " + end + " " + str(n_components)
+
+
+def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, datetime]) -> None:
+    """
+    Creates a GMM and saves in the `gmms` folder.
+
+    Args:
+        site: either 'caltech' or 'jpl'
+        n_components: number of components of Gaussian mixture model
+        date_range: 2-tuple of strings.
+    """
+    SAVE_DIR = os.path.join(GMM_DIR, site)
+
+    # Get stations
+    acn = site_str_to_site(site)
+    n2i = {station_id: i for i, station_id in enumerate(acn.station_ids)}
+
+    # check string dates can be converted to datetimes
+    date_range_str = tuple(date_range[i].strftime(DATE_FORMAT) for i in range(2))
+    range_str = date_range_str[0] + " " + date_range_str[1]
+    print(f"Fetching data from site {site.capitalize()} for date range {range_str}... ")
+
+    # Retrieve events and filter only claimed sessions
+    df = get_real_events(date_range[0], date_range[1], site=site)
+    df = df[df['claimed']]
+    if len(df) == 0:
+        print("Empty dataframe, abort GMM training. ")
+        return
+
+    # get counts and station ids data
+    cnt = df.arrival.map(lambda x: int(x.strftime("%j"))).value_counts().to_numpy()
+    sid = station_id_pct(df, n2i)
+
+    # Preprocess DataFrame for GMM training
+    df = preprocess(df)
+
+    print(f"Fitting GMM ({n_components} components, {len(df.columns)} dimensions)... ")
+    gmm = GaussianMixture(n_components=n_components)
+    gmm.fit(df)
+
+    folder_name = get_folder_name(date_range_str[0], date_range_str[1], n_components)
+    save_dir = os.path.join(SAVE_DIR, folder_name)
+    if not os.path.exists(save_dir):
+        print("Creating directory: ", save_dir)
+        os.makedirs(save_dir)
+
+    print(f"Saving in: {save_dir}\n")
+    # save session counts
+    np.save(os.path.join(save_dir, "_cnts"), cnt, allow_pickle=False)
+    # save station id usage
+    np.save(os.path.join(save_dir, "_station_usage"), sid, allow_pickle=False)
+
+    save_gmm(gmm, save_dir)
+
+
+def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = DEFAULT_DATE_RANGE) -> None:
     """
     Creates gmms and saves in gmm_folder.
 
     Args:
-    site: either 'caltech' or 'jpl'
-    gmm_n_components: number of components to fit Gaussian mixture
-    date_ranges: date ranges for GMM models to be trained on. The number of
-        dates must be divisible by 2, with the second later than the first.
-        They should be formatted as YYYY-MM-DD and be between 2018-11-01 and
-        2021-08-31. The default ranges sample from the years 2019 to 2021.
+        site: either 'caltech' or 'jpl'
+        n_components: number of components of Gaussian mixture model
+        date_ranges: date ranges for GMM models to be trained on. The number of
+            dates must be divisible by 2, with the second later than the first.
+            They should be formatted as YYYY-MM-DD and be between 2018-11-01 and
+            2021-08-31. The default ranges sample from the years 2019 to 2021.
     """
-    if site != 'caltech' and site != 'jpl':
-        raise ValueError("site needs to be either caltech or jpl")
-
-    SAVE_DIR = os.path.join(GMM_DIR, site)
-    n_components = gmm_n_components
-
-    DEFAULT_DATE_RANGE = ["2019-01-01", "2019-12-31", "2020-01-01", "2020-12-31", "2021-01-01", "2021-08-31"]
-    if not date_ranges:
-        date_ranges = DEFAULT_DATE_RANGE
-
     print("\n--- Training GMMs ---\n")
-    # Get stations
-    if site == 'caltech':
-        n2i = {station_id: i for i, station_id in enumerate(caltech_acn().station_ids)}
-    else:
-        n2i = {station_id: i for i, station_id in enumerate(jpl_acn().station_ids)}
 
     # Get date ranges
-    date_range_dt = parse_string_date_list(date_ranges)
+    date_range_dts = parse_string_date_list(date_ranges)
 
-    folder_names, dfs = [], []
-    for begin, end in date_range_dt:
-        range_str = begin.strftime(DATE_FORMAT) + " " + end.strftime(DATE_FORMAT)
-        folder_names.append(get_folder_name(begin, end, n_components))
-
-        print(f"Fetching data from site {site} for date range {range_str}... ")
-        dfs.append(filter_unclaimed_sessions(get_real_events(begin, end, site=site)))
-
-    # get counts and station ids data
-    cnts, sids = [], []
-    for df in dfs:
-        cnts.append(df.arrival.map(lambda x: int(x.strftime("%j"))).value_counts().to_numpy())
-        sids.append(station_id_pct(df, n2i))
-
-    # preprocess dfs
-    for i in range(len(dfs)):
-        dfs[i] = preprocess(dfs[i])
-
-    print(f"Fitting GMMs ({n_components} components, {len(dfs[0].columns)} dimensions)... ")
-    gmms = []
-    for df in dfs:
-        gmm = GaussianMixture(n_components=n_components)
-        gmm.fit(df)
-        gmms.append(gmm)
-
-    for i in range(len(folder_names)):
-        # Set up save directory
-        save_dir = os.path.join(SAVE_DIR, folder_names[i])
-        if not os.path.exists(save_dir):
-            print("Creating directory: ", save_dir)
-            os.makedirs(save_dir)
-
-        print("Saving in: ", save_dir)
-
-        # save session counts
-        np.save(os.path.join(save_dir, "_cnts"), cnts[i], allow_pickle=False)
-        # save station id usage
-        np.save(os.path.join(save_dir, "_station_usage"), sids[i], allow_pickle=False)
-
-        save_gmm(gmm, save_dir)
-        print()
-
-    print("GMM training complete. \n")
+    for date_range_dt in date_range_dts:
+        create_gmm(site, n_components, date_range=date_range_dt)
+    
+    print()
+    print("--- Training complete. ---\n")
 
 
 if __name__ == "__main__":
@@ -234,4 +217,7 @@ if __name__ == "__main__":
     parser.add_argument("--date_ranges", nargs="+", help=date_range_help)
 
     args = parser.parse_args()
-    create_gmms(args.site, args.gmm_n_components, args.date_ranges)
+    if args.date_ranges is None:
+        create_gmms(args.site, args.gmm_n_components)
+    else:
+        create_gmms(args.site, args.gmm_n_components, args.date_ranges)
