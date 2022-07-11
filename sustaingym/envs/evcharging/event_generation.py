@@ -22,6 +22,7 @@ DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
 GMMS_PATH = os.path.join('sustaingym', 'envs', 'evcharging', 'gmms')  # TODO: replace with pkg_util
 DEFAULT_DATE_RANGE = ('2018-11-05', '2018-11-11')
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
+BATTERY_CAPACITY, MAX_POWER = 100, 100
 
 
 def find_potential_folder(begin: str, end: str, n_components: int, site: SiteStr) -> str:
@@ -62,7 +63,13 @@ class AbstractTraceGenerator:
                  requested_energy_cap: float = 100):
         """
         Args:
-            TODO
+            site: either 'caltech' or 'jpl' garage to get events from
+            period: number of minutes of each time interval in simulation
+            recompute_freq: number of periods for recurring recompute
+            date_range: tuple of (start_date, end_date) for event generation. Both
+                dates must be strings in the format YYYY-MM-DD. Defaults to
+                ('2018-11-05', '2018-11-11').
+            requested_energy_cap: largest amount of requested energy allowed (kWh)
         """
         if MINS_IN_DAY % period != 0:
             raise ValueError(f"Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0")
@@ -79,9 +86,9 @@ class AbstractTraceGenerator:
         """
         Returns the string representation of the generator object.
         """
-        # TODO: give a default implementation that includes, for example, the
-        # site, period, and date_range info.
-        raise NotImplementedError
+        site = f"{self.site.capitalize()} site"
+        dr = f"from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}"
+        return f"AbstractTraceGenerator from the {site} {dr}. "
 
     def _create_events(self) -> pd.DataFrame:
         """Creates a DataFrame of charging events information.
@@ -125,8 +132,8 @@ class AbstractTraceGenerator:
         for i in range(len(samples)):
             requested_energy = min(samples['requested_energy (kWh)'].iloc[i], self.requested_energy_cap)
             battery = acns.Battery(
-                capacity=100, init_charge=max(0, 100-requested_energy),
-                max_power=100)  # TODO: define constants for capacity and max_power
+                capacity=BATTERY_CAPACITY, init_charge=max(0, BATTERY_CAPACITY-requested_energy),
+                max_power=MAX_POWER)
             ev = acns.EV(
                 arrival=samples['arrival'].iloc[i],
                 departure=samples['departure'].iloc[i],
@@ -181,8 +188,12 @@ class RealTraceGenerator(AbstractTraceGenerator):
                  requested_energy_cap: float = 100):
         """
         Args:
-            sequential: TODO
-            use_unclaimed: TODO
+            sequential: whether to draw sequentially or randomly
+            use_unclaimed: whether to use unclaimed data. Unclaimed data does
+                not specify requested energy or estimated departure. If set to
+                True, the generator will use the energy delivered in the
+                session as the requested energy and the disconnect time as the
+                estimated departure.
         """
         super().__init__(site, period, recompute_freq, date_range, requested_energy_cap)
         self.use_unclaimed = use_unclaimed
