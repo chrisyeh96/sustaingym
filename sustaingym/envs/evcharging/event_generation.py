@@ -393,6 +393,33 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         return events
 
 
+class TestGenerator(AbstractTraceGenerator):
+    def __init__(self,
+                 site: str = "",
+                 period: int = 5,
+                 recompute_freq: int = 2,
+                 date_range = None,
+                 requested_energy_cap: float = 100):
+
+        super().__init__(site, period, recompute_freq, date_range, requested_energy_cap)
+    
+    def update_day(self):
+        return
+    
+    def get_event_queue(self):
+        events, evs = [], []
+        for a, d, s in zip([10, 10, 10, 30, 30, ], [30, 30, 30, 35, 40], ['CA-508', 'CA-303', 'CA-513', 'CA-310', 'CA-506']):
+            req_energy = 30.0
+            battery = Battery(capacity=100, init_charge=max(0, 100-req_energy), max_power=100)
+            ev = EV(arrival=a, departure=d, requested_energy=req_energy, station_id=s, session_id=str(a), battery=battery, estimated_departure=a+50)
+
+            events.append(PluginEvent(a, ev))
+            evs.append(ev)
+        events.append(RecomputeEvent(0))
+        eq = EventQueue(events)
+        return eq, evs, 3
+
+
 if __name__ == "__main__":
     import time
     november_week = ('2018-11-05', '2018-11-11')

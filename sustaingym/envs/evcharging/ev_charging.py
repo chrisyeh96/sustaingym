@@ -13,7 +13,7 @@ from .actions import get_action_space, to_schedule
 from .event_generation import AbstractTraceGenerator, RealTraceGenerator
 from .observations import get_observation_space, get_observation
 from .rewards import get_rewards
-from .utils import MINS_IN_DAY, DATE_FORMAT, ActionType, site_str_to_site
+from .utils import MINS_IN_DAY, DATE_FORMAT, ActionTypeStr, site_str_to_site
 
 
 class EVChargingEnv(gym.Env):
@@ -56,7 +56,7 @@ class EVChargingEnv(gym.Env):
     metadata: dict = {"render_modes": []}
 
     def __init__(self, data_generator: AbstractTraceGenerator,
-                 action_type: ActionType = 'discrete', verbose: int = 0):
+                 action_type: ActionTypeStr = 'discrete', verbose: int = 0):
         self.data_generator = data_generator
         self.site = data_generator.site
         self.period = data_generator.period
