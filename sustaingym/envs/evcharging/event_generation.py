@@ -6,26 +6,21 @@ traces of data and sampling events from an artificial data model, respectively.
 """
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
 from datetime import datetime, timedelta
 import os
 from random import randrange
 import uuid
-from typing import Any
 
-import acnportal.acndata as acnd
-from acnportal.acnsim.events import PluginEvent, RecomputeEvent, EventQueue
-import acnportal.acnsim.models as acnm
+import acnportal.acnsim as acns
 import numpy as np
 import pandas as pd
 
 from .train_artificial_data_model import create_gmms
 from .utils import DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, GMM_DIR, SiteStr, load_gmm, site_str_to_site, get_real_events
 
-DT_STRING_FORMAT = "%a, %d %b %Y 7:00:00 GMT"
-API_TOKEN = "DEMO_TOKEN"
-GMMS_PATH = os.path.join("sustaingym", "envs", "evcharging", "gmms")
-DEFAULT_DATE_RANGE = ("2018-11-05", "2018-11-11")
+DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
+GMMS_PATH = os.path.join('sustaingym', 'envs', 'evcharging', 'gmms')  # TODO: replace with pkg_util
+DEFAULT_DATE_RANGE = ('2018-11-05', '2018-11-11')
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 
 
@@ -43,8 +38,7 @@ def find_potential_folder(begin: str, end: str, n_components: int, site: SiteStr
 
 
 class AbstractTraceGenerator:
-    """
-    Abstract class for event queue generation.
+    """Abstract class for EventQueue generator.
 
     Subclasses are expected to implement the method _create_events()
     and __repr__().
@@ -53,9 +47,9 @@ class AbstractTraceGenerator:
         site: either 'caltech' or 'jpl' garage to get events from
         period: number of minutes of each time interval in simulation
         recompute_freq: number of periods for recurring recompute
-        date_range: sequence of length two that defines the start and end date
-            for event generation. Both elements must be a string and have
-            format YYYY-MM-DD. Defaults to ["2018-11-05", "2018-11-11"].
+        date_range: tuple of (start_date, end_date) for event generation. Both
+            dates must be strings in the format YYYY-MM-DD. Defaults to
+            ('2018-11-05', '2018-11-11').
         requested_energy_cap: largest amount of requested energy allowed (kWh)
         station_ids: list of strings containing identifiers for stations
         num_stations: number of charging stations at site
@@ -66,6 +60,10 @@ class AbstractTraceGenerator:
                  recompute_freq: int,
                  date_range: tuple[str, str] = DEFAULT_DATE_RANGE,
                  requested_energy_cap: float = 100):
+        """
+        Args:
+            TODO
+        """
         if MINS_IN_DAY % period != 0:
             raise ValueError(f"Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0")
 
@@ -76,28 +74,29 @@ class AbstractTraceGenerator:
         self.requested_energy_cap = requested_energy_cap
         self.station_ids = site_str_to_site(site).station_ids
         self.num_stations = len(self.station_ids)
-    
+
     def __repr__(self) -> str:
         """
         Returns the string representation of the generator object.
         """
+        # TODO: give a default implementation that includes, for example, the
+        # site, period, and date_range info.
         raise NotImplementedError
 
     def _create_events(self) -> pd.DataFrame:
-        """
-        Creates a DataFrame containing charging information.
+        """Creates a DataFrame of charging events information.
 
         Returns:
-        DataFrame containing charging info.
-            arrival                   int
-            departure                 int
-            requested_energy (kWh)    float64
-            delivered_energy (kWh)    float64
-            station_id                str
-            session_id                str
-            estimated_departure       int
-            claimed                   bool
-        
+            DataFrame containing charging info.
+                arrival                   int
+                departure                 int
+                requested_energy (kWh)    float64
+                delivered_energy (kWh)    float64
+                station_id                str
+                session_id                str
+                estimated_departure       int
+                claimed                   bool
+
         Notes:
             The attributes arrival, departure, and estimated_departure must
             be integers representing the timestamp in number of periods of
@@ -106,7 +105,7 @@ class AbstractTraceGenerator:
         """
         raise NotImplementedError
 
-    def get_event_queue(self) -> tuple[EventQueue, int]:
+    def get_event_queue(self) -> tuple[acns.EventQueue, int]:
         """
         Creates an EventQueue from a DataFrame of charging information.
 
@@ -125,10 +124,10 @@ class AbstractTraceGenerator:
         events = []
         for i in range(len(samples)):
             requested_energy = min(samples['requested_energy (kWh)'].iloc[i], self.requested_energy_cap)
-            battery = acnm.Battery(capacity=100,
-                              init_charge=max(0, 100-requested_energy),
-                              max_power=100)
-            ev = acnm.EV(
+            battery = acns.Battery(
+                capacity=100, init_charge=max(0, 100-requested_energy),
+                max_power=100)  # TODO: define constants for capacity and max_power
+            ev = acns.EV(
                 arrival=samples['arrival'].iloc[i],
                 departure=samples['departure'].iloc[i],
                 requested_energy=requested_energy,
@@ -137,7 +136,7 @@ class AbstractTraceGenerator:
                 battery=battery,
                 estimated_departure=samples['estimated_departure'].iloc[i]
             )
-            event = PluginEvent(samples['arrival'].iloc[i], ev)
+            event = acns.PluginEvent(samples['arrival'].iloc[i], ev)
             # no need for UnplugEvent as the simulator takes care of it
             events.append(event)
 
@@ -150,42 +149,27 @@ class AbstractTraceGenerator:
         for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
             recompute_timestamp = i * self.recompute_freq
             if recompute_timestamp not in non_recompute_timestamps:  # add recompute only if a timestamp has no events
-                event = RecomputeEvent(recompute_timestamp)
+                event = acns.RecomputeEvent(recompute_timestamp)
                 events.append(event)
-        events = EventQueue(events)
+        events = acns.EventQueue(events)
         return events, num_plugin
 
 
 class RealTraceGenerator(AbstractTraceGenerator):
-    """
-    Class for event queue generation using real traces from ACNData.
+    """Class for EventQueue generator using real traces from ACNData.
 
     Attributes:
-        site: either 'caltech' or 'jpl' garage to get events from
-        period: number of minutes of each time interval in simulation
-        recompute_freq: number of periods for recurring recompute
-        date_range: sequence of length two that defines the start and end date
-            for event generation. Both elements must be a string and have
-            format YYYY-MM-DD. Defaults to ["2018-11-05", "2018-11-11"].
         use_unclaimed: whether to use unclaimed data. Unclaimed data does not
             specify requested energy or estimated departure. If set to True,
             the generator will use the energy delivered in the session as the
             requested energy and the disconnect time as the estimated
             departure.
         sequential: whether to draw sequentially or randomly
-        requested_energy_cap: largest amount of requested energy allowed (kWh)
-        station_ids: set of strings containing identifiers for stations
-        num_stations: number of charging stations at site
-
-    Parameters:
         day: date of the episode run
+        *See AbstractTraceGenerator for more attributes
 
-    Assumes:
-        sessions are in Pacific time.
-
-    Raises:
-        ValueError: length of date_range is not 2
-        ValueError: entries of date_range are not in the correct format.
+    Notes:
+        Assumes sessions are in Pacific time.
     """
     def __init__(self,
                  site: SiteStr,
@@ -195,8 +179,12 @@ class RealTraceGenerator(AbstractTraceGenerator):
                  recompute_freq: int = 2,
                  use_unclaimed: bool = False,
                  requested_energy_cap: float = 100):
+        """
+        Args:
+            sequential: TODO
+            use_unclaimed: TODO
+        """
         super().__init__(site, period, recompute_freq, date_range, requested_energy_cap)
-        self.station_ids = set(self.station_ids)  # convert parent attribute to set
         self.use_unclaimed = use_unclaimed
         self.sequential = sequential
 
@@ -204,7 +192,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
             self.day = self.date_range[0] - timedelta(days=1)
         else:
             self._update_day()
-    
+
     def __repr__(self):
         """Returns string representation of RealTracesGenerator."""
         site = f"{self.site.capitalize()} site"
@@ -223,11 +211,10 @@ class RealTraceGenerator(AbstractTraceGenerator):
             self.day = self.date_range[0] + timedelta(randrange(interval_length))
 
     def _create_events(self) -> pd.DataFrame:
-        """
-        Retrieves and filters real events from a given day.
+        """Retrieves and filters real events from a given day.
 
         Returns:
-            (pd.DataFrame) real sessions with datetimes in terms of timestamps.
+            DataFrame of real sessions with datetimes in terms of timestamps.
         """
         self._update_day()
         df = get_real_events(self.day, self.day, site=self.site)  # Get events dataframe
@@ -252,24 +239,15 @@ class RealTraceGenerator(AbstractTraceGenerator):
         return df.copy()
 
 
-class ArtificialTraceGenerator(AbstractTraceGenerator):
-    """
-    Class for event queue generation using random sampling from trained GMMs.
+class GMMsTraceGenerator(AbstractTraceGenerator):
+    """Class for EventQueue generator by sampling from trained GMMs.
 
     Attributes:
-        site: either 'caltech' or 'jpl' garage to get events from
-        period: number of minutes of each time interval in simulation
-        recompute_freq: number of periods for recurring recompute
-        date_range: sequence of length two that defines the start and end date
-            for event generation. Both elements must be a string and have
-            format YYYY-MM-DD. Defaults to ["2018-11-05", "2018-11-11"].
         n_components: number of components in use for GMM
-        requested_energy_cap: largest amount of requested energy allowed (kWh)
-        station_ids: list of strings containing identifiers for stations
-        num_stations: number of charging stations at site
         gmm: Gaussian Mixture Model from sklearn for session modeling
         cnt: empirical distribution on the number of sessions per day
         station_usage: total number of sessions during interval for each station
+        *See AbstractTraceGenerator for more attributes
 
     Notes:
         gmm directory: Trained GMMs in directory used when real_traces is set
@@ -311,14 +289,13 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
         self.station_usage = np.load(os.path.join(model_path, "_station_usage.npy"))  # number of sessions on stations
 
     def __repr__(self):
-        """Returns string representation of ArtificialTracesGenerator."""
+        """Returns string representation of GMMsTracesGenerator."""
         site = f"{self.site.capitalize()} site"
         dr = f"from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}"
-        return f"ArtificialTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. "
+        return f"GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. "
 
     def _sample(self, n: int) -> np.ndarray:
-        """
-        Returns samples from GMM.
+        """Returns samples from GMM.
 
         Args:
             n: number of samples to generate.
@@ -326,7 +303,7 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
         Returns:
             array of shape (n, 4) whose columns are arrival time in minutes,
             departure time in minutes, estimated departure time in minutes,
-            and requested energy in kWh, respectively.
+            and requested energy in kWh.
         """
         samples = np.zeros((n, 4), dtype=np.float32)
         # use while loop for quality check
@@ -356,8 +333,7 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
         return samples
 
     def _create_events(self) -> pd.DataFrame:
-        """
-        Creates artificial events for the event queue.
+        """Creates artificial events for the event queue.
 
         This method first calls _sample to generate the arrival, departure,
         estimated departure, and requested energy fields. Then, it fills
@@ -367,19 +343,19 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
         distribution of stations for the entire date range.
 
         Returns:
-            (pd.DataFrame) DataFrame of artificial sessions.
+            DataFrame of artificial sessions.
         """
         # generate samples from empirical pdf, capping maximum at the number of stations
         n = min(np.random.choice(self.cnt), self.num_stations)
         samples = self._sample(n)
 
-        events = {}
-        events['arrival'] = list(map(int, samples[:, ARRCOL]))
-        events['departure'] = list(map(int, samples[:, DEPCOL]))
-        events['estimated_departure'] = list(map(int, samples[:, ESTCOL]))
-        events['requested_energy (kWh)'] = np.clip(samples[:, EREQCOL], 0, self.requested_energy_cap)
-        events['session_id'] = [str(uuid.uuid4()) for _ in range(n)]
-        events = pd.DataFrame(events)
+        events = pd.DataFrame({
+            'arrival': samples[:, ARRCOL].astype(int),
+            'departure': samples[:, DEPCOL].astype(int),
+            'estimated_departure': samples[:, ESTCOL].astype(int),
+            'requested_energy (kWh)': np.clip(samples[:, EREQCOL], 0, self.requested_energy_cap),
+            'session_id': [str(uuid.uuid4()) for _ in range(n)]
+        })
         # sort by arrival time for probabilistic sampling of stations
         events.sort_values('arrival', inplace=True)
 
@@ -405,7 +381,7 @@ class ArtificialTraceGenerator(AbstractTraceGenerator):
 if __name__ == "__main__":
     import time
     november_week = ('2018-11-05', '2018-11-11')
-    atg = ArtificialTraceGenerator('caltech', date_range=november_week, n_components=50, period=10, recompute_freq=3)
+    atg = GMMsTraceGenerator('caltech', date_range=november_week, n_components=50, period=10, recompute_freq=3)
     rtg1 = RealTraceGenerator('caltech', date_range=november_week, sequential=True)
     rtg2 = RealTraceGenerator('caltech', date_range=november_week, sequential=False, use_unclaimed=True)
 
