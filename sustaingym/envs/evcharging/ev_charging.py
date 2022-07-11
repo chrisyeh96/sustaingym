@@ -148,6 +148,7 @@ class EVChargingEnv(gym.Env):
         self.prev_timestamp, self.timestamp = self.timestamp, next_timestamp
         info.update(reward_info)
 
+        print(reward)
         return observation, reward, done, info
 
     def reset(self, *,

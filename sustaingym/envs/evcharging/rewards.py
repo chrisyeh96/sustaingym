@@ -58,7 +58,7 @@ def get_rewards(interface: Interface,
     # Immediate charging reward: amount of charge delivered to vehicles at previous timestamp (A * mins)
     charging_reward = DELIVERED_CHARGE_WEIGHT * np.sum(simulator.charging_rates[:, prev_timestamp:timestamp]) * period
 
-    # Network constraint violation punishment: amount of charge over maximum allowed rates (A * mins)
+    # Network constraint violation punishment: amount of charge over maximum allowed rates at previous timestamp (A * mins)
     current_sum = np.abs(simulator.network.constraint_current(schedule, linear=True))
     over_current = np.maximum(current_sum - simulator.network.magnitudes, 0)
     constraint_punishment = - CONSTRAINT_VIOLATION_WEIGHT * sum(over_current) * next_interval_mins
