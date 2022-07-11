@@ -9,9 +9,11 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import os
 from random import randrange
+from typing import List
 import uuid
 
 import acnportal.acnsim as acns
+import acnportal.acnsim.models as acnm
 import numpy as np
 import pandas as pd
 
@@ -22,7 +24,7 @@ DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
 GMMS_PATH = os.path.join('sustaingym', 'envs', 'evcharging', 'gmms')  # TODO: replace with pkg_util
 DEFAULT_DATE_RANGE = ('2018-11-05', '2018-11-11')
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
-BATTERY_CAPACITY, MAX_POWER = 100, 100
+MIN_BATTERY_CAPACITY, BATTERY_CAPACITY, MAX_POWER = 0, 100, 100
 
 
 def find_potential_folder(begin: str, end: str, n_components: int, site: SiteStr) -> str:
@@ -112,7 +114,7 @@ class AbstractTraceGenerator:
         """
         raise NotImplementedError
 
-    def get_event_queue(self) -> tuple[acns.EventQueue, int]:
+    def get_event_queue(self) -> tuple[acns.EventQueue, List[acnm.ev.EV], int]:
         """
         Creates an EventQueue from a DataFrame of charging information.
 
@@ -123,16 +125,17 @@ class AbstractTraceGenerator:
 
         Returns:
             (EventQueue) event queue of EV charging sessions
+            (List[acnm.ev.EV]) list of all EVs in event queue
             (int) number of plug in events (not counting recompute events)
         """
         samples = self._create_events()
 
         non_recompute_timestamps = set()
-        events = []
+        events, evs = [], []
         for i in range(len(samples)):
             requested_energy = min(samples['requested_energy (kWh)'].iloc[i], self.requested_energy_cap)
             battery = acns.Battery(
-                capacity=BATTERY_CAPACITY, init_charge=max(0, BATTERY_CAPACITY-requested_energy),
+                capacity=BATTERY_CAPACITY, init_charge=max(MIN_BATTERY_CAPACITY, BATTERY_CAPACITY-requested_energy),
                 max_power=MAX_POWER)
             ev = acns.EV(
                 arrival=samples['arrival'].iloc[i],
@@ -146,6 +149,7 @@ class AbstractTraceGenerator:
             event = acns.PluginEvent(samples['arrival'].iloc[i], ev)
             # no need for UnplugEvent as the simulator takes care of it
             events.append(event)
+            evs.append(ev)
 
             non_recompute_timestamps.add(samples['arrival'].iloc[i])
             non_recompute_timestamps.add(samples['departure'].iloc[i])
@@ -159,7 +163,7 @@ class AbstractTraceGenerator:
                 event = acns.RecomputeEvent(recompute_timestamp)
                 events.append(event)
         events = acns.EventQueue(events)
-        return events, num_plugin
+        return events, evs, num_plugin
 
 
 class RealTraceGenerator(AbstractTraceGenerator):

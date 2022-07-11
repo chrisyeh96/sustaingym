@@ -48,6 +48,7 @@ class EVChargingEnv(gym.Env):
         action_space: the space of actions. Note that not all actions in the
             action space may be feasible.
         events: the current EventQueue for the simulation
+        evs: the entire list of EVs during simulation day
         cn: charging network in use
         simulator: internal simulator from acnportal package
         interface: interface wrapper for simulator
@@ -76,7 +77,7 @@ class EVChargingEnv(gym.Env):
         # Define action space, which is the charging rate for all EVs
         self.action_space = get_action_space(self.cn, action_type)
 
-    def step(self, action: np.ndarray) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
+    def step(self, action: np.ndarray) -> tuple[dict[str, Any], float, bool, dict[Any, Any]]:
         """
         Step the environment.
 
@@ -88,7 +89,7 @@ class EVChargingEnv(gym.Env):
                 set {0, 1, 2, 3, 4} if action_type == 'discrete'; otherwise,
                 entries should fall in the range [0, 4].
 
-        Returns:
+        Returns: TODO fix depending on rewards
             observation: dict
             - "arrivals": array of shape (num_stations,). If the EVSE
                 corresponding to the index is active, the entry is the number
@@ -131,23 +132,17 @@ class EVChargingEnv(gym.Env):
         # TODO: make action fit constraints somehow? or nah
         # Step internal simulator
         schedule = to_schedule(action, self.cn, self.action_type)  # transform action to pilot signals
-        if self.simulator.event_queue.empty():
-            done = True
-            cur_event = None
-        else:
-            cur_event = self.simulator.event_queue.queue[0][1]
-            done = self.simulator.step(schedule)
-            self.simulator._resolve = False  # work-around to keep iterating
+        done = self.simulator.step(schedule)
+        self.simulator._resolve = False  # work-around to keep iterating
         # Next timestamp
         next_timestamp = self.max_timestamp if done else self.simulator.event_queue.queue[0][0]
         # Retrieve environment information
         observation, info = get_observation(self.interface, self.evse_name_to_idx)
-        reward, reward_info = get_rewards(self.interface, schedule, self.prev_timestamp, self.timestamp, next_timestamp, self.period, cur_event)
+        reward, reward_info = get_rewards(self.interface, schedule, self.prev_timestamp, self.timestamp, next_timestamp, self.period, done, self.evs)
         # Update timestamps
         self.prev_timestamp, self.timestamp = self.timestamp, next_timestamp
-        info.update(reward_info)
+        info['reward_calculation'] = reward_info
 
-        print(reward)
         return observation, reward, done, info
 
     def reset(self, *,
@@ -181,7 +176,7 @@ class EVChargingEnv(gym.Env):
         # Initialize charging network
         self.cn = site_str_to_site(self.site)
         # Initialize event queue
-        self.events, num_plugs = self.data_generator.get_event_queue()
+        self.events, self.evs, num_plugs = self.data_generator.get_event_queue()
 
         if self.verbose >= 1:
             if type(self.data_generator) is RealTraceGenerator:
