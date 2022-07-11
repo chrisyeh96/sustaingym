@@ -1,6 +1,7 @@
 from copy import deepcopy
 from typing import Any, List
 
+import cvxpy as cp
 import numpy as np
 
 from ...envs.evcharging.actions import to_schedule, ACTION_SCALING_FACTOR
@@ -62,7 +63,7 @@ class BaseOnlineAlgorithm:
 
         for _ in range(iterations):
             done = False
-            options = {"verbose": 1}
+            options = {'verbose': 1}
             obs = env.reset(options=options)
             obs = self.scale_obs(obs)
             acc_reward = 0.0
@@ -99,7 +100,7 @@ class SelectiveChargingAlgorithm(BaseOnlineAlgorithm):
                 EVs.
         """
         self.rate = rate
-        self.name = f"selective charge @ rate {ACTION_SCALING_FACTOR * rate} A"
+        self.name = f'selective charge @ rate {ACTION_SCALING_FACTOR * rate} A'
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """
@@ -114,22 +115,40 @@ class RandomAlgorithm(BaseOnlineAlgorithm):
     Attributes:
         name: name of the algorithm
     """
-    name: str = "random"
+    name: str = 'random'
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
-        return np.random.randint(5, size=observation["demands"].shape)
+        return np.random.randint(5, size=observation['demands'].shape)
 
 
-# class GreedyAlgorithm(BaseOnlineAlgorithm):
-#     """
-#     Algorithm that charges at the maximum rate respecting network
-#     constraints.
-#     """
-#     name = "greedy"
-#     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
-#         """
-        
-#         """
-#         pass
+class GreedyAlgorithm(BaseOnlineAlgorithm):
+    """Greedy optimization at each time step.
+
+    Attributes:
+        name: name of the algorithm
+    """
+    name: str = 'optimal greedy'
+    def get_action(self, observation: dict[str, Any]) -> np.ndarray:
+        num_stations = observation['demands'].shape[0]
+        r = cp.Variable(num_stations)
+        A = observation['constraint_matrix']
+        phase_factor = np.exp(1j * np.deg2rad(observation['phases']))
+        A_tilde = A * phase_factor[None, :]
+        agg_current_complex = A_tilde @ r
+        agg_magnitude = cp.abs(agg_current_complex)
+
+        # demands = cp.Parameter(num_stations)
+        print(agg_magnitude)
+        assert 1 == 0
+        objective = cp.Minimize(cp.norm(r - observation['demands'], p=1))
+        constraints = [0 <= r, r <= MAX_ACTION, agg_magnitude <= observation['magnitudes']]
+
+        prob = cp.Problem(objective, constraints)
+
+        optimal = prob.solve(solver='ECOS')
+
+        print(sum(r.value))
+        return r.value
+
 
 # class RLAlgorithm(BaseOnlineAlgorithm):
 #     """
