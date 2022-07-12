@@ -9,10 +9,10 @@ import acnportal.acnsim.models as acnm
 import numpy as np
 
 
-CHARGE_COST_WEIGHT = 0.02
-DELIVERED_CHARGE_WEIGHT = 5.
-CONSTRAINT_VIOLATION_WEIGHT = 2.
-UNCHARGED_PUNISHMENT_WEIGHT = 1.
+CHARGE_COST_WEIGHT = 1.
+DELIVERED_CHARGE_WEIGHT = 2. * CHARGE_COST_WEIGHT
+CONSTRAINT_VIOLATION_WEIGHT = 10.
+UNCHARGED_PUNISHMENT_WEIGHT = 5.
 weights = {
     "charge_cost": CHARGE_COST_WEIGHT,
     "delivered_charge": DELIVERED_CHARGE_WEIGHT,
@@ -68,7 +68,7 @@ def get_rewards(interface: Interface,
     charging_reward = np.sum(simulator.charging_rates[:, prev_timestamp:timestamp]) * period
 
     # Network constraint violation punishment: amount of charge over maximum allowed rates at previous timestamp (A * mins)
-    current_sum = np.abs(simulator.network.constraint_current(schedule, linear=True))
+    current_sum = np.abs(simulator.network.constraint_current(schedule))
     over_current = np.maximum(current_sum - simulator.network.magnitudes, 0)
     constraint_punishment = sum(over_current) * next_interval_mins
 

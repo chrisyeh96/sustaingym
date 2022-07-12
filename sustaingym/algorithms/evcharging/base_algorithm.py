@@ -12,6 +12,8 @@ from ...envs.evcharging.utils import ActionType
 
 MIN_ACTION = 0
 MAX_ACTION = 4
+EPS = 1e-7
+ROUND_UP_THRESH = 0.8
 
 
 class BaseOnlineAlgorithm:
@@ -132,13 +134,17 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
         # for recompute_freq periods
         demands = observation['demands'] / ACTION_SCALING_FACTOR / observation['recompute_freq']
 
+        # Set up problem and solve
         objective = cp.Minimize(cp.norm(r - demands, p=1))
-        constraints = [MIN_ACTION <= r, r <= MAX_ACTION, agg_magnitude <= observation['magnitudes']]
-
+        constraints = [MIN_ACTION <= r, r <= MAX_ACTION + EPS, agg_magnitude <= observation['magnitudes']]
         prob = cp.Problem(objective, constraints)
         prob.solve(solver='ECOS')
+        action_suggested = r.value
 
-        return r.value
+        # Post-process action to round up only when decimal part of scaled action is above a threshold
+        action_suggested_scaled = action_suggested * ACTION_SCALING_FACTOR
+        action_scaled = np.where(np.modf(action_suggested_scaled)[0] > ROUND_UP_THRESH, np.round(action_suggested_scaled), np.floor(action_suggested_scaled))
+        return action_scaled / ACTION_SCALING_FACTOR
 
 
 class PPOAlgorithm(BaseOnlineAlgorithm):
