@@ -3,6 +3,7 @@ from typing import Any, List
 
 import cvxpy as cp
 import numpy as np
+from stable_baselines3 import PPO
 
 from ...envs.evcharging.actions import to_schedule, ACTION_SCALING_FACTOR
 from ...envs.evcharging.actions import to_schedule, ACTION_SCALING_FACTOR
@@ -36,17 +37,6 @@ class BaseOnlineAlgorithm:
         """
         raise NotImplementedError
 
-    def scale_obs(self, observation: dict[str, Any]) -> dict[str, Any]:
-        """Scale observation demand by the action discretization factor.
-
-        Normalize demands so that action outputs in [0, 4] have the same
-        magnitude impact on decreasing demands.
-        """
-        scaled_obs = observation.copy()
-        scaled_obs['demands'] /= ACTION_SCALING_FACTOR
-        scaled_obs['magnitudes'] /= ACTION_SCALING_FACTOR
-        return scaled_obs
-
     def run(self, env: EVChargingEnv, iterations: int) -> List[float]:
         """
         Runs the scheduling algorithm for the current period and returns the
@@ -63,19 +53,18 @@ class BaseOnlineAlgorithm:
 
         for _ in range(iterations):
             done = False
-            options = {'verbose': 1}
-            obs = env.reset(options=options)
-            obs = self.scale_obs(obs)
+            obs = env.reset()
             acc_reward = 0.0
 
+            i = 0
             while not done:
                 action = self.get_action(obs)
                 if env.action_type == 'discrete':
                     action = np.round(action).astype(np.int32)
                 obs, reward, done, _ = env.step(action)
-                obs = self.scale_obs(obs)
                 acc_reward += reward
-            
+                i += 1
+
             total_rewards.append(acc_reward)
         
         return total_rewards
@@ -128,37 +117,36 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
     """
     name: str = 'optimal greedy'
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
+        # Set up variable r to optimize
         num_stations = observation['demands'].shape[0]
         r = cp.Variable(num_stations)
-        A = observation['constraint_matrix']
-        phase_factor = np.exp(1j * np.deg2rad(observation['phases']))
-        A_tilde = A * phase_factor[None, :]
-        agg_current_complex = A_tilde @ r
-        agg_magnitude = cp.abs(agg_current_complex)
 
-        # demands = cp.Parameter(num_stations)
-        print(agg_magnitude)
-        assert 1 == 0
-        objective = cp.Minimize(cp.norm(r - observation['demands'], p=1))
-        constraints = [0 <= r, r <= MAX_ACTION, agg_magnitude <= observation['magnitudes']]
+        # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
+        phase_factor = np.exp(1j * np.deg2rad(observation['phases']))
+        A_tilde = observation['constraint_matrix'] * phase_factor[None, :]
+        agg_magnitude = cp.abs(A_tilde @ r) * ACTION_SCALING_FACTOR  # convert to A
+
+        # Close gap between r (ACTION_SCALING_FACTOR*A) and demands (A*periods)
+        # Units of outputted action is (ACTION_SCALING_FACTOR*A), demands is in A*periods
+        # convert energy to current signal by assuming outputted current will be used
+        # for recompute_freq periods
+        demands = observation['demands'] / ACTION_SCALING_FACTOR / observation['recompute_freq']
+
+        objective = cp.Minimize(cp.norm(r - demands, p=1))
+        constraints = [MIN_ACTION <= r, r <= MAX_ACTION, agg_magnitude <= observation['magnitudes']]
 
         prob = cp.Problem(objective, constraints)
+        prob.solve(solver='ECOS')
 
-        optimal = prob.solve(solver='ECOS')
-
-        print(sum(r.value))
         return r.value
 
 
-# class RLAlgorithm(BaseOnlineAlgorithm):
-#     """
-#     Based on RL
-#     """
-#     def __init__(self, rl_model, name="RL algorithm"):
-#         self.rl_model = rl_model
-#         self.name = name
+class PPOAlgorithm(BaseOnlineAlgorithm):
+    """Algorithm that outputs prediction of a PPO RL agent.
+    """
+    def __init__(self, rl_model: PPO, name="PPO algorithm"):
+        self.rl_model = rl_model
+        self.name = name
 
-#     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
-#         """
-#         """
-#         return self.rl_model.predict(observation)[0]
+    def get_action(self, observation: dict[str, Any]) -> np.ndarray:
+        return self.rl_model.predict(observation)[0]

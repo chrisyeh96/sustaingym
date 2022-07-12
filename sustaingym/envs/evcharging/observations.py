@@ -34,12 +34,14 @@ def get_observation_space(cn: ChargingNetwork) -> spaces.Dict:
         "magnitudes": spaces.Box(low=0.0, high=np.inf, shape=(num_constraints,), dtype=np.float32),
         "demands": spaces.Box(low=0.0, high=np.inf, shape=(num_stations,), dtype=np.float32),
         "phases": spaces.Box(low=-180.0, high=180.0, shape=(num_stations,), dtype=np.float32),
+        "recompute_freq": spaces.Box(low=0, high=LARGE_INT, shape=(1,), dtype=np.int32),
         "timestep": spaces.Box(low=0, high=LARGE_INT, shape=(1,), dtype=np.int32),
     })
 
 
 def get_observation(interface: Interface,
                     evse_name_to_idx: dict,
+                    recompute_freq: int,
                     get_info: bool = True
                     ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
     """
@@ -48,6 +50,7 @@ def get_observation(interface: Interface,
     Args:
         interface: interface of acnportal.acnsim Simulator.
         evse_name_to_idx: dictionary defining the index of each EVSE.
+        recompute_freq: number of periods per recompute
         get_info: whether extra information should be returned as well.
 
     Returns:
@@ -87,6 +90,7 @@ def get_observation(interface: Interface,
         "magnitudes": cn.magnitudes,
         "demands": demands,
         "phases": phases,
+        "recompute_freq": np.ones(shape=(1,), dtype=np.int32) * recompute_freq,
         "timestep": np.ones(shape=(1,), dtype=np.int32) * timestep,
     }
 

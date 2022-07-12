@@ -42,8 +42,11 @@ class EVChargingEnv(gym.Env):
         num_stations: number of EVSEs in the garage
         day: only present when self.real_traces is True. The actual day that
             the simulator is simulating.
-        generator: (AbstractTraceGenerator) a class whose instances can
+        data_generator: (AbstractTraceGenerator) a class whose instances can
             sample events that populate the event queue.
+        site: either 'caltech' or 'jpl' garage to get events from
+        period: number of minutes of each time interval in simulation
+        recompute_freq: number of periods for recurring recompute
         observation_space: the space of available observations
         action_space: the space of actions. Note that not all actions in the
             action space may be feasible.
@@ -60,6 +63,7 @@ class EVChargingEnv(gym.Env):
         self.data_generator = data_generator
         self.site = data_generator.site
         self.period = data_generator.period
+        self.recompute_freq = data_generator.recompute_freq
         self.max_timestamp = MINS_IN_DAY // self.period
         self.action_type = action_type
         self.verbose = verbose
@@ -137,7 +141,7 @@ class EVChargingEnv(gym.Env):
         # Next timestamp
         next_timestamp = self.max_timestamp if done else self.simulator.event_queue.queue[0][0]
         # Retrieve environment information
-        observation, info = get_observation(self.interface, self.evse_name_to_idx)
+        observation, info = get_observation(self.interface, self.evse_name_to_idx, self.recompute_freq)
         reward, reward_info = get_rewards(self.interface, schedule, self.prev_timestamp, self.timestamp, next_timestamp, self.period, done, self.evs)
         # Update timestamps
         self.prev_timestamp, self.timestamp = self.timestamp, next_timestamp
@@ -194,7 +198,7 @@ class EVChargingEnv(gym.Env):
         # Initialize time steps
         self.prev_timestamp, self.timestamp = 0, self.simulator.event_queue.queue[0][0]
         # Retrieve environment information
-        return get_observation(self.interface, self.evse_name_to_idx, get_info=return_info)
+        return get_observation(self.interface, self.evse_name_to_idx, self.recompute_freq, get_info=return_info)
 
     def render(self) -> None:
         """Render environment."""
