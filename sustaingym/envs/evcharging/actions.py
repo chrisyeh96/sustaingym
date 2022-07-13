@@ -4,6 +4,8 @@ to usable pilot signals for the Simulator class in acnportal.acnsim.
 """
 from __future__ import annotations
 
+import warnings
+
 from acnportal.acnsim.network import ChargingNetwork
 from gym import spaces
 import numpy as np
@@ -51,8 +53,8 @@ def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: ActionType
 
     Args:
         action: np.ndarray of shape (len(evses),)
-            If action_type is 'discrete', expects actions in the set
-                {0, 1, 2, 3, 4}.
+            If action_type is 'discrete', expects actions in [0, 4]. Rounds
+                them to the nearest integer.
             If action_type is 'continuous', expects actions in [0, 4].
         cn: charging network in environment simulation
         action_type: either 'discrete' or 'continuous'
@@ -62,7 +64,9 @@ def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: ActionType
             required by acnportal's Simulator
     """
     if action_type == 'discrete':
-        return {e: [ACTION_SCALING_FACTOR * a] for a, e in zip(action, cn.station_ids)}
+        if not np.issubdtype(action.dtype, np.integer):
+            warnings.warn("Non-integer dtype for action type discrete: rounding action")
+        return {e: [ACTION_SCALING_FACTOR * a] for a, e in zip(np.round(action), cn.station_ids)}
     elif action_type == 'continuous':
         action = np.round(action * ACTION_SCALING_FACTOR).astype(np.int32)  # round to nearest integer rate
         pilot_signals = {}

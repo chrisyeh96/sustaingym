@@ -9,7 +9,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 import os
 from random import randrange
-from typing import List
 import uuid
 
 import acnportal.acnsim as acns
@@ -114,7 +113,7 @@ class AbstractTraceGenerator:
         """
         raise NotImplementedError
 
-    def get_event_queue(self) -> tuple[acns.EventQueue, List[acnm.ev.EV], int]:
+    def get_event_queue(self) -> tuple[acns.EventQueue, list[acnm.ev.EV], int]:
         """
         Creates an EventQueue from a DataFrame of charging information.
 
