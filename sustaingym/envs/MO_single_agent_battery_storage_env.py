@@ -2,8 +2,9 @@
 The module implements the BatteryStorageInGridEnv class.
 """
 from __future__ import annotations
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
+import math
 import numpy as np
 import cvxpy as cp
 import gym
@@ -21,8 +22,43 @@ class MarketOperator():
     def __init__(self, env: BatteryStorageInGridEnv):
         """
         Constructs instance of MarketOperator class.
+
+        Args:
+            env: instance of BatteryStorageInGridEnv class
         """
         self.env = env
+    
+    def get_dispatch(self) -> Tuple:
+        """
+        Returns dispatch values.
+
+        Returns:
+            Tuple: (generator dispatch values, battery dispatch values, and agent battery
+            dispath value)
+        """
+        x_i = cp.Variable(self.env.num_gens)
+        x_j = cp.Variable(self.env.num_batteries)
+        x_tilda = cp.Variable(1)
+        a_i = self.env.gen_costs
+
+        constraints = []
+        time_step = self.env.TIME_STEP_DURATION / 60
+
+        for i in range(self.env.num_gens):
+            constraints.append(self.env.gen_max_production[i]*time_step >= x_i[i] >= 0)
+        
+        for i in range(self.env.num_batteries):
+            constraints.append(self.env.battery_max_discharge[i]*time_step >= x_j[i] >= 
+                               self.env.battery_max_charge[i]*time_step)
+        constraints.append(self.env.agent_battery_max_discharge*time_step >= x_tilda >=
+                          self.env.agent_battery_max_charge*time_step)
+        constraints.append(x_i.sum() + x_j.sum() + x_tilda ==
+                           self.env._generate_load_data())
+
+        # ask Chris how to deal with the piecewise functions for batteries in the
+        # minimization problem formulation
+        objective = cp.Problem(cp.Minimize(a_i.T@x_i), constraints)
+
     
 
         
@@ -46,7 +82,7 @@ class BatteryStorageInGridEnv(gym.Env):
     CHARGE_EFFICIENCY = 0.4
     # Discharge efficiency
     DISCHARGE_EFFICIENCY = 0.6
-    # Time step duration (hr)
+    # Time step duration (min)
     TIME_STEP_DURATION = 5
     # Each trajectories is one day (1440 minutes)
     MAX_STEPS_PER_EPISODE = 288
@@ -167,6 +203,9 @@ class BatteryStorageInGridEnv(gym.Env):
         else:
             self.agent_battery_min_capacity = agent_battery_min_capacity
         
+        self.agent_init_battery_cahrge = (self.agent_battery_min_capacity +
+                                        self.agent_battery_max_capacity) / 2.0
+        
         if agent_battery_max_discharge == None:
             self.agent_battery_max_discharge = np.random.uniform(2, 4)
         else:
@@ -191,3 +230,25 @@ class BatteryStorageInGridEnv(gym.Env):
             -np.inf, np.inf, shape=(3, ), dtype=np.float32
         )
         self.init = False
+        self.count = 0
+    
+    def _generate_load_data(self) -> float:
+        return 30*math.sin(2*math.pi*self.count/288) + 30
+
+    def reset(self, *,
+              seed: int | None = None,
+              return_info: bool = False,
+              options: dict | None = None) -> tuple:
+        """
+        Initialize or restart an instance of an episode for the BatteryStorageEnv.
+
+        Args:
+            seed: optional seed value for controlling seed of np_random attributes
+            return_info: determines if returned observation includes additional
+            info or not
+            options: includes optional settings like reward type
+        Returns:
+            tuple containing the initial observation for env's episode
+        """
+
+

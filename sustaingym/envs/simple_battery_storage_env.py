@@ -42,7 +42,7 @@ class BatteryStorageEnv(gym.Env):
     CHARGE_EFFICIENCY = 0.4
     # Discharge efficiency
     DISCHARGE_EFFICIENCY = 0.6
-    # Time step duration (hr)
+    # Time step duration (min)
     TIME_STEP_DURATION = 5
     # Each trajectories is one day (1440 minutes)
     MAX_STEPS_PER_EPISODE = 288
