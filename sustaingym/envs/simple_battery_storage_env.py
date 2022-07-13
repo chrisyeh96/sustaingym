@@ -4,14 +4,15 @@ The module implements the BatteryStorageEnv class.
 from __future__ import annotations
 from typing import Dict, Optional
 
-import numpy as np
-import gym
-from gym import spaces
-import pandas as pd
 import pkgutil
 from io import StringIO
 import sys
 sys.path.append('../')
+
+import numpy as np
+import gym
+from gym import spaces
+import pandas as pd
 
 
 class BatteryStorageEnv(gym.Env):
