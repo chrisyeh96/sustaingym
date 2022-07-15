@@ -63,11 +63,14 @@ class BatteryStorageInGridEnv(Env):
         a ($ / MWh)                         -Inf                    Inf
         b ($ / MWh)                         -Inf                    Inf
     Observation:
-        Type: Box(2)
+        Type: Box(5)
                                             Min                     Max
-        Energy storage level (MWh)          -Inf                    Inf
-        Current Electricity Price ($/MWh)   -Inf                    Inf
+        Energy storage level (MWh)           0                     Max Capacity
         Time (fraction of day)               0                       1
+        Previous charge cost ($ / MWh)       0                     Max Cost
+        Previous discharge cost ($ / MWh)    0                     Max Cost
+        Previous agent dispatch (MWh)        Max Charge            Max Discharge
+        Previous load demand (MWh)           0                     55
     """
 
     # Charge efficiency
@@ -111,6 +114,8 @@ class BatteryStorageInGridEnv(Env):
             agent_battery_max_charge: maximum charge rate of agent's battery (MW)
             agent_battery_max_cost: maximum cost for charging or discharging
             for agent's battery ($/MWh)
+        Returns:
+            N/A
         """
         self.num_gens = num_gens
 
@@ -208,8 +213,8 @@ class BatteryStorageInGridEnv(Env):
                                                 shape=(1, ), dtype=np.float32),
             "previous discharge cost": spaces.Box(low=0, high=self.agent_battery_max_cost,
                                                 shape=(1, ), dtype=np.float32),
-            "previous agent dispatch": spaces.Box(low=agent_battery_max_charge*time_step,
-                                                high=agent_battery_max_discharge*time_step,
+            "previous agent dispatch": spaces.Box(low=self.agent_battery_max_charge*time_step,
+                                                high=self.agent_battery_max_discharge*time_step,
                                                 shape=(1, ), dtype=np.float32),
             "previous load demand": spaces.Box(low=0, high=55,
                                                 shape=(1, ), dtype=np.float32) 
@@ -241,9 +246,14 @@ class BatteryStorageInGridEnv(Env):
         else:
             self.rng = np.random.default_rng()
         
-        self.energy_lvl = self.agent_init_battery_charge
-        self.a = 0
-        self.b = 0
+        for i in range(self.num_gens):
+            self.gen_costs[i] = self.rng.uniform(0.8*self.gen_costs[i],
+                                                  1.2*self.gen_costs[i])
+
+        self.energy_lvl = np.array(self.agent_init_battery_charge, dtype=np.float32)
+        self.a = np.array(0.0, dtype=np.float32)
+        self.b = np.array(0.0, dtype=np.float32)
+        self.dispatch = np.array(0.0, dtype=np.float32)
 
         self.reward_type = 0  # default reward type without moving price average
         if options and 'reward' in options.keys():
@@ -251,9 +261,8 @@ class BatteryStorageInGridEnv(Env):
                 self.reward_type = 1
         
         self.init = True
-        self.time = 0
-        self.dispatch = 0
-        self.load_demand = self._generate_load_data()
+        self.time = np.array(0.0, dtype=np.float32)
+        self.load_demand = np.array(self._generate_load_data(), dtype=np.float32)
         return {
             "current_energy_level": self.energy_lvl,
             "current_time": self.time,
@@ -278,22 +287,39 @@ class BatteryStorageInGridEnv(Env):
         assert self.reward_type == 0
         assert self.action_space.contains(action)
 
-        time_step = self.TIME_STEP_DURATION / 60
-        self.time += 1 / self.MAX_STEPS_PER_EPISODE
+        for i in range(self.num_gens):
+            self.gen_costs[i] = self.rng.uniform(0.8*self.gen_costs[i],
+                                                  1.2*self.gen_costs[i])
+        
+        for i in range(self.num_batteries):
+            self.battery_charge_costs[i] = self.rng.uniform(
+                                                    0.8*self.battery_charge_costs[i],
+                                                    1.2*self.battery_charge_costs[i])
+            self.battery_discharge_costs[i] = self.rng.uniform(
+                                                    0.8*self.battery_discharge_costs[i],
+                                                    1.2*self.battery_discharge_costs[i])
 
-        self.a = action[0]
-        self.b = action[1]
+        time_step = self.TIME_STEP_DURATION / 60
+        self.time[0] += 1 / self.MAX_STEPS_PER_EPISODE
+
+        prev_a = self.a
+        prev_b = self.b
+
+        self.a = np.array(action[0], dtype=np.float32)
+        self.b = np.array(action[1], dtype=np.float32)
+
+        prev_dispatch = self.dispatch
 
         market_op = MarketOperator(self)
         (_, x_bats, x_agent) = market_op.get_dispatch()
-        self.dispatch = x_agent
+        self.dispatch = np.array(x_agent, dtype=np.float32)
         self.count += 1
-        load_demand = self.load_demand
-        self.load_demand = self._generate_load_data()
+        prev_load_demand = self.load_demand
+        self.load_demand = np.array(self._generate_load_data(), dtype=np.float32)
         if 0 <= x_agent:
-            self.energy_lvl += self.DISCHARGE_EFFICIENCY * x_agent
+            self.energy_lvl[0] += self.DISCHARGE_EFFICIENCY * x_agent
         else:
-            self.energy_lvl += (1 / self.CHARGE_EFFICIENCY) * x_agent
+            self.energy_lvl[0] += (1 / self.CHARGE_EFFICIENCY) * x_agent
         
         for i in range(self.num_batteries):
             if x_bats[i] >= 0:
@@ -310,21 +336,21 @@ class BatteryStorageInGridEnv(Env):
                                 (time_step * self.DISCHARGE_EFFICIENCY)
                                 ) for i in range(self.num_batteries)]
         self.agent_battery_max_charge = max(self.agent_battery_max_charge,
-                                (self.agent_battery_max_capacity - self.energy_lvl) /
+                                (self.agent_battery_max_capacity - self.energy_lvl[0]) /
                                 (time_step * (1 / self.CHARGE_EFFICIENCY))
                                 )
         self.agent_battery_max_discharge = min(self.agent_battery_max_discharge,
-                                (self.energy_lvl) /
+                                (self.energy_lvl[0]) /
                                 (time_step * self.DISCHARGE_EFFICIENCY)
                                 )
         self.done = True if self.count >= self.MAX_STEPS_PER_EPISODE else False
         return {
             "current_energy_level": self.energy_lvl,
             "current_time": self.time,
-            "previous charge cost": self.b,
-            "previous discharge cost": self.a,
-            "previous agent dispatch": self.dispatch,
-            "previous load demand": load_demand
+            "previous charge cost": prev_b,
+            "previous discharge cost": prev_a,
+            "previous agent dispatch": prev_dispatch,
+            "previous load demand": prev_load_demand
         }
     
     def render(self):
