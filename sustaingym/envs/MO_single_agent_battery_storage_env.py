@@ -49,8 +49,8 @@ class MarketOperator():
         obj = env.gen_costs.T@x_gens
         obj += env.battery_charge_costs.T@cp.maximum(x_bats, 0) + env.battery_discharge_costs.T@cp.minimum(
                 0, x_bats)
-        obj += self.a*cp.maximum(x_agent, 0) + self.b*cp.minimum(x_agent, 0)
-        objective = cp.Problem(objective=obj, constraints=constraints)
+        obj += env.a*cp.maximum(x_agent, 0) + env.b*cp.minimum(x_agent, 0)
+        objective = cp.Problem(objective=cp.Minimize(obj), constraints=constraints)
         objective.solve()
         return x_gens.value, x_bats.value, x_agent.value
         
@@ -250,10 +250,10 @@ class BatteryStorageInGridEnv(Env):
             self.gen_costs[i] = self.rng.uniform(0.8*self.gen_costs[i],
                                                   1.2*self.gen_costs[i])
 
-        self.energy_lvl = np.array(self.agent_init_battery_charge, dtype=np.float32)
-        self.a = np.array(0.0, dtype=np.float32)
-        self.b = np.array(0.0, dtype=np.float32)
-        self.dispatch = np.array(0.0, dtype=np.float32)
+        self.energy_lvl = np.array([self.agent_init_battery_charge], dtype=np.float32)
+        self.a = np.array([0.0], dtype=np.float32)
+        self.b = np.array([0.0], dtype=np.float32)
+        self.dispatch = np.array([0.0], dtype=np.float32)
 
         self.reward_type = 0  # default reward type without moving price average
         if options and 'reward' in options.keys():
@@ -261,8 +261,8 @@ class BatteryStorageInGridEnv(Env):
                 self.reward_type = 1
         
         self.init = True
-        self.time = np.array(0.0, dtype=np.float32)
-        self.load_demand = np.array(self._generate_load_data(), dtype=np.float32)
+        self.time = np.array([0.0], dtype=np.float32)
+        self.load_demand = np.array([self._generate_load_data()], dtype=np.float32)
         return {
             "current_energy_level": self.energy_lvl,
             "current_time": self.time,
@@ -305,17 +305,17 @@ class BatteryStorageInGridEnv(Env):
         prev_a = self.a
         prev_b = self.b
 
-        self.a = np.array(action[0], dtype=np.float32)
-        self.b = np.array(action[1], dtype=np.float32)
+        self.a = np.array([action[0]], dtype=np.float32)
+        self.b = np.array([action[1]], dtype=np.float32)
 
         prev_dispatch = self.dispatch
 
         market_op = MarketOperator(self)
         (_, x_bats, x_agent) = market_op.get_dispatch()
-        self.dispatch = np.array(x_agent, dtype=np.float32)
+        self.dispatch = np.array([x_agent], dtype=np.float32)
         self.count += 1
         prev_load_demand = self.load_demand
-        self.load_demand = np.array(self._generate_load_data(), dtype=np.float32)
+        self.load_demand = np.array([self._generate_load_data()], dtype=np.float32)
         if 0 <= x_agent:
             self.energy_lvl[0] += self.DISCHARGE_EFFICIENCY * x_agent
         else:
