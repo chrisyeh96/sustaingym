@@ -34,8 +34,8 @@ def get_observation_space(cn: ChargingNetwork) -> spaces.Dict:
         "magnitudes": spaces.Box(low=0.0, high=np.inf, shape=(num_constraints,), dtype=np.float32),
         "demands": spaces.Box(low=0.0, high=np.inf, shape=(num_stations,), dtype=np.float32),
         "phases": spaces.Box(low=-180.0, high=180.0, shape=(num_stations,), dtype=np.float32),
-        "recompute_freq": spaces.Box(low=0, high=LARGE_INT, shape=(1,), dtype=np.int32),
-        "timestep": spaces.Box(low=0, high=LARGE_INT, shape=(1,), dtype=np.int32),
+        "recompute_freq": spaces.Box(low=0, high=LARGE_INT, shape=(), dtype=np.int32),
+        "timestep": spaces.Box(low=0, high=LARGE_INT, shape=(), dtype=np.int32),
     })
 
 
@@ -61,12 +61,12 @@ def get_observation(interface: Interface,
     cn = simulator.network
 
     num_stations = cn.constraint_matrix.shape[1]
-    arrivals = np.zeros(shape=(num_stations,), dtype=np.int32)
-    est_departures = np.zeros(shape=(num_stations,), dtype=np.int32)
-    demands = np.zeros(shape=(num_stations,), dtype=np.float32)
-    phases = np.zeros(shape=(num_stations,), dtype=np.float32)
+    arrivals = np.zeros((num_stations,), dtype=np.int32)
+    est_departures = np.zeros((num_stations,), dtype=np.int32)
+    demands = np.zeros((num_stations,), dtype=np.float32)
+    phases = np.zeros((num_stations,), dtype=np.float32)
     if get_info:
-        actual_departures = np.zeros(shape=(num_stations,), dtype=np.int32)
+        actual_departures = np.zeros((num_stations,), dtype=np.int32)
 
     for session_info in interface.active_sessions():
         station_id = session_info.station_id
@@ -86,12 +86,12 @@ def get_observation(interface: Interface,
     obs = {
         "arrivals": arrivals,
         "est_departures": est_departures,
-        "constraint_matrix": cn.constraint_matrix,
-        "magnitudes": cn.magnitudes,
+        # "constraint_matrix": cn.constraint_matrix,
+        # "magnitudes": cn.magnitudes,
         "demands": demands,
-        "phases": phases,
-        "recompute_freq": np.ones(shape=(1,), dtype=np.int32) * recompute_freq,
-        "timestep": np.ones(shape=(1,), dtype=np.int32) * timestep,
+        # "phases": phases,
+        "recompute_freq": recompute_freq,
+        "timestep": timestep,
     }
 
     if get_info:

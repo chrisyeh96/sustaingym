@@ -134,9 +134,6 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
         super().__init__(env)
 
         self.first_run = True
-        self.r = None
-        self.demands = None
-        self.prob = None
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         if self.first_run:
@@ -181,7 +178,7 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
 class PPOAlgorithm(BaseOnlineAlgorithm):
     """Algorithm that outputs prediction of a PPO RL agent.
     """
-    def __init__(self, rl_model: PPO, name="PPO algorithm"):
+    def __init__(self, rl_model: PPO, name: str="PPO algorithm"):
         self.rl_model = rl_model
         self.name = name
 

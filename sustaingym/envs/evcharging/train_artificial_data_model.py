@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 
-from .utils import get_real_events, save_gmm, site_str_to_site, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, GMM_DIR, SiteStr
+from .utils import get_real_events, get_folder_name, save_gmm_model, site_str_to_site, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, SiteStr
 
 
 DEFAULT_DATE_RANGE = ["2018-11-01", "2018-11-07", "2019-11-01", "2019-11-07", "2020-11-01", "2020-11-07"]
@@ -123,11 +123,6 @@ def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime
     return date_ranges
 
 
-def get_folder_name(begin: str, end: str, n_components: int) -> str:
-    """Returns folder name for a trained GMM."""
-    return begin + " " + end + " " + str(n_components)
-
-
 def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, datetime]) -> None:
     """
     Creates a GMM and saves in the `gmms` folder.
@@ -173,12 +168,7 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
         os.makedirs(save_dir)
 
     print(f"Saving in: {save_dir}\n")
-    # save session counts
-    np.save(os.path.join(save_dir, "_cnts"), cnt, allow_pickle=False)
-    # save station id usage
-    np.save(os.path.join(save_dir, "_station_usage"), sid, allow_pickle=False)
-
-    save_gmm(gmm, save_dir)
+    save_gmm_model(gmm, cnt, sid, save_dir)
 
 
 def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = DEFAULT_DATE_RANGE) -> None:

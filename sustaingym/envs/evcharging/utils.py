@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from datetime import timedelta, datetime
 import os
 import pickle
+import pkgutil
 from typing import Any, Literal
 
 import acnportal.acndata as acnd
@@ -18,13 +19,28 @@ from sklearn.mixture import GaussianMixture
 API_TOKEN = 'DEMO_TOKEN'
 DATE_FORMAT = '%Y-%m-%d'
 DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
-GMM_DIR = os.path.join('sustaingym', 'envs', 'evcharging', 'gmms')
+GMM_DIR = 'gmms'  # name of gmms folder in current working directory
 MINS_IN_DAY = 1440
 REQ_ENERGY_SCALE = 100
 START_DATE, END_DATE = datetime(2018, 11, 1), datetime(2021, 8, 31)
 
 ActionType = Literal['discrete', 'continuous']
 SiteStr = Literal['caltech', 'jpl']
+
+
+DefaultPeriodStr = Literal['Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer 2021',
+'Pre-COVID-19 Summer', 'Pre-COVID-19 Fall', 'In-COVID-19', 'Post-COVID-19']
+
+DEFAULT_DATE_RANGES = {
+    'Summer 2019':          ('2019-05-01', '2019-08-31'),
+    'Pre-COVID-19 Summer':  ('2019-05-01', '2019-08-31'),
+    'Fall 2019':            ('2019-09-01', '2019-12-31'),
+    'Pre-COVID-19 Fall':    ('2019-09-01', '2019-12-31'),
+    'Spring 2020':          ('2020-02-01', '2020-05-31'),
+    'In-COVID-19':          ('2020-02-01', '2020-05-31'),
+    'Summer 2021':          ('2021-05-01', '2021-08-31'),
+    'Post-COVID-19':        ('2021-05-01', '2021-08-31'),
+}
 
 
 def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
@@ -135,26 +151,50 @@ def get_real_events(start_date: datetime, end_date: datetime,
     return df
 
 
-def save_gmm(gmm: GaussianMixture, save_dir: str) -> None:
-    """Save GMM (presumably trained) to directory.
+def get_folder_name(begin: str, end: str, n_components: int) -> str:
+    """Returns folder name for a trained GMM."""
+    return begin + " " + end + " " + str(n_components)
+
+
+def save_gmm_model(gmm: GaussianMixture, cnt: np.ndarray, sid: np.ndarray, save_dir: str) -> None:
+    """Save GMM and other information (presumably trained) to directory.
 
     Args:
         gmm: trained Gaussian Mixture Model
         save_dir: save directory of gmm
+        cnt: the session counts per day
+        station_usage: each station's usage counts for entire sampling period
     """
     os.makedirs(save_dir, exist_ok=True)
     with open(os.path.join(save_dir, 'model.pkl'), 'wb') as f:
-        pickle.dump(gmm, f)
+        # save gmm, session counts and station id usage
+        model = {
+            'gmm': gmm,
+            'cnt': cnt,
+            'sid': sid
+        }
+        pickle.dump(model, f)
 
 
-def load_gmm(save_dir: str) -> GaussianMixture:
-    """Load pickled GMM from folder.
+def load_gmm_model(save_dir: str, default=True) -> tuple[GaussianMixture, np.ndarray, np.ndarray]:
+    """Load pickled GMM and other data from folder.
 
     Args:
         save_dir: save directory of gmm
+        default: flag for whether a default gmm from package should be loaded
 
     Returns:
         gmm: trained gmm with parameters of those in path
+        cnt: the session counts per day
+        station_usage: each station's usage counts for entire sampling period
     """
-    with open(os.path.join(save_dir, 'model.pkl'), 'rb') as f:
-        return pickle.load(f)
+    if default:
+        EV_CHARGING_MODULE = 'sustaingym.envs.evcharging'
+        gmm_pkl = pkgutil.get_data(EV_CHARGING_MODULE, os.path.join(save_dir, 'model.pkl'))
+        gmm = pickle.loads(gmm_pkl)
+        cnt = pkgutil.get_data(EV_CHARGING_MODULE, os.path.join(save_dir, '_cnts.npy'))
+        station_usage = pkgutil.get_data(EV_CHARGING_MODULE, os.path.join(save_dir, '_station_usage.npy'))
+        return gmm, cnt, station_usage
+    else:
+        with open(os.path.join(save_dir, 'model.pkl'), 'rb') as f:
+            return pickle.load(f)

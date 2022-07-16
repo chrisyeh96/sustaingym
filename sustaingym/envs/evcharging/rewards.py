@@ -80,10 +80,11 @@ def get_rewards(interface: Interface,
             charge_left_amp_mins += interface._convert_to_amp_periods(ev.remaining_demand, ev.station_id) * period
 
     # Get total reward
-    total_reward = - CHARGE_COST_WEIGHT * charging_cost + \
-                     DELIVERED_CHARGE_WEIGHT * charging_reward + \
-                   - CONSTRAINT_VIOLATION_WEIGHT * constraint_punishment + \
-                   - UNCHARGED_PUNISHMENT_WEIGHT * charge_left_amp_mins
+    total_reward = (
+        - CHARGE_COST_WEIGHT * charging_cost
+        + DELIVERED_CHARGE_WEIGHT * charging_reward
+        - CONSTRAINT_VIOLATION_WEIGHT * constraint_punishment
+        - UNCHARGED_PUNISHMENT_WEIGHT * charge_left_amp_mins)
                 
     # convert to (kA * hrs)
     total_reward /= (60 * 1000)

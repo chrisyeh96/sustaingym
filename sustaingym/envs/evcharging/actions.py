@@ -34,15 +34,13 @@ def get_action_space(cn: ChargingNetwork, action_type: ActionType) -> spaces.Mul
         return spaces.MultiDiscrete(
             [5 for _ in range(len(cn.station_ids))]
         )
-    elif action_type == 'continuous':
+    else:
         return spaces.Box(
             low=0, high=4, shape=(len(cn.station_ids),), dtype=np.float32
         )
-    else:
-        raise ValueError("Only 'discrete' and 'continuous' action_types are allowed. ")
 
 
-def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: ActionType) -> dict[str, list[float]]:
+def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: ActionType, project: bool = False) -> dict[str, list[float]]:
     """
     Given a numpy action, returns a dictionary usable for the Simulator class.
 
@@ -58,6 +56,7 @@ def to_schedule(action: np.ndarray, cn: ChargingNetwork, action_type: ActionType
             If action_type is 'continuous', expects actions in [0, 4].
         cn: charging network in environment simulation
         action_type: either 'discrete' or 'continuous'
+        project: TODO 
 
     Returns:
         a dictionary mapping station ids to a schedule of pilot signals, as
