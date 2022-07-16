@@ -31,23 +31,31 @@ class MarketOperator:
 
         # time-dependent parameters
         self.gen_max_production = cp.Parameter(env.num_gens)
-
+        self.battery_max_charge = cp.Parameter(env.num_batteries)
+        self.battery_max_discharge = cp.Parameter(env.num_batteries)
+        self.agent_battery_max_charge = cp.Parameter()
+        self.agent_battery_max_discharge = cp.Parameter()
+        self.battery_discharge_costs = cp.Parameter(env.num_batteries)
+        self.battery_charge_costs = cp.Parameter(env.num_batteries)
+        self.gen_costs = cp.Parameter(env.num_gens)
+        self.a = cp.Parameter()
+        self.b = cp.Parameter()
 
         time_step = env.TIME_STEP_DURATION / 60  # in hours
         constraints = [
             0 <= x_gens,
             x_gens <= self.gen_max_production * time_step,
 
-            env.battery_max_charge * time_step <= x_bats,
-            x_bats <= env.battery_max_discharge * time_step,
+            self.battery_max_charge * time_step <= x_bats,
+            x_bats <= self.battery_max_discharge * time_step,
 
-            env.agent_battery_max_charge * time_step <= x_agent,
-            x_agent <= env.agent_battery_max_discharge * time_step,
+            self.agent_battery_max_charge * time_step <= x_agent,
+            x_agent <= self.agent_battery_max_discharge * time_step,
         ]
 
-        obj = env.gen_costs @ x_gens
-        obj += cp.maximum(env.battery_discharge_costs * x_bats, env.battery_charge_costs * x_bats).sum()
-        obj += cp.maximum(env.a * x_agent, env.b * x_agent)
+        obj = self.gen_costs @ x_gens
+        obj += cp.sum(cp.maximum(self.battery_discharge_costs * x_bats, self.battery_charge_costs * x_bats))
+        obj += cp.maximum(self.a * x_agent, self.b * x_agent)
         self.prob = cp.Problem(objective=cp.Minimize(obj), constraints=constraints)
 
     def get_dispatch(self) -> tuple[np.ndarray, np.ndarray, float]:
@@ -59,11 +67,20 @@ class MarketOperator:
             dispath value)
         """
         self.gen_max_production.value = self.env.gen_max_production
-        # TODO: assign more values to parameters
+        self.battery_max_charge.value = self.env.battery_max_charge
+        self.battery_max_discharge.value = self.env.battery_max_discharge
+        self.agent_battery_max_charge.value = self.env.agent_battery_max_charge
+        self.agent_battery_max_discharge.value = self.env.agent_battery_max_discharge
+        self.battery_discharge_costs.value = self.env.battery_discharge_costs
+        self.battery_charge_costs.value = self.env.battery_charge_costs
+        self.gen_costs.value = self.env.gen_costs
+        self.a.value = self.env.a
+        self.b.value = self.env.b
 
         self.prob.solve()
-        x_gens = self.x.value[self.env.num_gens]
-        # TODO: fill in rest
+        x_gens = self.x.value[:self.env.num_gens]
+        x_bats = self.x.value[self.env.num_gens:self.env.num_gens + self.env.num_batteries]
+        x_agent = self.x.value[-1]
         return x_gens, x_bats, x_agent
 
 
@@ -218,18 +235,18 @@ class BatteryStorageInGridEnv(Env):
         time_step = self.TIME_STEP_DURATION / 60
         self.observation_space = spaces.Dict({
             "current_energy_level": spaces.Box(low=0, high=self.agent_battery_max_capacity,
-                                                shape=()),
+                                                shape=(), dtype=float),
             "current_time": spaces.Box(low=0, high=1,
-                                                shape=()),
+                                                shape=(), dtype=float),
             "previous charge cost": spaces.Box(low=0, high=self.agent_battery_max_cost,
-                                                shape=()),
+                                                shape=(), dtype=float),
             "previous discharge cost": spaces.Box(low=0, high=self.agent_battery_max_cost,
-                                                shape=()),
+                                                shape=(), dtype=float),
             "previous agent dispatch": spaces.Box(low=self.agent_battery_max_charge*time_step,
                                                 high=self.agent_battery_max_discharge*time_step,
-                                                shape=()),
+                                                shape=(), dtype=float),
             "previous load demand": spaces.Box(low=0, high=55,
-                                                shape=())
+                                                shape=(), dtype=float)
         }
         )
         self.init = False
@@ -263,10 +280,10 @@ class BatteryStorageInGridEnv(Env):
             self.gen_costs[i] = self.rng.uniform(0.8*self.gen_costs[i],
                                                   1.2*self.gen_costs[i])
 
-        self.energy_lvl = np.array([self.agent_init_battery_charge], dtype=np.float32)
-        self.a = np.array([0.0], dtype=np.float32)
-        self.b = np.array([0.0], dtype=np.float32)
-        self.dispatch = np.array([0.0], dtype=np.float32)
+        self.energy_lvl = self.agent_init_battery_charge
+        self.a = 0.0
+        self.b = 0.0
+        self.dispatch = 0.0
 
         self.reward_type = 0  # default reward type without moving price average
         if options and 'reward' in options.keys():
@@ -274,16 +291,19 @@ class BatteryStorageInGridEnv(Env):
                 self.reward_type = 1
 
         self.init = True
-        self.time = np.array([0.0], dtype=np.float32)
-        self.load_demand = np.array([self._generate_load_data()], dtype=np.float32)
-        return {
-            "current_energy_level": self.energy_lvl,
-            "current_time": self.time,
-            "previous charge cost": self.b,
-            "previous discharge cost": self.a,
-            "previous agent dispatch": self.dispatch,
-            "previous load demand": self.load_demand
+        self.time = 0.0
+        self.load_demand = self._generate_load_data()
+        obs = {
+            "current_energy_level": np.array(self.energy_lvl, dtype=np.float32),
+            "current_time": np.array(self.time, dtype=np.float32),
+            "previous charge cost": np.array(self.b, dtype=np.float32),
+            "previous discharge cost": np.array(self.a, dtype=np.float32),
+            "previous agent dispatch": np.array(self.dispatch, dtype=np.float32),
+            "previous load demand": np.array(self.load_demand, dtype=np.float32),
         }
+        # TODO: figure what additional info could be helpful here
+        info = {"curr info": None}
+        return obs if not return_info else (obs, info)
 
     def step(self, action: Sequence[float]) -> dict[str, float]:
         """
@@ -313,26 +333,32 @@ class BatteryStorageInGridEnv(Env):
                                                     1.2*self.battery_discharge_costs[i])
 
         time_step = self.TIME_STEP_DURATION / 60
-        self.time[0] += 1 / self.MAX_STEPS_PER_EPISODE
+        self.time += 1 / self.MAX_STEPS_PER_EPISODE
+
+        # ensure selling cost (a) for charge is at least as large as buying cost (b)
+        if action[0] < action[1]:
+            action[0] = action[1]
 
         prev_a = self.a
         prev_b = self.b
 
-        self.a = np.array([action[0]], dtype=np.float32)
-        self.b = np.array([action[1]], dtype=np.float32)
+        self.a = action[0]
+        self.b = action[1]
 
         prev_dispatch = self.dispatch
 
         market_op = MarketOperator(self)
         (_, x_bats, x_agent) = market_op.get_dispatch()
+
         self.dispatch = np.array([x_agent], dtype=np.float32)
         self.count += 1
         prev_load_demand = self.load_demand
-        self.load_demand = np.array([self._generate_load_data()], dtype=np.float32)
+        self.load_demand = self._generate_load_data()
+
         if 0 <= x_agent:
-            self.energy_lvl[0] += self.DISCHARGE_EFFICIENCY * x_agent
+            self.energy_lvl += self.DISCHARGE_EFFICIENCY * x_agent
         else:
-            self.energy_lvl[0] += (1 / self.CHARGE_EFFICIENCY) * x_agent
+            self.energy_lvl += (1 / self.CHARGE_EFFICIENCY) * x_agent
 
         for i in range(self.num_batteries):
             if x_bats[i] >= 0:
@@ -349,22 +375,26 @@ class BatteryStorageInGridEnv(Env):
                                 (time_step * self.DISCHARGE_EFFICIENCY)
                                 ) for i in range(self.num_batteries)]
         self.agent_battery_max_charge = max(self.agent_battery_max_charge,
-                                (self.agent_battery_max_capacity - self.energy_lvl[0]) /
+                                (self.agent_battery_max_capacity - self.energy_lvl) /
                                 (time_step * (1 / self.CHARGE_EFFICIENCY))
                                 )
         self.agent_battery_max_discharge = min(self.agent_battery_max_discharge,
-                                (self.energy_lvl[0]) /
+                                (self.energy_lvl) /
                                 (time_step * self.DISCHARGE_EFFICIENCY)
                                 )
         self.done = (self.count >= self.MAX_STEPS_PER_EPISODE)
-        return {
-            "current_energy_level": self.energy_lvl,
-            "current_time": self.time,
-            "previous charge cost": prev_b,
-            "previous discharge cost": prev_a,
-            "previous agent dispatch": prev_dispatch,
-            "previous load demand": prev_load_demand
+        obs = {
+            "current_energy_level": np.array(self.energy_lvl, dtype=np.float32),
+            "current_time": np.array(self.time, dtype=np.float32),
+            "previous charge cost": np.array(prev_b, dtype=np.float32),
+            "previous discharge cost": np.array(prev_a, dtype=np.float32),
+            "previous agent dispatch": np.array(prev_dispatch, dtype=np.float32),
+            "previous load demand": np.array(prev_load_demand, dtype=np.float32),
         }
+        # TODO: figure what additional info could be helpful here
+        info = {"curr info": None}
+        reward = np.maximum(self.a * x_agent, self.b * x_agent)
+        return obs, reward, self.done, info
 
     def render(self):
         raise NotImplementedError
