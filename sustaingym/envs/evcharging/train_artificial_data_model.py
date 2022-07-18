@@ -1,8 +1,8 @@
 """
-GMM training script. Run from root directory.
+GMM training script.
 
 Example command line usage
-python -m sustaingym.envs.evcharging.train_artificial_data_model --site caltech --gmm_n_components 50 --date_range 2019-01-01 2019-12-31
+python -m sustaingym.envs.evcharging.train_artificial_data_model --site caltech --gmm_n_components 50 --date_range 2019-02-01 2019-04-30
 
 usage: train_artificial_data_model.py [-h] [--site SITE] [--gmm_n_components GMM_N_COMPONENTS] [--date_ranges DATE_RANGES [DATE_RANGES ...]]
 
@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 from argparse import RawTextHelpFormatter
 from datetime import datetime
+from itertools import chain
 import os
 from typing import Sequence
 
@@ -31,11 +32,9 @@ import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 
-from .utils import get_real_events, get_folder_name, save_gmm_model, site_str_to_site, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, SiteStr
+from .utils import DEFAULT_SAVE_DIR, DEFAULT_DATE_RANGES, get_real_events, get_folder_name, save_gmm_model, site_str_to_site, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, SiteStr
 
-
-DEFAULT_DATE_RANGE = ["2018-11-01", "2018-11-07", "2019-11-01", "2019-11-07", "2020-11-01", "2020-11-07"]
-
+DEFAULT_DATE_RANGES_SEQ = list(chain(*DEFAULT_DATE_RANGES))
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -125,14 +124,14 @@ def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime
 
 def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, datetime]) -> None:
     """
-    Creates a GMM and saves in the `gmms` folder.
+    Creates a GMM and saves in the `gmms_ev_charging` folder.
 
     Args:
         site: either 'caltech' or 'jpl'
         n_components: number of components of Gaussian mixture model
         date_range: 2-tuple of strings.
     """
-    SAVE_DIR = os.path.join(GMM_DIR, site)
+    SAVE_DIR = os.path.join(DEFAULT_SAVE_DIR, site)
 
     # Get stations
     acn = site_str_to_site(site)
@@ -171,7 +170,7 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     save_gmm_model(gmm, cnt, sid, save_dir)
 
 
-def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = DEFAULT_DATE_RANGE) -> None:
+def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = DEFAULT_DATE_RANGES_SEQ) -> None:
     """
     Creates gmms and saves in gmm_folder.
 

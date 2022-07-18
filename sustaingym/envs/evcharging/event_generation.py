@@ -7,7 +7,6 @@ traces of data and sampling events from an artificial data model, respectively.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-import pkgutil
 import os
 from random import randrange
 import uuid
@@ -18,25 +17,11 @@ import numpy as np
 import pandas as pd
 
 from .train_artificial_data_model import create_gmms
-from .utils import DATE_FORMAT, DEFAULT_DATE_RANGES, MINS_IN_DAY, REQ_ENERGY_SCALE, GMM_DIR, DefaultPeriodStr, SiteStr, get_folder_name, load_gmm_model, site_str_to_site, get_real_events
+from .utils import COUNT_KEY, DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, GMM_KEY, MINS_IN_DAY, REQ_ENERGY_SCALE, DEFAULT_SAVE_DIR, STATION_USAGE_KEY, DefaultPeriodStr, SiteStr, get_folder_name, load_gmm_model, site_str_to_site, get_real_events
 
 DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 MIN_BATTERY_CAPACITY, BATTERY_CAPACITY, MAX_POWER = 0, 100, 100
-
-
-def find_potential_folder(begin: str, end: str, n_components: int, site: SiteStr) -> str:
-    """
-    Return potential folders that contain trained GMMs in current directory.
-    """
-    # check overall directory existence
-    if not os.path.exists(os.path.join(GMM_DIR, site)):
-        return ""
-    # check sub-directories
-    folder_name = get_folder_name(begin, end, n_components)
-    if folder_name in os.listdir(os.path.join(GMM_DIR, site)):
-        return folder_name
-    return ""
 
 
 class AbstractTraceGenerator:
@@ -46,7 +31,7 @@ class AbstractTraceGenerator:
     and __repr__().
 
     Attributes:
-        site: either 'caltech' or 'jpl' garage to get events from
+        site: either 'caltech' or 'jpl' garage
         period: number of minutes of each time interval in simulation
         recompute_freq: number of periods for recurring recompute
         date_range_str: a 2-tuple of (start_date, end_date) for event
@@ -70,14 +55,14 @@ class AbstractTraceGenerator:
             recompute_freq: number of periods for recurring recompute
             date_period: either a pre-defined date period or a
                 custom date period. If custom, the input must be a 2-tuple
-                of strings with both strings in the format YYYY-MM-DD. If
-                using a pre-defined period, must be a string in ``DefaultPeriodStr``. TODO
+                of strings with both strings in the format YYYY-MM-DD.
+                Otherwise, should be a default period string.
             requested_energy_cap: largest amount of requested energy allowed (kWh)
         """
         if MINS_IN_DAY % period != 0:
             raise ValueError(f"Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0")
         if isinstance(date_period, str):
-            self.date_range_str = DEFAULT_DATE_RANGES[date_period]  # convert literal to actual date range
+            self.date_range_str = DEFAULT_PERIOD_TO_RANGE[date_period]  # convert literal to actual date range
         else:
             self.date_range_str = date_period
 
@@ -113,9 +98,10 @@ class AbstractTraceGenerator:
 
         Notes:
             The attributes arrival, departure, and estimated_departure must
-            be integers representing the timestamp in number of periods of
-            the corresponding time. The station_id must be included in the
-            set of station_id's at the site's charging network.
+            be integers representing the timestamp during the day, which is
+            the number of discrete periods that have elapsed. The station_id
+            must be included in the set of station_id's at the site's charging
+            network.
         """
         raise NotImplementedError
 
@@ -179,8 +165,9 @@ class RealTraceGenerator(AbstractTraceGenerator):
             the generator will use the energy delivered in the session as the
             requested energy and the disconnect time as the estimated
             departure.
-        sequential: whether to draw sequentially or randomly
-        day: date of the episode run as a datetime
+        sequential: whether to draw simulated days sequentially from date
+            range or randomly
+        day: date of the episode being simulated as a datetime
         *See AbstractTraceGenerator for more attributes
 
     Notes:
@@ -196,17 +183,18 @@ class RealTraceGenerator(AbstractTraceGenerator):
                  requested_energy_cap: float = 100):
         """
         Args:
-            sequential: whether to draw sequentially or randomly
+            sequential: whether to draw simulated days sequentially from date
+                range or randomly
             use_unclaimed: whether to use unclaimed data. Unclaimed data does
                 not specify requested energy or estimated departure. If set to
                 True, the generator will use the energy delivered in the
                 session as the requested energy and the disconnect time as the
                 estimated departure.
+            *See AbstractTraceGenerator for more arguments
         """
         super().__init__(site, period, recompute_freq, date_period, requested_energy_cap)
         self.use_unclaimed = use_unclaimed
         self.sequential = sequential
-
         if sequential:  # seed day before first update
             self.day = self.date_range[0] - timedelta(days=1)
         else:
@@ -250,10 +238,16 @@ class RealTraceGenerator(AbstractTraceGenerator):
         # remove sessions that are not in the set of station ids
         df = df[df['station_id'].isin(self.station_ids)]
 
+        if len(df) == 0:  # if dataframe is empty, return before using dt attribute
+            return df.copy()
+
         # remove sessions where estimated departure / departure is not the same day as arrival
         max_depart = np.maximum(df['departure'], df['estimated_departure'])
         mask = (df['arrival'].dt.day == max_depart.dt.day)
         df = df[mask]
+
+        if len(df) == 0:  # if dataframe is empty, return before using dt attribute
+            return df.copy()
 
         # convert arrival, departure, estimated departure to timestamps
         for col in ['arrival', 'departure', 'estimated_departure']:
@@ -275,23 +269,29 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         station_usage: total number of sessions during interval for each station
         *See AbstractTraceGenerator for more attributes
 
-    Notes:
-        gmm directory: Trained GMMs in directory used when real_traces is set
-            to False. The folder structure looks as follows:
+    Notes about saving GMMs:
+        package default gmm directory: Default GMMs come with the package under
+            the folder name 'gmms' in the package sustaingym.envs.evcharging.
+            The folder structure of gmms is as follows:
             gmms
             |----caltech
-            |   |--------2019-01-01 2019-12-31 50
-            |   |--------2020-01-01 2020-12-31 50
-            |   |--------2021-01-01 2021-08-31 50
-            |   |--------....
+            |   |--------2019-05-01 2019-08-31 50
+            |   |--------2019-09-01 2019-12-31 50
+            |   |--------2020-02-01 2020-05-31 50
+            |   |--------2021-05-01 2021-08-31 50
             |----jpl
-            |   |--------2019-01-01 2019-12-31 50
-            |   |--------2020-01-01 2020-12-31 50
-            |   |--------2021-01-01 2021-08-31 50
-            |   |--------....
-            Each folder consists of the start date, end date, and number of
-            GMM components trained. See train_artificial_data_model.py for
-            how to train GMMs from the command-line.
+            |   |--------2019-05-01 2019-08-31 50
+            |   |--------2019-09-01 2019-12-31 50
+            |   |--------2020-02-01 2020-05-31 50
+            |   |--------2021-05-01 2021-08-31 50
+            Each folder contains a 'model.pkl' file with the start date, end
+            date, and number of GMM components trained as listed on the
+            folder.
+        custom gmm directory: GMMs can also be trained on custom date ranges
+            and number components. These are saved in the folder
+            'gmms_ev_charging' relative to the current working directory.
+            See train_artificial_data_model.py for training GMMs from the
+            command line.
     """
     def __init__(self,
                  site: SiteStr,
@@ -301,26 +301,34 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                  recompute_freq: int = 2,
                  requested_energy_cap: float = 100,
                  ):
-
+        """
+        Args:
+            n_components: number of components in GMM
+            *See AbstractTraceGenerator for more arguments
+        
+        Notes:
+            The generator first searches for a matching GMM directory. If
+            unfound, it creates one.
+        """
         super().__init__(site, period, recompute_freq, date_period, requested_energy_cap)
         self.n_components = n_components
 
-        if isinstance(date_period, str):
-            # look for default gmms in package, default components is 50
-            gmm_folder = get_folder_name(self.date_range_str[0], self.date_range_str[1], n_components = 50)
-            model_path = os.path.join(GMM_DIR, site, gmm_folder)
-            pkgutil.get_data()
-
-        else:
-            # look for custom gmms, may need to create
-            gmm_folder = find_potential_folder(self.date_range_str[0], self.date_range_str[1], n_components, site)
-            if not gmm_folder:
-                create_gmms(site, n_components, self.date_range_str)
-                gmm_folder = find_potential_folder(self.date_range_str[0], self.date_range_str[1], n_components, site)
-
-            model_path = os.path.join(GMM_DIR, site, gmm_folder)
-            # load gmm data model
-            self.gmm, self.cnt, self.station_usage = load_gmm_model(model_path, default=False)
+        gmm_folder = get_folder_name(self.date_range_str[0], self.date_range_str[1], n_components = n_components)
+        model_path = os.path.join(DEFAULT_SAVE_DIR, site, gmm_folder)
+        # use existing gmm if exists; otherwise, create gmm
+        try:
+            data = load_gmm_model(model_path)
+        except FileNotFoundError:
+            create_gmms(site, n_components, self.date_range_str)
+            data = load_gmm_model(model_path)
+        self.gmm, self.cnt, self.station_usage = data[GMM_KEY], data[COUNT_KEY], data[STATION_USAGE_KEY]
+        print("INIT FUNCTION")
+        print("--- gmmm ---")
+        print(self.gmm)
+        print("--- cnt ---")
+        print(self.cnt)
+        print("--- station counts ---")
+        print(self.station_usage)
 
     def __repr__(self) -> str:
         """
@@ -416,16 +424,17 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
 
 if __name__ == "__main__":
     import time
-    november_week = ('2018-11-05', '2018-11-11')
-    atg = GMMsTraceGenerator('caltech', date_period=november_week, n_components=50, period=10, recompute_freq=3)
-    rtg1 = RealTraceGenerator('caltech', date_period=november_week, sequential=True)
-    rtg2 = RealTraceGenerator('caltech', date_period=november_week, sequential=False, use_unclaimed=True)
+    in_covid = ('2020-02-01', '2020-05-31')
 
-    for generator in [atg, rtg1, rtg2]:
+    atg = GMMsTraceGenerator('caltech', date_period=in_covid, n_components=50, period=10, recompute_freq=3)
+    rtg1 = RealTraceGenerator('caltech', date_period=in_covid, sequential=True, use_unclaimed=True)
+    # rtg2 = RealTraceGenerator('caltech', date_period=in_covid, sequential=False, use_unclaimed=True)
+
+    for generator in [atg]:
         start = time.time()
-        for _ in range(10):
+        for _ in range(130):
+            print(generator)
             eq, evs, num_events = generator.get_event_queue()
             print(num_events)
         end = time.time()
-        print(generator)
         print("time: ", end - start)

@@ -6,51 +6,61 @@ from datetime import timedelta, datetime
 import os
 import pickle
 import pkgutil
-from typing import Any, Literal
+from typing import Any, Literal, Union
 
 import acnportal.acndata as acnd
 import acnportal.acnsim as acns
 import numpy as np
 import pandas as pd
 import pytz
-from sklearn.mixture import GaussianMixture
+import sklearn.mixture as mixture
 
 
 API_TOKEN = 'DEMO_TOKEN'
 DATE_FORMAT = '%Y-%m-%d'
 DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
-GMM_DIR = 'gmms'  # name of gmms folder in current working directory
+DEFAULT_SAVE_DIR = 'gmms_ev_charging'
 MINS_IN_DAY = 1440
 REQ_ENERGY_SCALE = 100
 START_DATE, END_DATE = datetime(2018, 11, 1), datetime(2021, 8, 31)
 
 ActionType = Literal['discrete', 'continuous']
 SiteStr = Literal['caltech', 'jpl']
-
-
 DefaultPeriodStr = Literal['Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer 2021',
 'Pre-COVID-19 Summer', 'Pre-COVID-19 Fall', 'In-COVID-19', 'Post-COVID-19']
 
-DEFAULT_DATE_RANGES = {
-    'Summer 2019':          ('2019-05-01', '2019-08-31'),
-    'Pre-COVID-19 Summer':  ('2019-05-01', '2019-08-31'),
-    'Fall 2019':            ('2019-09-01', '2019-12-31'),
-    'Pre-COVID-19 Fall':    ('2019-09-01', '2019-12-31'),
-    'Spring 2020':          ('2020-02-01', '2020-05-31'),
-    'In-COVID-19':          ('2020-02-01', '2020-05-31'),
-    'Summer 2021':          ('2021-05-01', '2021-08-31'),
-    'Post-COVID-19':        ('2021-05-01', '2021-08-31'),
+DEFAULT_DATE_RANGES = [
+    ('2019-05-01', '2019-08-31'),
+    ('2019-09-01', '2019-12-31'),
+    ('2020-02-01', '2020-05-31'),
+    ('2021-05-01', '2021-08-31'),
+]
+
+DEFAULT_PERIOD_TO_RANGE = {
+    'Summer 2019':          DEFAULT_DATE_RANGES[0],
+    'Pre-COVID-19 Summer':  DEFAULT_DATE_RANGES[0],
+    'Fall 2019':            DEFAULT_DATE_RANGES[1],
+    'Pre-COVID-19 Fall':    DEFAULT_DATE_RANGES[1],
+    'Spring 2020':          DEFAULT_DATE_RANGES[2],
+    'In-COVID-19':          DEFAULT_DATE_RANGES[2],
+    'Summer 2021':          DEFAULT_DATE_RANGES[3],
+    'Post-COVID-19':        DEFAULT_DATE_RANGES[3],
 }
+
+
+GMM_KEY = 'gmm'
+COUNT_KEY = 'count'
+STATION_USAGE_KEY = 'station_usage'
+MODEL_NAME = 'model.pkl'
+EV_CHARGING_MODULE = 'sustaingym.envs.evcharging'
 
 
 def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
     """Returns charging network for the site."""
     if site == 'caltech':
         return acns.network.sites.caltech_acn()
-    elif site == 'jpl':
-        return acns.network.sites.jpl_acn()
     else:
-        return ValueError(f'Requested site {site} not one of ["caltech", "jpl"].')
+        return acns.network.sites.jpl_acn()
 
 
 def get_sessions(start_date: datetime, end_date: datetime,
@@ -156,45 +166,52 @@ def get_folder_name(begin: str, end: str, n_components: int) -> str:
     return begin + " " + end + " " + str(n_components)
 
 
-def save_gmm_model(gmm: GaussianMixture, cnt: np.ndarray, sid: np.ndarray, save_dir: str) -> None:
-    """Save GMM and other information (presumably trained) to directory.
+def save_gmm_model(gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarray, save_dir: str) -> None:
+    """Saves GMM and other information (presumably trained) to directory.
 
     Args:
         gmm: trained Gaussian Mixture Model
-        save_dir: save directory of gmm
         cnt: the session counts per day
         station_usage: each station's usage counts for entire sampling period
+        save_dir: save directory of gmm
     """
     os.makedirs(save_dir, exist_ok=True)
-    with open(os.path.join(save_dir, 'model.pkl'), 'wb') as f:
+    with open(os.path.join(save_dir, MODEL_NAME), 'wb') as f:
         # save gmm, session counts and station id usage
         model = {
-            'gmm': gmm,
-            'cnt': cnt,
-            'sid': sid
+            GMM_KEY: gmm,
+            COUNT_KEY: cnt,
+            STATION_USAGE_KEY: sid
         }
         pickle.dump(model, f)
 
 
-def load_gmm_model(save_dir: str, default=True) -> tuple[GaussianMixture, np.ndarray, np.ndarray]:
+def load_gmm_model(save_dir: str) -> dict[str, Union[np.ndarray, mixture.GaussianMixture]]:
     """Load pickled GMM and other data from folder.
 
+    First searches through custom folder. If not found, searches through
+    default models in package.
+
     Args:
-        save_dir: save directory of gmm
-        default: flag for whether a default gmm from package should be loaded
+        save_dir: save directory of gmm. If searching for a custom model,
+            searches relative to the current working directory. If searching
+            for a default model, searches inside the evcharging module. The
+            argument should start with 'gmms' to denote the default folder
+            to save in.
 
     Returns:
-        gmm: trained gmm with parameters of those in path
-        cnt: the session counts per day
-        station_usage: each station's usage counts for entire sampling period
+        A dictionary containing the following attributes:
+            'gmm' (mixture.GaussianMixture): train gmm with training data and
+                components as specified on folder
+            'count' (np.ndarray): the session counts per day
+            'station_usage' (np.ndarray): each station's usage counts for
+                entire sampling period
     """
-    if default:
-        EV_CHARGING_MODULE = 'sustaingym.envs.evcharging'
-        gmm_pkl = pkgutil.get_data(EV_CHARGING_MODULE, os.path.join(save_dir, 'model.pkl'))
-        gmm = pickle.loads(gmm_pkl)
-        cnt = pkgutil.get_data(EV_CHARGING_MODULE, os.path.join(save_dir, '_cnts.npy'))
-        station_usage = pkgutil.get_data(EV_CHARGING_MODULE, os.path.join(save_dir, '_station_usage.npy'))
-        return gmm, cnt, station_usage
-    else:
-        with open(os.path.join(save_dir, 'model.pkl'), 'rb') as f:
+    # first search through custom models
+    if os.path.exists(save_dir):
+        with open(os.path.join(save_dir, MODEL_NAME), 'rb') as f:
             return pickle.load(f)
+    # search through default models
+    else:
+        data = pkgutil.get_data(EV_CHARGING_MODULE, os.path.join(save_dir, MODEL_NAME))
+        return pickle.loads(data)
