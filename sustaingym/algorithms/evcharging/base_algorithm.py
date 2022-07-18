@@ -5,12 +5,10 @@ import cvxpy as cp
 import numpy as np
 from stable_baselines3 import PPO
 
-from ...envs.evcharging.actions import to_schedule, ACTION_SCALING_FACTOR
-from ...envs.evcharging.actions import to_schedule, ACTION_SCALING_FACTOR
+from ...envs.evcharging.ev_charging import ACTION_SCALING_FACTOR
 from ...envs.evcharging.ev_charging import EVChargingEnv
-from ...envs.evcharging.utils import ActionType
 
-EPS = 1e-5
+EPS = 1e-3
 MAX_ACTION = 4
 ROUND_UP_THRESH = 0.7
 
@@ -30,8 +28,8 @@ class BaseOnlineAlgorithm:
 
     def __init__(self, env: EVChargingEnv):
         self.env = deepcopy(env)
-
-        self.num_constraints, self.num_stations = self.env.cn.constraint_matrix.shape
+        self.infrastructure_info = env.infrastructure_info
+        # self.num_constraints, self.num_stations = self.env.cn.constraint_matrix.shape
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """Returns an action based on EV charging observations.
@@ -103,7 +101,7 @@ class SelectiveChargingAlgorithm(BaseOnlineAlgorithm):
         """
         Charge at the predetermined rate for EVs with positive demands.
         """
-        return np.where(observation["demands"] > 0, self.rate, 0)
+        return np.where(observation['demands'] > 0, self.rate, 0)
 
 
 class RandomAlgorithm(BaseOnlineAlgorithm):
@@ -114,7 +112,7 @@ class RandomAlgorithm(BaseOnlineAlgorithm):
     """
     name: str = 'random'
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
-        return np.random.randint(5, size=self.num_stations)
+        return self.env.action_space.sample()
 
 
 class GreedyAlgorithm(BaseOnlineAlgorithm):
@@ -137,28 +135,28 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         if self.first_run:
-            self.r = cp.Variable(self.num_stations, nonneg=True)
+            self.r = cp.Variable(self.infrastructure_info.num_stations, nonneg=True)
 
             # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
-            phase_factor = np.exp(1j * np.deg2rad(observation['phases']))
-            A_tilde = observation['constraint_matrix'] * phase_factor[None, :]
+            phase_factor = np.exp(1j * np.deg2rad(self.infrastructure_info.phases))
+            A_tilde = self.infrastructure_info.constraint_matrix * phase_factor[None, :]
             agg_magnitude = cp.abs(A_tilde @ self.r) * ACTION_SCALING_FACTOR  # convert to A
 
             # Close gap between r (ACTION_SCALING_FACTOR*A) and demands (A*periods)
             # Units of outputted action is (ACTION_SCALING_FACTOR*A), demands is in A*periods
             # convert energy to current signal by assuming outputted current will be used
             # for recompute_freq periods
-            self.demands = cp.Parameter(self.num_stations)
+            self.demands = cp.Parameter(self.infrastructure_info.num_stations)
 
             objective = cp.Minimize(cp.norm(self.r - self.demands, p=1))
-            constraints = [self.r <= MAX_ACTION + EPS, agg_magnitude <= observation['magnitudes']]
+            constraints = [self.r <= MAX_ACTION + EPS, agg_magnitude <= self.infrastructure_info.constraint_limits]
             self.prob = cp.Problem(objective, constraints)
 
             assert self.prob.is_dpp()
             assert self.prob.is_dcp()
             self.first_run = False
 
-        self.demands.value = observation['demands'] / ACTION_SCALING_FACTOR / observation['recompute_freq']
+        self.demands.value = observation['demands'] / ACTION_SCALING_FACTOR / self.env.recompute_freq
         # Set up problem and solve
         self.prob.solve(solver='ECOS')
         action_suggested = np.maximum(self.r.value, 0.)

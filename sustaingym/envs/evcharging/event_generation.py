@@ -15,9 +15,13 @@ import acnportal.acnsim as acns
 import acnportal.acnsim.models as acnm
 import numpy as np
 import pandas as pd
+import sklearn.mixture as mixture
 
-from .train_artificial_data_model import create_gmms
-from .utils import COUNT_KEY, DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, GMM_KEY, MINS_IN_DAY, REQ_ENERGY_SCALE, DEFAULT_SAVE_DIR, STATION_USAGE_KEY, DefaultPeriodStr, SiteStr, get_folder_name, load_gmm_model, site_str_to_site, get_real_events
+from .train_gmm_model import create_gmms
+from .utils import (COUNT_KEY, DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, GMM_KEY,
+                    MINS_IN_DAY, REQ_ENERGY_SCALE, DEFAULT_SAVE_DIR, STATION_USAGE_KEY,
+                    DefaultPeriodStr, SiteStr, get_folder_name, load_gmm_model,
+                    site_str_to_site, get_real_events)
 
 DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
@@ -60,7 +64,7 @@ class AbstractTraceGenerator:
             requested_energy_cap: largest amount of requested energy allowed (kWh)
         """
         if MINS_IN_DAY % period != 0:
-            raise ValueError(f"Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0")
+            raise ValueError(f'Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0')
         if isinstance(date_period, str):
             self.date_range_str = DEFAULT_PERIOD_TO_RANGE[date_period]  # convert literal to actual date range
         else:
@@ -78,9 +82,9 @@ class AbstractTraceGenerator:
         """
         Returns the string representation of the generator object.
         """
-        site = f"{self.site.capitalize()} site"
-        dr = f"from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}"
-        return f"AbstractTraceGenerator from the {site} {dr}. "
+        site = f'{self.site.capitalize()} site'
+        dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
+        return f'AbstractTraceGenerator from the {site} {dr}. '
 
     def _create_events(self) -> pd.DataFrame:
         """Creates a DataFrame of charging events information.
@@ -171,7 +175,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
         *See AbstractTraceGenerator for more attributes
 
     Notes:
-        Assumes sessions are in Pacific time.
+        assumes sessions are in Pacific time
     """
     def __init__(self,
                  site: SiteStr,
@@ -204,10 +208,10 @@ class RealTraceGenerator(AbstractTraceGenerator):
         """
         Returns string representation of RealTracesGenerator.
         """
-        site = f"{self.site.capitalize()} site"
-        dr = f"from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}"
-        day = f"{self.day.strftime(DATE_FORMAT)}"
-        return f"RealTracesGenerator from the {site} {dr}. Current day {day}. "
+        site = f'{self.site.capitalize()} site'
+        dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
+        day = f'{self.day.strftime(DATE_FORMAT)}'
+        return f'RealTracesGenerator from the {site} {dr}. Current day {day}. '
 
     def _update_day(self) -> None:
         """
@@ -321,22 +325,17 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         except FileNotFoundError:
             create_gmms(site, n_components, self.date_range_str)
             data = load_gmm_model(model_path)
-        self.gmm, self.cnt, self.station_usage = data[GMM_KEY], data[COUNT_KEY], data[STATION_USAGE_KEY]
-        print("INIT FUNCTION")
-        print("--- gmmm ---")
-        print(self.gmm)
-        print("--- cnt ---")
-        print(self.cnt)
-        print("--- station counts ---")
-        print(self.station_usage)
+        self.gmm: mixture.GaussianMixture = data[GMM_KEY]
+        self.cnt: np.ndarray =  data[COUNT_KEY]
+        self.station_usage: np.ndarray = data[STATION_USAGE_KEY]
 
     def __repr__(self) -> str:
         """
         Returns string representation of GMMsTracesGenerator.
         """
-        site = f"{self.site.capitalize()} site"
-        dr = f"from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}"
-        return f"GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. "
+        site = f'{self.site.capitalize()} site'
+        dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
+        return f'GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
 
     def _sample(self, n: int) -> np.ndarray:
         """Returns samples from GMM.
@@ -346,8 +345,8 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
 
         Returns:
             array of shape (n, 4) whose columns are arrival time in minutes,
-            departure time in minutes, estimated departure time in minutes,
-            and requested energy in kWh.
+                departure time in minutes, estimated departure time in
+                minutes, and requested energy in kWh.
         """
         samples = np.zeros((n, 4), dtype=np.float32)
         # use while loop for quality check
@@ -422,7 +421,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         return events
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     import time
     in_covid = ('2020-02-01', '2020-05-31')
 
@@ -437,4 +436,4 @@ if __name__ == "__main__":
             eq, evs, num_events = generator.get_event_queue()
             print(num_events)
         end = time.time()
-        print("time: ", end - start)
+        print('time: ', end - start)

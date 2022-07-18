@@ -56,7 +56,7 @@ EV_CHARGING_MODULE = 'sustaingym.envs.evcharging'
 
 
 def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
-    """Returns charging network for the site."""
+    """Returns charging network from string."""
     if site == 'caltech':
         return acns.network.sites.caltech_acn()
     else:
@@ -64,36 +64,32 @@ def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
 
 
 def get_sessions(start_date: datetime, end_date: datetime,
-                 site: SiteStr = "caltech",
-                 ) -> tuple[Iterator[dict[str, Any]], int]:
+                 site: SiteStr = 'caltech',
+                 ) -> Iterator[dict[str, Any]]:
     """Retrieves charging sessions using ACNData.
 
     Args:
-        start_date: beginning time of interval
-        end_date: ending time of interval
+        start_date: beginning time of interval, inclusive
+        end_date: ending time of interval, exclusive
         site: 'caltech' or 'jpl'
 
     Returns:
-        - iterator of sessions that had a connection time starting on
-        `start_date` and ending the day before `end_date`
-        - count - number of sessions, returned in return_count is True
+        iterator of sessions with a connection time starting on
+            `start_date` and ending the day before `end_date`
 
     Notes:
-    For `start_date` and `end_date` arguments, only year, month, and day are
-    considered.
+        For `start_date` and `end_date` arguments, only year, month, and day
+            are considered.
 
     Example:
-        fall_sessions = get_sessions(datetime(2020, 9, 1), datetime(2020, 12, 1))
+        fall2020_sessions = get_sessions(datetime(2020, 9, 1), datetime(2020, 12, 1))
     """
     start_time = start_date.strftime(DT_STRING_FORMAT)
     end_time = end_date.strftime(DT_STRING_FORMAT)
 
     cond = f'connectionTime>="{start_time}" and connectionTime<="{end_time}"'
     data_client = acnd.DataClient(api_token=API_TOKEN)
-    sessions = data_client.get_sessions(site, cond=cond)
-
-    count = data_client.count_sessions(site, cond=cond)
-    return sessions, int(count)
+    return data_client.get_sessions(site, cond=cond)
 
 
 def get_real_events(start_date: datetime, end_date: datetime,
@@ -101,8 +97,8 @@ def get_real_events(start_date: datetime, end_date: datetime,
     """Returns a pandas DataFrame of charging events.
 
     Args:
-        start_date: beginning time of interval
-        end_date: ending time of interval
+        start_date: beginning time of interval, inclusive
+        end_date: ending time of interval, inclusive
         site: 'caltech' or 'jpl'
 
     Returns:
@@ -119,7 +115,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
     Assumes:
         sessions are in Pacific time
     """
-    sessions, _ = get_sessions(start_date, end_date + timedelta(days=1), site=site)
+    sessions = get_sessions(start_date, end_date + timedelta(days=1), site=site)
 
     # TODO(chris): explore more efficient ways to convert JSON-like data to DataFrame
 
@@ -163,7 +159,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
 
 def get_folder_name(begin: str, end: str, n_components: int) -> str:
     """Returns folder name for a trained GMM."""
-    return begin + " " + end + " " + str(n_components)
+    return begin + ' ' + end + ' ' + str(n_components)
 
 
 def save_gmm_model(gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarray, save_dir: str) -> None:
@@ -171,8 +167,8 @@ def save_gmm_model(gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarra
 
     Args:
         gmm: trained Gaussian Mixture Model
-        cnt: the session counts per day
-        station_usage: each station's usage counts for entire sampling period
+        cnt: the session counts per day during date period
+        station_usage: each station's usage counts for entire date period
         save_dir: save directory of gmm
     """
     os.makedirs(save_dir, exist_ok=True)

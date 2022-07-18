@@ -53,7 +53,7 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
 
     # Get arrival time, departure time, estimated departure time from datetimes and normalize between [0, 1]
     for col in ['arrival', 'departure', 'estimated_departure']:
-        df[col + "_time"] = (df[col].dt.hour * 60 + df[col].dt.minute) / MINS_IN_DAY
+        df[col + '_time'] = (df[col].dt.hour * 60 + df[col].dt.minute) / MINS_IN_DAY
 
     # Normalize requested energy
     df['requested_energy (kWh)'] /= REQ_ENERGY_SCALE
@@ -79,7 +79,7 @@ def station_id_pct(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
             continue
         cnts[n2i[station_id]] = vc[station_id]
     if sum(cnts) == 0:
-        raise ValueError("No station ids in DataFrame found in site. ")
+        raise ValueError('No station ids in DataFrame found in site. ')
     cnts = np.array(cnts, dtype=np.float32)
     cnts /= sum(cnts)
     return cnts
@@ -103,7 +103,7 @@ def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime
         ValueError: begin and end date not in data's range
     """
     if len(date_range) % 2 != 0:
-        raise ValueError(f"Number of dates must be divisible by 2, found length {len(date_range)} with the second later than the first.")
+        raise ValueError(f'Number of dates must be divisible by 2, found length {len(date_range)} with the second later than the first.')
 
     date_range_dt = [datetime.strptime(date_str, DATE_FORMAT) for date_str in date_range]
     date_ranges = []
@@ -111,11 +111,11 @@ def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime
         begin, end = date_range_dt[2 * i], date_range_dt[2 * i + 1]
 
         if begin < START_DATE:
-            raise ValueError(f"beginning of date range {date_range[2 * i]} before data's start date {START_DATE.strftime(DATE_FORMAT)}")
+            raise ValueError(f'beginning of date range {date_range[2 * i]} before data start date {START_DATE.strftime(DATE_FORMAT)}')
         if end > END_DATE:
-            raise ValueError(f"end of date range {date_range[2 * i + 1]} after data's end date {END_DATE.strftime(DATE_FORMAT)}")
+            raise ValueError(f'end of date range {date_range[2 * i + 1]} after data end date {END_DATE.strftime(DATE_FORMAT)}')
         if begin > end:
-            raise ValueError(f"beginning of date range {date_range[2 * i]} later than end {date_range[2 * i + 1]}")
+            raise ValueError(f'beginning of date range {date_range[2 * i]} later than end {date_range[2 * i + 1]}')
 
         date_ranges.append((begin, end))
 
@@ -124,12 +124,16 @@ def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime
 
 def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, datetime]) -> None:
     """
-    Creates a GMM and saves in the `gmms_ev_charging` folder.
+    Creates a custom GMM and saves in the `gmms_ev_charging` folder.
 
     Args:
         site: either 'caltech' or 'jpl'
         n_components: number of components of Gaussian mixture model
-        date_range: 2-tuple of strings.
+        date_range: 2-tuple of datetimes describing the date period on which
+            the gmm should be trained. Only year, month, and day of the
+            datetime object are considered. The date range should be between
+            2018-11-01 and 2021-08-31. The default ranges sample from the
+            years 2019 to 2021.
     """
     SAVE_DIR = os.path.join(DEFAULT_SAVE_DIR, site)
 
@@ -139,40 +143,40 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
 
     # check string dates can be converted to datetimes
     date_range_str = tuple(date_range[i].strftime(DATE_FORMAT) for i in range(2))
-    range_str = date_range_str[0] + " " + date_range_str[1]
-    print(f"Fetching data from site {site.capitalize()} for date range {range_str}... ")
+    range_str = date_range_str[0] + ' ' + date_range_str[1]
+    print(f'Fetching data from site {site.capitalize()} for date range {range_str}... ')
 
     # Retrieve events and filter only claimed sessions
     df = get_real_events(date_range[0], date_range[1], site=site)
     df = df[df['claimed']]
     if len(df) == 0:
-        print("Empty dataframe, abort GMM training. ")
+        print('Empty dataframe, abort GMM training. ')
         return
 
     # get counts and station ids data
-    cnt = df.arrival.map(lambda x: int(x.strftime("%j"))).value_counts().to_numpy()
+    cnt = df.arrival.map(lambda x: int(x.strftime('%j'))).value_counts().to_numpy()
     sid = station_id_pct(df, n2i)
 
     # Preprocess DataFrame for GMM training
     df = preprocess(df)
 
-    print(f"Fitting GMM ({n_components} components, {len(df.columns)} dimensions)... ")
+    print(f'Fitting GMM ({n_components} components, {len(df.columns)} dimensions)... ')
     gmm = GaussianMixture(n_components=n_components)
     gmm.fit(df)
 
     folder_name = get_folder_name(date_range_str[0], date_range_str[1], n_components)
     save_dir = os.path.join(SAVE_DIR, folder_name)
     if not os.path.exists(save_dir):
-        print("Creating directory: ", save_dir)
+        print('Creating directory: ', save_dir)
         os.makedirs(save_dir)
 
-    print(f"Saving in: {save_dir}\n")
+    print(f'Saving in: {save_dir}\n')
     save_gmm_model(gmm, cnt, sid, save_dir)
 
 
 def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = DEFAULT_DATE_RANGES_SEQ) -> None:
     """
-    Creates gmms and saves in gmm_folder.
+    Creates multiple gmms and saves in gmm_folder.
 
     Args:
         site: either 'caltech' or 'jpl'
@@ -182,7 +186,7 @@ def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = D
             They should be formatted as YYYY-MM-DD and be between 2018-11-01 and
             2021-08-31. The default ranges sample from the years 2019 to 2021.
     """
-    print("\n--- Training GMMs ---\n")
+    print('\n--- Training GMMs ---\n')
 
     # Get date ranges
     date_range_dts = parse_string_date_list(date_ranges)
@@ -190,10 +194,10 @@ def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = D
     for date_range_dt in date_range_dts:
         create_gmm(site, n_components, date_range=date_range_dt)
 
-    print("--- Training complete. ---\n")
+    print('--- Training complete. ---\n')
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="GMM Training Script", formatter_class=RawTextHelpFormatter)
     parser.add_argument("--site", default="caltech", help="Name of site: 'caltech' or 'jpl'")
     parser.add_argument("--gmm_n_components", type=int, default=50)
