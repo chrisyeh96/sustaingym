@@ -77,7 +77,12 @@ class MarketOperator:
         self.a.value = self.env.a
         self.b.value = self.env.b
 
+        # ERROR: after the first step, the optimal x returned after solving the problem
+        # becomes NaN.
+        # Current guess is the constraints become infeasible after the first update/step.
         self.prob.solve()
+        print("step: ", self.env.count)
+        print("x value: ", self.x.value)
         x_gens = self.x.value[:self.env.num_gens]
         x_bats = self.x.value[self.env.num_gens:self.env.num_gens + self.env.num_batteries]
         x_agent = self.x.value[-1]
@@ -251,6 +256,7 @@ class BatteryStorageInGridEnv(Env):
         )
         self.init = False
         self.count = 0
+        self.market_op = MarketOperator(self)
 
     def _generate_load_data(self) -> float:
         # TODO: describe this function
@@ -346,9 +352,7 @@ class BatteryStorageInGridEnv(Env):
         self.b = action[1]
 
         prev_dispatch = self.dispatch
-
-        market_op = MarketOperator(self)
-        (_, x_bats, x_agent) = market_op.get_dispatch()
+        (_, x_bats, x_agent) = self.market_op.get_dispatch()
 
         self.dispatch = np.array([x_agent], dtype=np.float32)
         self.count += 1
