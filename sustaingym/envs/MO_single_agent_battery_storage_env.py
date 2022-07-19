@@ -30,16 +30,17 @@ class MarketOperator:
         x_agent = self.x[-1]
 
         # time-dependent parameters
-        self.gen_max_production = cp.Parameter(env.num_gens)
+        self.gen_max_production = cp.Parameter(env.num_gens, nonneg=True)
         self.battery_max_charge = cp.Parameter(env.num_batteries)
-        self.battery_max_discharge = cp.Parameter(env.num_batteries)
+        self.battery_max_discharge = cp.Parameter(env.num_batteries, nonneg=True)
         self.agent_battery_max_charge = cp.Parameter()
-        self.agent_battery_max_discharge = cp.Parameter()
-        self.battery_discharge_costs = cp.Parameter(env.num_batteries)
+        self.agent_battery_max_discharge = cp.Parameter(nonneg=True)
         self.battery_charge_costs = cp.Parameter(env.num_batteries)
-        self.gen_costs = cp.Parameter(env.num_gens)
-        self.a = cp.Parameter()
-        self.b = cp.Parameter()
+        self.battery_discharge_costs = cp.Parameter(env.num_batteries)
+        self.gen_costs = cp.Parameter(env.num_gens, nonneg=True)
+        self.a = cp.Parameter(nonneg=True)
+        self.b = cp.Parameter(nonneg=True)
+        self.load = cp.Parameter()
 
         time_step = env.TIME_STEP_DURATION / 60  # in hours
         constraints = [
@@ -51,10 +52,12 @@ class MarketOperator:
 
             self.agent_battery_max_charge * time_step <= x_agent,
             x_agent <= self.agent_battery_max_discharge * time_step,
+
+            cp.sum(self.x) == self.load,
         ]
 
         obj = self.gen_costs @ x_gens
-        obj += cp.sum(cp.maximum(self.battery_discharge_costs * x_bats, self.battery_charge_costs * x_bats))
+        obj += cp.sum(cp.maximum(cp.multiply(self.battery_discharge_costs, x_bats), cp.multiply(self.battery_charge_costs, x_bats)))
         obj += cp.maximum(self.a * x_agent, self.b * x_agent)
         self.prob = cp.Problem(objective=cp.Minimize(obj), constraints=constraints)
 
@@ -76,12 +79,25 @@ class MarketOperator:
         self.gen_costs.value = self.env.gen_costs
         self.a.value = self.env.a
         self.b.value = self.env.b
+        self.load.value = self.env.load_demand
 
         # ERROR: after the first step, the optimal x returned after solving the problem
         # becomes NaN.
         # Current guess is the constraints become infeasible after the first update/step.
-        self.prob.solve()
         print("step: ", self.env.count)
+        print("gen max production: ", self.gen_max_production.value)
+        print("battery max charge: ", self.battery_max_charge.value)
+        print("battery max discharge: ", self.battery_max_discharge.value)
+        print("agent battery max charge: ", self.agent_battery_max_charge.value)
+        print("agent battery max discharge: ", self.agent_battery_max_discharge.value)
+        print("battery discharge costs: ", self.battery_discharge_costs.value)
+        print("battery charge costs: ", self.battery_charge_costs.value)
+        print("gen costs: ", self.gen_costs.value)
+        print("a: ", self.a.value)
+        print("b: ", self.b.value)
+        print("load: ", self.load.value)
+        self.prob.solve()
+        print("status: ", self.prob.status)
         print("x value: ", self.x.value)
         x_gens = self.x.value[:self.env.num_gens]
         x_bats = self.x.value[self.env.num_gens:self.env.num_gens + self.env.num_batteries]
@@ -366,12 +382,12 @@ class BatteryStorageInGridEnv(Env):
 
         for i in range(self.num_batteries):
             if x_bats[i] >= 0:
-                self.battery_charges[i] += self.DISCHARGE_EFFICIENCY * x_bats[i]
+                self.battery_charges[i] -= self.DISCHARGE_EFFICIENCY * x_bats[i]
             else:
-                self.battery_charges[i] += (1 / self.CHARGE_EFFICIENCY) * x_bats[i]
+                self.battery_charges[i] -= (1 / self.CHARGE_EFFICIENCY) * x_bats[i]
 
         self.battery_max_charge = [max(self.battery_max_charge[i],
-                                (self.battery_max_capacity[i] - self.battery_charges[i]) /
+                                -1*(self.battery_max_capacity[i] - self.battery_charges[i]) /
                                 (time_step * (1 / self.CHARGE_EFFICIENCY))
                                 ) for i in range(self.num_batteries)]
         self.battery_max_discharge = [min(self.battery_max_discharge[i],
@@ -379,7 +395,7 @@ class BatteryStorageInGridEnv(Env):
                                 (time_step * self.DISCHARGE_EFFICIENCY)
                                 ) for i in range(self.num_batteries)]
         self.agent_battery_max_charge = max(self.agent_battery_max_charge,
-                                (self.agent_battery_max_capacity - self.energy_lvl) /
+                                -1*(self.agent_battery_max_capacity - self.energy_lvl) /
                                 (time_step * (1 / self.CHARGE_EFFICIENCY))
                                 )
         self.agent_battery_max_discharge = min(self.agent_battery_max_discharge,
