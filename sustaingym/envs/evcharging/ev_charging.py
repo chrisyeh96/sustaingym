@@ -91,7 +91,7 @@ class EVChargingEnv(gym.Env):
 
         # Set up infrastructure info with fake parameters
         self.cn = site_str_to_site(self.site)
-        num_stations = len(self.cn.station_ids)
+        self.num_stations = len(self.cn.station_ids)
 
         self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
 
@@ -99,17 +99,18 @@ class EVChargingEnv(gym.Env):
 
         # Observations are dictionaries describing the current demand for charge
         self.observation_space =  spaces.Dict({
-            'arrivals':         spaces.Box(low=0, high=self.max_timestamp, shape=(num_stations,), dtype=np.int32),
-            'est_departures':   spaces.Box(low=0, high=self.max_timestamp, shape=(num_stations,), dtype=np.int32),
-            'demands':          spaces.Box(low=0, high=data_generator.requested_energy_cap, shape=(num_stations,), dtype=np.float32),
-            'timestep':         spaces.Box(low=0, high=self.max_timestamp, shape=(), dtype=np.int32),
+            'arrivals':         spaces.Box(low=0, high=self.max_timestamp, shape=(self.num_stations,), dtype=np.int32),
+            'est_departures':   spaces.Box(low=0, high=self.max_timestamp, shape=(self.num_stations,), dtype=np.int32),
+            'demands':          spaces.Box(low=0, high=data_generator.requested_energy_cap, shape=(self.num_stations,), dtype=np.float32),
+            'timestep':         spaces.Box(low=0, high=self.max_timestamp, shape=(1,), dtype=np.int32),
         })
         # Initialize information-tracking arrays once, always gets zeroed out at each step
-        self.arrivals = np.zeros(num_stations, dtype=np.int32)
-        self.est_departures = np.zeros(num_stations, dtype=np.int32)
-        self.demands = np.zeros(num_stations, dtype=np.float32)
-        self.phases = np.zeros(num_stations, dtype=np.float32)
-        self.actual_departures = np.zeros(num_stations, dtype=np.int32)
+        self.arrivals = np.zeros(self.num_stations, dtype=np.int32)
+        self.est_departures = np.zeros(self.num_stations, dtype=np.int32)
+        self.demands = np.zeros(self.num_stations, dtype=np.float32)
+        self.timestep_obs = np.zeros(1, dtype=np.float32)
+        self.phases = np.zeros(self.num_stations, dtype=np.float32)
+        self.actual_departures = np.zeros(self.num_stations, dtype=np.int32)
 
         # Define action space, which is the charging rate for all EVs
         if action_type == 'discrete':
@@ -122,22 +123,25 @@ class EVChargingEnv(gym.Env):
             )
         
         if project_action:
-            self.projected_action = cp.Variable(num_stations, nonneg=True)
+            self.set_up_action_projection()
+    
+    def set_up_action_projection(self):
+        self.projected_action = cp.Variable(self.num_stations, nonneg=True)
 
-            # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
-            phase_factor = np.exp(1j * np.deg2rad(self.cn._phase_angles))
-            A_tilde = self.cn.constraint_matrix * phase_factor[None, :]
-            agg_magnitude = cp.abs(A_tilde @ self.projected_action) * ACTION_SCALING_FACTOR  # convert to A
-            magnitude_limit = self.cn.magnitudes
+        # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
+        phase_factor = np.exp(1j * np.deg2rad(self.cn._phase_angles))
+        A_tilde = self.cn.constraint_matrix * phase_factor[None, :]
+        agg_magnitude = cp.abs(A_tilde @ self.projected_action) * ACTION_SCALING_FACTOR  # convert to A
+        magnitude_limit = self.cn.magnitudes
 
-            self.actual_action = cp.Parameter(num_stations)
+        self.actual_action = cp.Parameter(self.num_stations)
 
-            objective = cp.Minimize(cp.norm(self.projected_action - self.actual_action, p=2))
-            constraints = [self.projected_action <= MAX_ACTION + EPS, agg_magnitude <= magnitude_limit]
-            self.prob = cp.Problem(objective, constraints)
+        objective = cp.Minimize(cp.norm(self.projected_action - self.actual_action, p=2))
+        constraints = [self.projected_action <= MAX_ACTION + EPS, agg_magnitude <= magnitude_limit]
+        self.prob = cp.Problem(objective, constraints)
 
-            assert self.prob.is_dpp()
-            assert self.prob.is_dcp()
+        assert self.prob.is_dpp()
+        assert self.prob.is_dcp()
     
     def __repr__(self) -> str:
         """
@@ -229,6 +233,7 @@ class EVChargingEnv(gym.Env):
             return_info: whether information should be returned as well
             options: dictionary containing options for resetting.
                 'verbose': set verbose factor
+                'project_action': set action projection flag
         
         Returns:
             obs: observations on arrivals, estimated departures, demands,
@@ -239,7 +244,13 @@ class EVChargingEnv(gym.Env):
         """
         # super().reset(seed=seed) TODO this line causes errors?
         if options and 'verbose' in options:
-            self.verbose = options['verbose']
+            if 'verbose' in options:
+                self.verbose = options['verbose']
+            
+            if 'project_action' in options:
+                self.project_action = options['project_action']
+                if self.project_action:
+                    self.set_up_action_projection()
 
         # Initialize charging network
         self.cn = site_str_to_site(self.site)
@@ -344,12 +355,13 @@ class EVChargingEnv(gym.Env):
             self.arrivals[station_idx] = session_info.arrival
             self.est_departures[station_idx] = session_info.estimated_departure
             self.demands[station_idx] = self.interface.remaining_amp_periods(session_info)
+        self.timestep_obs[0] = self.simulator._iteration
 
         obs = {
             'arrivals': self.arrivals,
             'est_departures': self.est_departures,
             'demands': self.demands,
-            'timestep': self.simulator._iteration,
+            'timestep': self.timestep_obs,
         }
 
         if return_info:

@@ -176,7 +176,8 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
 class PPOAlgorithm(BaseOnlineAlgorithm):
     """Algorithm that outputs prediction of a PPO RL agent.
     """
-    def __init__(self, rl_model: PPO, name: str="PPO algorithm"):
+    def __init__(self, env: EVChargingEnv, rl_model: PPO, name: str="PPO algorithm"):
+        super().__init__(env)
         self.rl_model = rl_model
         self.name = name
 
