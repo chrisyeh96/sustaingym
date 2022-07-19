@@ -91,15 +91,7 @@ class EVChargingEnv(gym.Env):
 
         # Set up infrastructure info with fake parameters
         self.cn = site_str_to_site(self.site)
-        dummy_simulator = acns.Simulator(network=self.cn,
-                                        scheduler=None,
-                                        events=acns.EventQueue(),
-                                        start=datetime.now(),
-                                        period=self.period,
-                                        verbose=False)
-        dummy_interface = acns.Interface(dummy_simulator)
-        self.infrastructure_info = dummy_interface.infrastructure_info()
-        _, num_stations = self.infrastructure_info.constraint_matrix.shape
+        num_stations = len(self.cn.station_ids)
 
         self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
 
@@ -113,11 +105,11 @@ class EVChargingEnv(gym.Env):
             'timestep':         spaces.Box(low=0, high=self.max_timestamp, shape=(), dtype=np.int32),
         })
         # Initialize information-tracking arrays once, always gets zeroed out at each step
-        self.arrivals = np.zeros((num_stations,), dtype=np.int32)
-        self.est_departures = np.zeros((num_stations,), dtype=np.int32)
-        self.demands = np.zeros((num_stations,), dtype=np.float32)
-        self.phases = np.zeros((num_stations,), dtype=np.float32)
-        self.actual_departures = np.zeros((num_stations,), dtype=np.int32)
+        self.arrivals = np.zeros(num_stations, dtype=np.int32)
+        self.est_departures = np.zeros(num_stations, dtype=np.int32)
+        self.demands = np.zeros(num_stations, dtype=np.float32)
+        self.phases = np.zeros(num_stations, dtype=np.float32)
+        self.actual_departures = np.zeros(num_stations, dtype=np.int32)
 
         # Define action space, which is the charging rate for all EVs
         if action_type == 'discrete':
@@ -133,10 +125,10 @@ class EVChargingEnv(gym.Env):
             self.projected_action = cp.Variable(num_stations, nonneg=True)
 
             # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
-            phase_factor = np.exp(1j * np.deg2rad(self.infrastructure_info.phases))
-            A_tilde = self.infrastructure_info.constraint_matrix * phase_factor[None, :]
+            phase_factor = np.exp(1j * np.deg2rad(self.cn._phase_angles))
+            A_tilde = self.cn.constraint_matrix * phase_factor[None, :]
             agg_magnitude = cp.abs(A_tilde @ self.projected_action) * ACTION_SCALING_FACTOR  # convert to A
-            magnitude_limit = self.infrastructure_info.constraint_limits
+            magnitude_limit = self.cn.magnitudes
 
             self.actual_action = cp.Parameter(num_stations)
 
@@ -154,7 +146,7 @@ class EVChargingEnv(gym.Env):
         site = f'{self.site.capitalize()} site'
         action_type = f'action type {self.action_type}'
         project_action = f'action projection {self.project_action}'
-        return f'EVChargingGym for the {site}, {action_type}, {project_action}.'
+        return f'EVChargingGym for the {site}, {action_type}, {project_action}. '
 
     def step(self, action: np.ndarray, return_info: bool = False) -> tuple[dict[str, Any], float, bool, dict[Any, Any]]:
         """
@@ -168,7 +160,8 @@ class EVChargingEnv(gym.Env):
                 set {0, 1, 2, 3, 4} if action_type == 'discrete'; otherwise,
                 entries should fall in the range [0, 4]. See to_schedule()
                 for more information.
-            return_info: whether information should be returned as well
+            return_info: info is always returned, but if return_info is set
+                to False, less information will be present in the dictionary
 
         Returns:
             observation: a dictionary with the following key-values
@@ -254,13 +247,13 @@ class EVChargingEnv(gym.Env):
         self.events, self.evs, num_plugs = self.data_generator.get_event_queue()
 
         if self.verbose >= 1:
-            if type(self.data_generator) is RealTraceGenerator:
+            if isinstance(self.data_generator, RealTraceGenerator):
                 print(f'Simulating day {self.data_generator.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ')
             else:
                 print(f'Simulating {num_plugs} plug in events. ')
 
         # Initialize simulator and interface
-        if type(self.data_generator) is RealTraceGenerator:
+        if isinstance(self.data_generator, RealTraceGenerator):
             day = self.data_generator.day
         else:
             day = datetime.now()
@@ -270,7 +263,10 @@ class EVChargingEnv(gym.Env):
         self.prev_timestamp = 0
         self.timestamp = self.simulator.event_queue.queue[0][0]
         # Retrieve environment information
-        return self.get_observation(return_info)
+        if return_info:
+            return self.get_observation(True)
+        else:
+            return self.get_observation(False)[0]
 
     def to_schedule(self, action: np.ndarray) -> dict[str, list[float]]:
         """
@@ -303,7 +299,7 @@ class EVChargingEnv(gym.Env):
         # this will just return the action itself
         if self.project_action:
             self.actual_action.value = action
-            self.prob.solve(solver='ECOS')
+            self.prob.solve(solver='ECOS', warm_start=True)
             action = self.projected_action.value
 
         if self.action_type == 'discrete':
@@ -316,14 +312,14 @@ class EVChargingEnv(gym.Env):
                 # hacky way to determine allowable rates - allowed rates required to keep simulation running
                 # one type of EVSE accepts values in {0, 8, 16, 24, 32}
                 # the other type accepts {0} U {6, 7, 8, ..., 32}
-                if self.infrastructure_info.min_pilot[i] == 6:
+                if self.cn.min_pilot_signals[i] == 6:
                     pilot_signals[station_id] = [action[i] if action[i] >= 6 else 0]  # signals less than min pilot signal are set to zero, rest are in action space
                 else:
                     pilot_signals[station_id] = [(np.round(action[i] / DISCRETE_MULTIPLE) * DISCRETE_MULTIPLE)]  # set to {0, 8, 16, 24, 32}
             return pilot_signals
 
     def get_observation(self,
-                        return_info: bool = True) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
+                        return_info: bool = True) -> tuple[dict[str, Any], dict[str, Any]]:
         """
         Returns observations for the current state of simulation.
 
@@ -348,13 +344,6 @@ class EVChargingEnv(gym.Env):
             self.arrivals[station_idx] = session_info.arrival
             self.est_departures[station_idx] = session_info.estimated_departure
             self.demands[station_idx] = self.interface.remaining_amp_periods(session_info)
-        # Fill other information as information
-        if return_info:
-            self.actual_departures.fill(0)
-            for session_info in self.interface.active_sessions():
-                station_id = session_info.station_id
-                station_idx = self.evse_name_to_idx[station_id]
-                self.actual_departures[station_idx] = session_info.departure
 
         obs = {
             'arrivals': self.arrivals,
@@ -364,6 +353,13 @@ class EVChargingEnv(gym.Env):
         }
 
         if return_info:
+            # Fill other information
+            self.actual_departures.fill(0)
+            for session_info in self.interface.active_sessions():
+                station_id = session_info.station_id
+                station_idx = self.evse_name_to_idx[station_id]
+                self.actual_departures[station_idx] = session_info.departure
+
             info = {
                 'active_evs': self.simulator.get_active_evs(),
                 'active_sessions': self.interface.active_sessions(),
@@ -373,7 +369,7 @@ class EVChargingEnv(gym.Env):
             }
             return obs, info
         else:
-            return obs
+            return obs, {}
 
     def get_rewards(self,
                     schedule: dict,
@@ -453,6 +449,7 @@ class EVChargingEnv(gym.Env):
 if __name__ == "__main__":
     from .event_generation import GMMsTraceGenerator
     from acnportal.acnsim.events import PluginEvent
+    import time
 
     np.random.seed(42)
     import random
@@ -461,7 +458,7 @@ if __name__ == "__main__":
     rtg1 = RealTraceGenerator(site='caltech', date_period=('2018-11-05', '2018-11-11'), sequential=True, period=5)
     atg = GMMsTraceGenerator(site='caltech', date_period=('2018-11-05', '2018-11-15'), n_components=50)
 
-    for generator in [rtg1, atg]:  # [rtg1, rtg2, atg]:
+    for generator in [atg]:  # [rtg1, rtg2, atg]:
         print("----------------------------")
         print("----------------------------")
         print("----------------------------")
@@ -471,6 +468,8 @@ if __name__ == "__main__":
         env2 = EVChargingEnv(generator, action_type='discrete', project_action=True)
         env3 = EVChargingEnv(generator, action_type='continuous', project_action=False)
         env4 = EVChargingEnv(generator, action_type='continuous', project_action=True)
+        print("Finished building environments... ")
+        start = time.time()
         for env in [env1, env2, env3, env4]:
             for _ in range(1):
                 observation = env.reset()
@@ -481,6 +480,8 @@ if __name__ == "__main__":
                 action = np.random.random((54,)) * 4
                 # d = defaultdict(list)
                 while not done:
+                    # print(env, " stepping")
+                    # print(env.__repr__())
                     observation, reward, done, info = env.step(action)
                     # for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:
                     # d[x].append(info[x])
@@ -497,6 +498,6 @@ if __name__ == "__main__":
                 print()
                 print("total iterations: ", i)
                 print("total reward: ", rewards)
-
+        print("Total time: ", time.time() - start)
     env.close()
     print(env.max_timestamp)

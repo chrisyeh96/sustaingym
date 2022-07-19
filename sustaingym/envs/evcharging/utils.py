@@ -6,7 +6,7 @@ from datetime import timedelta, datetime
 import os
 import pickle
 import pkgutil
-from typing import Any, Literal, Union
+from typing import Any, Literal
 
 import acnportal.acndata as acnd
 import acnportal.acnsim as acns
@@ -182,7 +182,7 @@ def save_gmm_model(gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarra
         pickle.dump(model, f)
 
 
-def load_gmm_model(save_dir: str) -> dict[str, Union[np.ndarray, mixture.GaussianMixture]]:
+def load_gmm_model(save_dir: str) -> dict[str, np.ndarray | mixture.GaussianMixture]:
     """Load pickled GMM and other data from folder.
 
     First searches through custom folder. If not found, searches through

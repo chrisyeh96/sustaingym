@@ -12,7 +12,6 @@ from random import randrange
 import uuid
 
 import acnportal.acnsim as acns
-import acnportal.acnsim.models as acnm
 import numpy as np
 import pandas as pd
 import sklearn.mixture as mixture
@@ -109,7 +108,7 @@ class AbstractTraceGenerator:
         """
         raise NotImplementedError
 
-    def get_event_queue(self) -> tuple[acns.EventQueue, list[acnm.ev.EV], int]:
+    def get_event_queue(self) -> tuple[acns.EventQueue, list[acns.EV], int]:
         """Creates an EventQueue from a DataFrame of charging information.
 
         Sessions are added as Plugin events, and Recompute events are added
@@ -271,6 +270,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         gmm: Gaussian Mixture Model from sklearn for session modeling
         cnt: empirical distribution on the number of sessions per day
         station_usage: total number of sessions during interval for each station
+        rng: random number generator
         *See AbstractTraceGenerator for more attributes
 
     Notes about saving GMMs:
@@ -304,10 +304,12 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                  period: int = 5,
                  recompute_freq: int = 2,
                  requested_energy_cap: float = 100,
+                 random_seed: int = 42
                  ):
         """
         Args:
             n_components: number of components in GMM
+            random_seed: seed for random sampling
             *See AbstractTraceGenerator for more arguments
         
         Notes:
@@ -328,6 +330,8 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         self.gmm: mixture.GaussianMixture = data[GMM_KEY]
         self.cnt: np.ndarray =  data[COUNT_KEY]
         self.station_usage: np.ndarray = data[STATION_USAGE_KEY]
+
+        self.rng = np.random.default_rng(seed=random_seed)
 
     def __repr__(self) -> str:
         """
@@ -389,7 +393,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             DataFrame of artificial sessions.
         """
         # generate samples from empirical pdf, capping maximum at the number of stations
-        n = min(np.random.choice(self.cnt), self.num_stations)
+        n = min(self.rng.choice(self.cnt), self.num_stations)
         samples = self._sample(n)
 
         events = pd.DataFrame({
@@ -408,7 +412,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
 
         station_ids = []
         for _ in range(n):
-            idx = np.random.choice(len(station_ids_left), p=station_cnts)
+            idx = self.rng.choice(len(station_ids_left), p=station_cnts)
             station_ids_left[idx], station_ids_left[-1] = station_ids_left[-1], station_ids_left[idx]
             station_ids.append(station_ids_left.pop())
             station_cnts[idx], station_cnts[-1] = station_cnts[-1], station_cnts[idx]

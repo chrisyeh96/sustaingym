@@ -28,7 +28,6 @@ class BaseOnlineAlgorithm:
 
     def __init__(self, env: EVChargingEnv):
         self.env = deepcopy(env)
-        self.infrastructure_info = env.infrastructure_info
         # self.num_constraints, self.num_stations = self.env.cn.constraint_matrix.shape
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
@@ -135,21 +134,22 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         if self.first_run:
-            self.r = cp.Variable(self.infrastructure_info.num_stations, nonneg=True)
+            num_stations = len(self.env.cn.station_ids)
+            self.r = cp.Variable(num_stations, nonneg=True)
 
             # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
-            phase_factor = np.exp(1j * np.deg2rad(self.infrastructure_info.phases))
-            A_tilde = self.infrastructure_info.constraint_matrix * phase_factor[None, :]
+            phase_factor = np.exp(1j * np.deg2rad(self.env.cn._phase_angles))
+            A_tilde = self.env.cn.constraint_matrix * phase_factor[None, :]
             agg_magnitude = cp.abs(A_tilde @ self.r) * ACTION_SCALING_FACTOR  # convert to A
 
             # Close gap between r (ACTION_SCALING_FACTOR*A) and demands (A*periods)
             # Units of outputted action is (ACTION_SCALING_FACTOR*A), demands is in A*periods
             # convert energy to current signal by assuming outputted current will be used
             # for recompute_freq periods
-            self.demands = cp.Parameter(self.infrastructure_info.num_stations)
+            self.demands = cp.Parameter(num_stations)
 
             objective = cp.Minimize(cp.norm(self.r - self.demands, p=1))
-            constraints = [self.r <= MAX_ACTION + EPS, agg_magnitude <= self.infrastructure_info.constraint_limits]
+            constraints = [self.r <= MAX_ACTION + EPS, agg_magnitude <= self.env.cn.magnitudes]
             self.prob = cp.Problem(objective, constraints)
 
             assert self.prob.is_dpp()

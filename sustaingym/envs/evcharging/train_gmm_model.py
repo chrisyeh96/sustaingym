@@ -23,10 +23,10 @@ from __future__ import annotations
 
 import argparse
 from argparse import RawTextHelpFormatter
+from collections.abc import Sequence
 from datetime import datetime
 from itertools import chain
 import os
-from typing import Sequence
 
 import numpy as np
 import pandas as pd
