@@ -160,12 +160,16 @@ class BatteryStorageInGridEnv(Env):
         else:
             assert len(gen_max_production) == self.num_gens
             self.gen_max_production = gen_max_production
+        
+        self.init_gen_max_production = self.gen_max_production.copy()
 
         if gen_costs is None:
             self.gen_costs = rng.uniform(0, 5, size=(self.num_gens,))
         else:
             assert len(gen_costs) == self.num_gens
             self.gen_costs = gen_costs
+        
+        self.init_gen_costs = self.gen_costs.copy()
 
         self.num_bats = num_bats
 
@@ -191,18 +195,24 @@ class BatteryStorageInGridEnv(Env):
         else:
             assert len(bats_charge_costs) == self.num_bats - 1
             self.bats_charge_costs[:-1] = bats_charge_costs
+        
+        self.init_bats_charge_costs = self.bats_charge_costs.copy()
 
         self.bats_discharge_costs = np.zeros((self.num_bats, ))
         if bats_discharge_costs is None:
             self.bats_discharge_costs[:-1] = rng.uniform(0, 4, size=self.num_bats-1)
         else:
             assert len(bats_discharge_costs) == self.num_bats - 1
-            self.bats_charge_costs[:-1] = bats_discharge_costs
+            self.bats_discharge_costs[:-1] = bats_discharge_costs
+        
+        self.init_bats_discharge_costs = self.bats_discharge_costs.copy()
 
         self.battery_charge = np.zeros((self.num_bats, ))
 
         for i in range(self.num_bats):
             self.battery_charge[i] = (0 + self.battery_capacity[i]) / 2.0
+        
+        self.init_battery_charge = self.battery_charge.copy()
 
         # action space is two values for the charging and discharging costs
         self.action_space = spaces.Box(low=0, high=np.inf, shape=(2,), dtype=np.float32)
@@ -260,6 +270,11 @@ class BatteryStorageInGridEnv(Env):
         self.b = 0.0
         self.dispatch = 0.0
         self.count = 1  # counter for the step in current episode
+        self.bats_charge_costs = self.init_bats_charge_costs.copy()
+        self.bats_discharge_costs = self.init_bats_discharge_costs.copy()
+        self.gen_max_production = self.init_gen_max_production.copy()
+        self.gen_costs = self.init_gen_costs.copy()
+        self.battery_charge = self.init_battery_charge.copy()
 
         self.reward_type = 0  # default reward type without moving price average
         if options and 'reward' in options.keys():
