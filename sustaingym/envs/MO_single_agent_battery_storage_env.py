@@ -74,17 +74,17 @@ class MarketOperator:
         # ERROR: after the first step, the optimal x returned after solving the problem
         # becomes NaN.
         # Current guess is the constraints become infeasible after the first update/step.
-        # print("step: ", self.env.count)
-        # print("gen max production: ", self.gen_max_production.value)
-        # print("battery max charge: ", self.bats_max_charge.value)
-        # print("battery max discharge: ", self.bats_max_discharge.value)
-        # print("battery discharge costs: ", self.bats_discharge_costs.value)
-        # print("battery charge costs: ", self.bats_charge_costs.value)
-        # print("gen costs: ", self.gen_costs.value)
-        # print("load: ", self.load.value)
+        print("step: ", self.env.count)
+        print("gen max production: ", self.gen_max_production.value)
+        print("battery max charge: ", self.bats_max_charge.value)
+        print("battery max discharge: ", self.bats_max_discharge.value)
+        print("battery discharge costs: ", self.bats_discharge_costs.value)
+        print("battery charge costs: ", self.bats_charge_costs.value)
+        print("gen costs: ", self.gen_costs.value)
+        print("load: ", self.load.value)
         self.prob.solve()
-        # print("status: ", self.prob.status)
-        # print("x value: ", self.x.value)
+        print("status: ", self.prob.status)
+        print("x value: ", self.x.value)
         price = self.prob.constraints[0].dual_value
         # print("price:", price)
         x_gens = self.x.value[:self.env.num_gens]
@@ -259,6 +259,7 @@ class BatteryStorageInGridEnv(Env):
         self.a = 0.0
         self.b = 0.0
         self.dispatch = 0.0
+        self.count = 1  # counter for the step in current episode
 
         self.reward_type = 0  # default reward type without moving price average
         if options and 'reward' in options.keys():
