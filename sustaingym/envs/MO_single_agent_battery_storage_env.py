@@ -86,7 +86,7 @@ class MarketOperator:
         print("status: ", self.prob.status)
         print("x value: ", self.x.value)
         price = self.prob.constraints[0].dual_value
-        # print("price:", price)
+        print("price:", price)
         x_gens = self.x.value[:self.env.num_gens]
         x_bats = self.x.value[self.env.num_gens:self.env.num_gens + self.env.num_bats]
         return x_gens, x_bats, price
@@ -276,6 +276,9 @@ class BatteryStorageInGridEnv(Env):
         self.gen_costs = self.init_gen_costs.copy()
         self.battery_charge = self.init_battery_charge.copy()
 
+        # enforce convexity for battery bids
+        self.bats_discharge_costs = np.maximum(self.bats_discharge_costs, self.bats_charge_costs)
+
         self.reward_type = 0  # default reward type without moving price average
         if options and 'reward' in options.keys():
             if options.get('reward') == 1:
@@ -321,6 +324,9 @@ class BatteryStorageInGridEnv(Env):
         self.bats_discharge_costs *= self.rng.uniform(0.8, 1.25, size=self.num_bats)
         self.bats_charge_costs[-1] = action[0]
         self.bats_discharge_costs[-1] = action[1]
+
+        # enforce convexity for battery bids
+        self.bats_discharge_costs = np.maximum(self.bats_discharge_costs, self.bats_charge_costs)
 
         time_step = self.TIME_STEP_DURATION / 60  # min -> hr
 
