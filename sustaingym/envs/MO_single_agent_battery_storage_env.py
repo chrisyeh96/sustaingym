@@ -25,20 +25,18 @@ class MarketOperator:
         self.env = env
 
         # x: energy in MWh, positive means generation, negative (for battery) means charging
-        self.x = cp.Variable(env.num_gens + env.num_bats + 1)
+        self.x = cp.Variable(env.num_gens + env.num_bats)
         x_gens = self.x[:env.num_gens]
-        x_bats = self.x[env.num_gens:env.num_gens + env.num_bats]
+        x_bats = self.x[env.num_gens:]
 
         # time-dependent parameters
         self.gen_max_production = cp.Parameter(env.num_gens, nonneg=True)
-        self.bats_charge_rate_range = cp.Parameter([env.num_bats, 2])
-
         self.bats_max_charge = cp.Parameter(env.num_bats, nonpos=True)  # rate in MW
         self.bats_max_discharge = cp.Parameter(env.num_bats, nonneg=True)
-        self.bats_charge_costs = cp.Parameter(env.num_bats)
-        self.bats_discharge_costs = cp.Parameter(env.num_bats)
+        self.bats_charge_costs = cp.Parameter(env.num_bats, nonneg=True)
+        self.bats_discharge_costs = cp.Parameter(env.num_bats, nonneg=True)
         self.gen_costs = cp.Parameter(env.num_gens, nonneg=True)
-        self.load = cp.Parameter()
+        self.load = cp.Parameter(nonneg=True)
 
         time_step = env.TIME_STEP_DURATION / 60  # in hours
         constraints = [
@@ -54,6 +52,8 @@ class MarketOperator:
         obj = self.gen_costs @ x_gens
         obj += cp.sum(cp.maximum(cp.multiply(self.bats_discharge_costs, x_bats), cp.multiply(self.bats_charge_costs, x_bats)))
         self.prob = cp.Problem(objective=cp.Minimize(obj), constraints=constraints)
+        assert self.prob.is_dcp()
+        assert self.prob.is_dpp()
 
     def get_dispatch(self) -> tuple[np.ndarray, np.ndarray, float]:
         """
@@ -71,22 +71,19 @@ class MarketOperator:
         self.bats_discharge_costs.value = self.env.bats_discharge_costs
         self.load.value = self.env.load_demand
 
-        # ERROR: after the first step, the optimal x returned after solving the problem
-        # becomes NaN.
-        # Current guess is the constraints become infeasible after the first update/step.
-        print("step: ", self.env.count)
-        print("gen max production: ", self.gen_max_production.value)
-        print("battery max charge: ", self.bats_max_charge.value)
-        print("battery max discharge: ", self.bats_max_discharge.value)
-        print("battery discharge costs: ", self.bats_discharge_costs.value)
-        print("battery charge costs: ", self.bats_charge_costs.value)
-        print("gen costs: ", self.gen_costs.value)
-        print("load: ", self.load.value)
+        # print("step: ", self.env.count)
+        # print("gen max production: ", self.gen_max_production.value)
+        # print("battery max charge: ", self.bats_max_charge.value)
+        # print("battery max discharge: ", self.bats_max_discharge.value)
+        # print("battery discharge costs: ", self.bats_discharge_costs.value)
+        # print("battery charge costs: ", self.bats_charge_costs.value)
+        # print("gen costs: ", self.gen_costs.value)
+        # print("load: ", self.load.value)
         self.prob.solve()
-        print("status: ", self.prob.status)
-        print("x value: ", self.x.value)
-        price = self.prob.constraints[0].dual_value
-        print("price:", price)
+        # print("status: ", self.prob.status)
+        # print("x value: ", self.x.value)
+        price = -1*self.prob.constraints[0].dual_value # negative because of minimizing objective in LP
+        # print("price:", price)
         x_gens = self.x.value[:self.env.num_gens]
         x_bats = self.x.value[self.env.num_gens:self.env.num_gens + self.env.num_bats]
         return x_gens, x_bats, price
@@ -236,7 +233,7 @@ class BatteryStorageInGridEnv(Env):
 
     def _generate_load_data(self) -> float:
         # TODO: describe this function
-        return 15 * np.sin(2 * np.pi * self.count / 288) + 40
+        return np.sin(2 * np.pi * self.count / 288) + 3.5
     
     def _get_time(self) -> float:
         # Describe this function
@@ -316,32 +313,41 @@ class BatteryStorageInGridEnv(Env):
 
         # ensure selling cost (a) for charge is at least as large as buying cost (b)
         if action[0] < action[1]:
-            # print('TODO: write a warning message')
+            # print('Warning: selling cost (a) is less than buying cost (b)')
             action[0] = action[1]
 
         self.gen_costs *= self.rng.uniform(0.8, 1.25, size=self.num_gens)
         self.bats_charge_costs *= self.rng.uniform(0.8, 1.25, size=self.num_bats)
         self.bats_discharge_costs *= self.rng.uniform(0.8, 1.25, size=self.num_bats)
-        self.bats_charge_costs[-1] = action[0]
-        self.bats_discharge_costs[-1] = action[1]
+        self.bats_charge_costs[-1] = action[1]
+        self.bats_discharge_costs[-1] = action[0]
 
+        # print('charge costs: ', self.bats_charge_costs)
+        # print('discharge costs before: ', self.bats_discharge_costs)
         # enforce convexity for battery bids
         self.bats_discharge_costs = np.maximum(self.bats_discharge_costs, self.bats_charge_costs)
+        # print('discharge costs after: ', self.bats_discharge_costs)
 
         time_step = self.TIME_STEP_DURATION / 60  # min -> hr
 
         prev_a, prev_b = self.a, self.b
-        self.a, self.b = action
+        self.a, self.b = action[0], action[1]
 
         prev_dispatch = self.dispatch
-
+        
         self.bats_max_charge = np.maximum(
             self.bats_max_discharge_range[:, 0],
             -(self.battery_capacity - self.battery_charge) / (time_step * self.CHARGE_EFFICIENCY))
         self.bats_max_discharge = np.minimum(
             self.bats_max_discharge_range[:, 1],
             self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
-
+        
+        # print("agent max discharge: ", self.bats_max_discharge[-1])
+        # print("agent max charge: ", self.bats_max_charge[-1])
+        # print("agent curr charge: ", self.battery_charge[-1])
+        # print("agent charge cost: ", self.bats_charge_costs[-1])
+        # print("agent discharge cost: ", self.bats_discharge_costs[-1])
+        
         _, x_bats, price = self.market_op.get_dispatch()
         x_agent = x_bats[-1]
 
@@ -352,6 +358,9 @@ class BatteryStorageInGridEnv(Env):
         for i in range(self.num_bats):
             if x_bats[i] >= 0:
                 self.battery_charge[i] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[i]
+                # ensure non-negative battery charge
+                if self.battery_charge[i] < 0:
+                    self.battery_charge[i] = 0.0
             else:
                 self.battery_charge[i] -= self.CHARGE_EFFICIENCY * x_bats[i]
 
@@ -373,3 +382,11 @@ class BatteryStorageInGridEnv(Env):
 
     def close(self):
         return
+
+
+# if __name__ == '__main__':
+#     from stable_baselines3.common.env_checker import check_env
+
+#     env = BatteryStorageInGridEnv()
+
+#     check_env(env)
