@@ -155,6 +155,9 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
 
     # get counts and station ids data
     cnt = df.arrival.map(lambda x: int(x.strftime('%j'))).value_counts().to_numpy()
+    num_days_total = (date_range[1] - date_range[0]).days + 1
+    num_unseen_days = num_days_total - len(cnt)  # account for days when there are no EVs
+    np.concatenate((cnt, np.zeros(num_unseen_days, )))
     sid = station_id_pct(df, n2i)
 
     # Preprocess DataFrame for GMM training

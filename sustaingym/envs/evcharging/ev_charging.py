@@ -242,7 +242,11 @@ class EVChargingEnv(gym.Env):
                 departures (which an online algorithm should not know),
                 history of charging rates, and pilot signals.
         """
-        # super().reset(seed=seed) TODO this line causes errors?
+        if seed is not None:
+            self.rng = np.random.default_rng(seed)
+        else:
+            self.rng = np.random.default_rng()
+
         if options and 'verbose' in options:
             if 'verbose' in options:
                 self.verbose = options['verbose']
