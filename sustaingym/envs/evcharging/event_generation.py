@@ -10,7 +10,6 @@ from datetime import datetime, timedelta
 import os
 from random import randrange
 import uuid
-from xmlrpc.client import INVALID_XMLRPC
 
 import acnportal.acnsim as acns
 import numpy as np
@@ -353,29 +352,33 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                 departure time in minutes, estimated departure time in
                 minutes, and requested energy in kWh.
         """
-        samples = np.zeros((n, 4), dtype=np.float32)
+        # samples = np.zeros((n, 4), dtype=np.float32)
         # use while loop for quality check
-        i = 0
-        while i < n:
-            sample = self.gmm.sample(1)[0][0]  # select just 1 sample of shape (1, 4)
+        samples = self.gmm.sample(int(n * 1.5))[0] # shape (1.5n, 4)
+        
+        # discard sample if arrival, departure, estimated departure or
+        #  requested energy not in bound
+        samples = samples[
+            (0 <= samples[:, ARRCOL]) &
+            (samples[:, DEPCOL] < 1) & 
+            (samples[:, ESTCOL] < 1) &
+            (samples[:, EREQCOL] >= 0)
+        ]
+        
+        # rescale arrival, departure, estimated departure
+        samples[:, [ARRCOL,DEPCOL,ESTCOL]] = MINS_IN_DAY * samples[:, [ARRCOL,DEPCOL,ESTCOL]] // self.period
 
-            # discard sample if arrival, departure, estimated departure or
-            #  requested energy not in bound
-            if sample[ARRCOL] < 0 or sample[DEPCOL] >= 1 or sample[ESTCOL] >= 1 or sample[EREQCOL] < 0:
-                continue
-
-            # rescale arrival, departure, estimated departure
-            sample[[ARRCOL,DEPCOL,ESTCOL]] = MINS_IN_DAY * sample[[ARRCOL,DEPCOL,ESTCOL]] // self.period
-
-            # discard sample if arrival >= departure or arrival >= estimated_departure
-            if sample[ARRCOL] >= sample[DEPCOL] or sample[ARRCOL] >= sample[ESTCOL]:
-                continue
-
-            np.copyto(samples[i], sample)
-            i += 1
+        # discard sample if arrival >= departure or arrival >= estimated_departure
+        samples = samples[
+            (samples[:, ARRCOL] < samples[:, DEPCOL]) &
+            (samples[:, ARRCOL] < samples[:, ESTCOL])
+        ]
 
         # rescale requested energy
         samples[:, EREQCOL] *= REQ_ENERGY_SCALE
+
+        if len(samples) > n:
+            samples = samples[:n]
         return samples
 
     def _create_events(self) -> pd.DataFrame:
@@ -406,20 +409,23 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         events.sort_values('arrival', inplace=True)
 
         # sample stations according their popularity
-        # station_ids_left = self.station_ids.copy()
         station_cnts = self.station_usage / self.station_usage.sum()
 
-        station_dep = np.zeros(len(self.station_ids), dtype=np.int32)
+        station_dep = np.full(len(self.station_ids), -1, dtype=np.int32)
 
         station_ids = []
         for i in range(n):
             avail = np.where(station_dep < events['arrival'].iloc[i])[0]
             if len(avail) == 0:
-                idx = 'NOT_AVAIL'
+                station_ids.append('NOT_AVAIL')
             else:
-                idx = self.rng.choice(avail, p=station_cnts[avail] / station_cnts[avail].sum())
-                station_dep[idx] = events['departure'].iloc[i]
-            station_ids.append(self.station_ids[idx])
+                station_cnts_sum = station_cnts[avail].sum()
+                if station_cnts_sum <= 1e-5:
+                    idx = self.rng.choice(avail)
+                else:
+                    idx = self.rng.choice(avail, p=station_cnts[avail] / station_cnts_sum)
+                station_dep[idx] = max(events['departure'].iloc[i], station_dep[idx])
+                station_ids.append(self.station_ids[idx])
         events['station_id'] = station_ids
         events = events[events['station_id'] != 'NOT_AVAIL']
         return events.reset_index()
@@ -428,16 +434,21 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
 if __name__ == '__main__':
     import time
     in_covid = ('2020-02-01', '2020-05-31')
+    pre_covid = ('2019-05-01', '2019-08-31')
+    pre_covid_str = 'Summer 2019'
 
-    atg = GMMsTraceGenerator('caltech', date_period=in_covid, n_components=50, period=10, recompute_freq=3)
-    rtg1 = RealTraceGenerator('caltech', date_period=in_covid, sequential=True, use_unclaimed=True)
+    atg = GMMsTraceGenerator('jpl', date_period='Summer 2019', n_components=50, period=10, recompute_freq=3)
+    # rtg1 = RealTraceGenerator('jpl', date_period=in_covid, sequential=True, use_unclaimed=True)
     # rtg2 = RealTraceGenerator('caltech', date_period=in_covid, sequential=False, use_unclaimed=True)
 
     for generator in [atg]:
         start = time.time()
-        for _ in range(130):
+        total_events = 0
+        episodes = 100
+        for _ in range(episodes):
             print(generator)
             eq, evs, num_events = generator.get_event_queue()
-            print(num_events)
+            total_events += num_events
         end = time.time()
         print('time: ', end - start)
+        print('num events avg: ', total_events / episodes)
