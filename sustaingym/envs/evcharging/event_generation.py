@@ -341,45 +341,51 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
         return f'GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
 
-    def _sample(self, n: int) -> np.ndarray:
+    def _sample(self, n: int, oversample_factor: float=0.2) -> np.ndarray:
         """Returns samples from GMM.
 
         Args:
             n: number of samples to generate.
+            oversample_factor: fractional amount of n to oversample.
 
         Returns:
             array of shape (n, 4) whose columns are arrival time in minutes,
                 departure time in minutes, estimated departure time in
                 minutes, and requested energy in kWh.
         """
-        # samples = np.zeros((n, 4), dtype=np.float32)
         # use while loop for quality check
-        samples = self.gmm.sample(int(n * 1.5))[0] # shape (1.5n, 4)
-        
-        # discard sample if arrival, departure, estimated departure or
-        #  requested energy not in bound
-        samples = samples[
-            (0 <= samples[:, ARRCOL]) &
-            (samples[:, DEPCOL] < 1) & 
-            (samples[:, ESTCOL] < 1) &
-            (samples[:, EREQCOL] >= 0)
-        ]
-        
-        # rescale arrival, departure, estimated departure
-        samples[:, [ARRCOL,DEPCOL,ESTCOL]] = MINS_IN_DAY * samples[:, [ARRCOL,DEPCOL,ESTCOL]] // self.period
+        all_samples, all_samples_length = [], 0
+        while all_samples_length < n:
+            samples = self.gmm.sample(int(n * (1 + oversample_factor)))[0]  # shape (1.5n, 4)
+            
+            # discard sample if arrival, departure, estimated departure or
+            #  requested energy not in bound
+            samples = samples[
+                (0 <= samples[:, ARRCOL]) &
+                (samples[:, DEPCOL] < 1) & 
+                (samples[:, ESTCOL] < 1) &
+                (samples[:, EREQCOL] >= 0)
+            ]
 
-        # discard sample if arrival >= departure or arrival >= estimated_departure
-        samples = samples[
-            (samples[:, ARRCOL] < samples[:, DEPCOL]) &
-            (samples[:, ARRCOL] < samples[:, ESTCOL])
-        ]
+            # rescale arrival, departure, estimated departure
+            samples[:, [ARRCOL,DEPCOL,ESTCOL]] = MINS_IN_DAY * samples[:, [ARRCOL,DEPCOL,ESTCOL]] // self.period
 
-        # rescale requested energy
-        samples[:, EREQCOL] *= REQ_ENERGY_SCALE
+            # discard sample if arrival >= departure or arrival >= estimated_departure
+            samples = samples[
+                (samples[:, ARRCOL] < samples[:, DEPCOL]) &
+                (samples[:, ARRCOL] < samples[:, ESTCOL])
+            ]
 
-        if len(samples) > n:
-            samples = samples[:n]
-        return samples
+            # rescale requested energy
+            samples[:, EREQCOL] *= REQ_ENERGY_SCALE
+
+            all_samples.append(samples)
+            all_samples_length += len(samples)
+
+            if all_samples_length >= n:
+                break
+        return np.concatenate(all_samples, axis=0)[:n]
+
 
     def _create_events(self) -> pd.DataFrame:
         """Creates artificial events for the event queue.
@@ -437,7 +443,7 @@ if __name__ == '__main__':
     pre_covid = ('2019-05-01', '2019-08-31')
     pre_covid_str = 'Summer 2019'
 
-    atg = GMMsTraceGenerator('jpl', date_period='Summer 2019', n_components=50, period=10, recompute_freq=3)
+    atg = GMMsTraceGenerator('caltech', date_period='Summer 2019', n_components=50, period=10, recompute_freq=3)
     # rtg1 = RealTraceGenerator('jpl', date_period=in_covid, sequential=True, use_unclaimed=True)
     # rtg2 = RealTraceGenerator('caltech', date_period=in_covid, sequential=False, use_unclaimed=True)
 
