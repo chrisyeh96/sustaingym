@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import os
 from random import randrange
 import uuid
+from xmlrpc.client import INVALID_XMLRPC
 
 import acnportal.acnsim as acns
 import numpy as np
@@ -356,20 +357,18 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         # use while loop for quality check
         i = 0
         while i < n:
-            sample = self.gmm.sample(1)[0]  # select just 1 sample of shape (1, 4)
+            sample = self.gmm.sample(1)[0][0]  # select just 1 sample of shape (1, 4)
 
             # discard sample if arrival, departure, estimated departure or
             #  requested energy not in bound
-            if sample[0][ARRCOL] < 0 or sample[0][DEPCOL] >= 1 or sample[0][ESTCOL] >= 1 or sample[0][EREQCOL] < 0:
+            if sample[ARRCOL] < 0 or sample[DEPCOL] >= 1 or sample[ESTCOL] >= 1 or sample[EREQCOL] < 0:
                 continue
 
             # rescale arrival, departure, estimated departure
-            sample[0][ARRCOL] = MINS_IN_DAY * sample[0][ARRCOL] // self.period
-            sample[0][DEPCOL] = MINS_IN_DAY * sample[0][DEPCOL] // self.period
-            sample[0][ESTCOL] = MINS_IN_DAY * sample[0][ESTCOL] // self.period
+            sample[[ARRCOL,DEPCOL,ESTCOL]] = MINS_IN_DAY * sample[[ARRCOL,DEPCOL,ESTCOL]] // self.period
 
             # discard sample if arrival >= departure or arrival >= estimated_departure
-            if sample[0][ARRCOL] >= sample[0][DEPCOL] or sample[0][ARRCOL] >= sample[0][ESTCOL]:
+            if sample[ARRCOL] >= sample[DEPCOL] or sample[ARRCOL] >= sample[ESTCOL]:
                 continue
 
             np.copyto(samples[i], sample)
@@ -393,7 +392,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             DataFrame of artificial sessions.
         """
         # generate samples from empirical pdf, capping maximum at the number of stations
-        n = min(self.rng.choice(self.cnt), self.num_stations)
+        n = self.rng.choice(self.cnt)
         samples = self._sample(n)
 
         events = pd.DataFrame({
@@ -407,22 +406,23 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         events.sort_values('arrival', inplace=True)
 
         # sample stations according their popularity
-        station_ids_left = self.station_ids.copy()
+        # station_ids_left = self.station_ids.copy()
         station_cnts = self.station_usage / self.station_usage.sum()
 
+        station_dep = np.zeros(len(self.station_ids), dtype=np.int32)
+
         station_ids = []
-        for _ in range(n):
-            idx = self.rng.choice(len(station_ids_left), p=station_cnts)
-            station_ids_left[idx], station_ids_left[-1] = station_ids_left[-1], station_ids_left[idx]
-            station_ids.append(station_ids_left.pop())
-            station_cnts[idx], station_cnts[-1] = station_cnts[-1], station_cnts[idx]
-            station_cnts = np.delete(station_cnts, -1)
-            if sum(station_cnts) == 0:  # all stations are zero in empirical pdf -> sample uniformly
-                station_cnts = [1 / len(station_cnts) for _ in range(len(station_cnts))]
-            else:  # otherwise, normalize the probabilities after removal
-                station_cnts = [station_cnts[i] / sum(station_cnts) for i in range(len(station_cnts))]
+        for i in range(n):
+            avail = np.where(station_dep < events['arrival'].iloc[i])[0]
+            if len(avail) == 0:
+                idx = 'NOT_AVAIL'
+            else:
+                idx = self.rng.choice(avail, p=station_cnts[avail] / station_cnts[avail].sum())
+                station_dep[idx] = events['departure'].iloc[i]
+            station_ids.append(self.station_ids[idx])
         events['station_id'] = station_ids
-        return events
+        events = events[events['station_id'] != 'NOT_AVAIL']
+        return events.reset_index()
 
 
 if __name__ == '__main__':
