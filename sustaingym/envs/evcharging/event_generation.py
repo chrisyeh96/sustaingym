@@ -325,7 +325,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         try:
             data = load_gmm_model(model_path)
         except FileNotFoundError:
-            create_gmms(site, n_components, self.date_range_str)
+            create_gmms(site, n_components, [self.date_range_str])
             data = load_gmm_model(model_path)
         self.gmm: mixture.GaussianMixture = data[GMM_KEY]
         self.cnt: np.ndarray =  data[COUNT_KEY]
@@ -341,7 +341,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
         return f'GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
 
-    def _sample(self, n: int, oversample_factor: float=0.2) -> np.ndarray:
+    def _sample(self, n: int, oversample_factor: float = 0.2) -> np.ndarray:
         """Returns samples from GMM.
 
         Args:

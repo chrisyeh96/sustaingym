@@ -34,11 +34,15 @@ from sklearn.mixture import GaussianMixture
 
 from .utils import DEFAULT_SAVE_DIR, DEFAULT_DATE_RANGES, get_real_events, get_folder_name, save_gmm_model, site_str_to_site, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, SiteStr
 
-DEFAULT_DATE_RANGES_SEQ = list(chain(*DEFAULT_DATE_RANGES))
 
 def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     """
     Preprocessing script for real event sessions before GMM modeling.
+
+    Filters EVs with departures / estimated departures on a different date
+    than arrival date. The arrival, departure, and estimated departure are
+    normalized between 0 and 1 for the time during the day, and the
+    requested energy is normalized by a scaling factor.
 
     Args:
         df: DataFrame of charging events, expected to be gotten from
@@ -48,7 +52,8 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
         Filtered copy of DataFrame with normalized parameters.
     """
     # Filter cars staying overnight
-    mask = (df['arrival'].dt.day == df['estimated_departure'].dt.day)
+    max_depart = np.maximum(df['departure'], df['estimated_departure'])
+    mask = (df['arrival'].dt.day == max_depart.dt.day)
     df = df[mask].copy()
 
     # Get arrival time, departure time, estimated departure time from datetimes and normalize between [0, 1]
@@ -61,13 +66,13 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     return df[['arrival_time', 'departure_time', 'estimated_departure_time', 'requested_energy (kWh)']].copy()
 
 
-def station_id_pct(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
+def station_id_cnts(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
     """
-    Returns percentage usage of station ids. Helper function to script.
+    Returns the usage counts for a network's charging station ids.
 
     Args:
         df: DataFrame of session observations.
-        n2i: dictionary mapping station id to array order.
+        n2i: dictionary mapping charging station id to position in numpy array.
 
     Returns:
         cnts: number of sessions associated with each station id.
@@ -80,22 +85,24 @@ def station_id_pct(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
         cnts[n2i[station_id]] = vc[station_id]
     if sum(cnts) == 0:
         raise ValueError('No station ids in DataFrame found in site. ')
-    cnts = np.array(cnts, dtype=np.float32)
-    cnts /= sum(cnts)
+    cnts = np.array(cnts, dtype=np.int32)
     return cnts
 
 
 def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime, datetime]]:
     """
-    Parses a list of strings and return a list of datetimes.
+    Parses a sequence of date ranges in string form and convert them to
+    datetimes.
 
     Args:
-        date_range: an even-length list of dates with each consecutive
-            pair of dates the start and end date of a period. Must be a
-            string and have format YYYY-MM-DD, or a datetime object.
+        date_range: an even-length sequence of dates. Each consecutive pair of
+            dates describes a range of dates, with the first the start of the
+            range and the second the end. Each item must be a string with
+            format 'YYYY-MM-DD'. Each pair must describe a date range inside
+            the range 2018-11-01 and 2021-08-31.
 
     Returns:
-        A sequence of 2-tuples that contains a begin and end datetime.
+        A sequence of 2-tuples that contain a begin and end datetime.
 
     Raises:
         ValueError: length of date_range is odd
@@ -129,11 +136,11 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     Args:
         site: either 'caltech' or 'jpl'
         n_components: number of components of Gaussian mixture model
-        date_range: 2-tuple of datetimes describing the date period on which
-            the gmm should be trained. Only year, month, and day of the
-            datetime object are considered. The date range should be between
-            2018-11-01 and 2021-08-31. The default ranges sample from the
-            years 2019 to 2021.
+        date_range: a 2-tuple describing a range of dates, with the first the
+            start of the range and the second the end. Each item must be a
+            datetime, and only the date of the objects is considered. The
+            range that the tuple describes must fall inside the range
+            2018-11-01 and 2021-08-31.
     """
     SAVE_DIR = os.path.join(DEFAULT_SAVE_DIR, site)
 
@@ -153,12 +160,14 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
         print('Empty dataframe, abort GMM training. ')
         return
 
-    # get counts and station ids data
-    cnt = df.arrival.map(lambda x: int(x.strftime('%j'))).value_counts().to_numpy()
     num_days_total = (date_range[1] - date_range[0]).days + 1
+
+    # get counts and station ids data
+    cnt = df.arrival.dt.date.value_counts().to_numpy()
     num_unseen_days = num_days_total - len(cnt)  # account for days when there are no EVs
-    np.concatenate((cnt, np.zeros(num_unseen_days, )))
-    sid = station_id_pct(df, n2i)
+    cnt = np.concatenate((cnt, np.zeros(num_unseen_days, )))
+
+    sid = station_id_cnts(df, n2i)
 
     # Preprocess DataFrame for GMM training
     df = preprocess(df)
@@ -167,6 +176,7 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     gmm = GaussianMixture(n_components=n_components)
     gmm.fit(df)
 
+    # Save
     folder_name = get_folder_name(date_range_str[0], date_range_str[1], n_components)
     save_dir = os.path.join(SAVE_DIR, folder_name)
     if not os.path.exists(save_dir):
@@ -177,26 +187,23 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     save_gmm_model(gmm, cnt, sid, save_dir)
 
 
-def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[str] = DEFAULT_DATE_RANGES_SEQ) -> None:
+def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[tuple[str, str]] = DEFAULT_DATE_RANGES) -> None:
     """
-    Creates multiple gmms and saves in gmm_folder.
+    Creates multiple gmms and saves them in gmm_folder.
 
     Args:
         site: either 'caltech' or 'jpl'
         n_components: number of components of Gaussian mixture model
-        date_ranges: date ranges for GMM models to be trained on. The number of
-            dates must be divisible by 2, with the second later than the first.
-            They should be formatted as YYYY-MM-DD and be between 2018-11-01 and
-            2021-08-31. The default ranges sample from the years 2019 to 2021.
+        date_range: a sequence of 2-tuples each describing a range of dates,
+            with the first the start of the range and the second the end.
+            Each item in the tuples must be a string with format 'YYYY-MM-DD',
+            and the tuples must describe a date range inside the range
+            2018-11-01 and 2021-08-31.
     """
     print('\n--- Training GMMs ---\n')
-
-    # Get date ranges
-    date_range_dts = parse_string_date_list(date_ranges)
-
-    for date_range_dt in date_range_dts:
+    for date_range in date_ranges:
+        date_range_dt = parse_string_date_list(date_range)[0]
         create_gmm(site, n_components, date_range=date_range_dt)
-
     print('--- Training complete. ---\n')
 
 
@@ -214,4 +221,5 @@ if __name__ == '__main__':
     if args.date_ranges is None:
         create_gmms(args.site, args.gmm_n_components)
     else:
-        create_gmms(args.site, args.gmm_n_components, args.date_ranges)
+        date_ranges = [(args.date_range[2*i], args.date_range[2*i+1]) for i in range(len(args.date_range) // 2)]
+        create_gmms(args.site, args.gmm_n_components, date_ranges)

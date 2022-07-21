@@ -167,8 +167,13 @@ def save_gmm_model(gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarra
 
     Args:
         gmm: trained Gaussian Mixture Model
-        cnt: the session counts per day during date period
-        station_usage: each station's usage counts for entire date period
+        cnt: a 1-D np.ndarray
+            the session counts per day during date period, expected to have
+            the same length as the number of days, inclusive, in the date
+            period
+        station_usage: a 1-D np.ndarray
+            each station's usage counts for entire date period, expected to
+            have the same length as the number of stations in the network
         save_dir: save directory of gmm
     """
     os.makedirs(save_dir, exist_ok=True)
