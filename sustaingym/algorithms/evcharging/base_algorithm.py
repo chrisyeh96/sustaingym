@@ -182,4 +182,4 @@ class PPOAlgorithm(BaseOnlineAlgorithm):
         self.name = name
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
-        return self.rl_model.predict(observation)[0]
+        return self.rl_model.predict(observation, deterministic=True)[0]

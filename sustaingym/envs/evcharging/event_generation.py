@@ -127,7 +127,7 @@ class AbstractTraceGenerator:
         events, evs = [], []
         for i in range(len(samples)):
             requested_energy = min(samples['requested_energy (kWh)'].iloc[i], self.requested_energy_cap)
-            battery = acns.Battery(
+            battery = acns.Linear2StageBattery(
                 capacity=BATTERY_CAPACITY, init_charge=max(MIN_BATTERY_CAPACITY, BATTERY_CAPACITY-requested_energy),
                 max_power=MAX_POWER)
             ev = acns.EV(
@@ -422,14 +422,14 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         station_ids = []
         for i in range(n):
             avail = np.where(station_dep < events['arrival'].iloc[i])[0]
-            if len(avail) == 0:
+            if len(avail) == 0:  # all stations have been taken
                 station_ids.append('NOT_AVAIL')
             else:
                 station_cnts_sum = station_cnts[avail].sum()
-                if station_cnts_sum <= 1e-5:
+                if station_cnts_sum <= 1e-5:  # if probability distribution is too small, sample uniformly
                     idx = self.rng.choice(avail)
                 else:
-                    idx = self.rng.choice(avail, p=station_cnts[avail] / station_cnts_sum)
+                    idx = self.rng.choice(avail, p=station_cnts[avail] / station_cnts_sum)  # sample according to probability distribution
                 station_dep[idx] = max(events['departure'].iloc[i], station_dep[idx])
                 station_ids.append(self.station_ids[idx])
         events['station_id'] = station_ids
