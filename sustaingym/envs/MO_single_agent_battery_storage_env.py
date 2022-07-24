@@ -5,10 +5,17 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import Any
+import pkgutil
+from io import StringIO
+import sys
+sys.path.append('../')
 
 import cvxpy as cp
 from gym import Env, spaces
 import numpy as np
+import pandas as pd
+from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 
 class MarketOperator:
@@ -120,12 +127,13 @@ class BatteryStorageInGridEnv(Env):
 
     def __init__(self, render_mode: str | None = None, num_gens: int = 10,
         gen_max_production: np.ndarray | None = None, gen_costs: np.ndarray | None
-         = None, num_bats: int = 5, battery_capacity: np.ndarray | None
+         = None, num_bats: int = 5, date: str = '2019-05',
+         battery_capacity: np.ndarray | None
          = None,
          bats_max_discharge_range: np.ndarray | None = None,
          bats_charge_costs: np.ndarray | None = None,
          bats_discharge_costs: np.ndarray | None = None,
-         seed: int | None = None):
+         seed: int | None = None, LOCAL_FILE_PATH: str | None = None):
         """
         Constructs instance of BatteryStorageInGridEnv class.
 
@@ -144,6 +152,11 @@ class BatteryStorageInGridEnv(Env):
                 excluding the agent-controlled battery ($/MWh)
             seed: random seed
         """
+        assert date in ['2019-05', '2020-05', '2021-05'] # update for future dates
+        self.date = date
+
+        self.LOCAL_PATH = LOCAL_FILE_PATH
+
         if seed is not None:
             self.rng = np.random.default_rng(seed)
         else:
@@ -152,16 +165,22 @@ class BatteryStorageInGridEnv(Env):
 
         self.num_gens = num_gens
 
+        self.gen_max_production = np.zeros((self.num_gens,))
         if gen_max_production is None:
-            self.gen_max_production = rng.uniform(5, 10, size=(self.num_gens,))
+            self.gen_max_production[:3] = rng.uniform(3, 5, size=(3,))
+            self.gen_max_production[3:6] = rng.uniform(6, 7, size=(3,))
+            self.gen_max_production[6:] = rng.uniform(8, 15, size=(self.num_gens - 6,))
         else:
             assert len(gen_max_production) == self.num_gens
             self.gen_max_production = gen_max_production
         
         self.init_gen_max_production = self.gen_max_production.copy()
 
+        self.gen_costs = np.zeros((self.num_gens,))
         if gen_costs is None:
-            self.gen_costs = rng.uniform(0, 5, size=(self.num_gens,))
+            self.gen_costs[:3] = rng.uniform(0, 2, size=(3,))
+            self.gen_costs[3:6] = rng.uniform(4, 6, size=(3,))
+            self.gen_costs[6:] = rng.uniform(10, 15, size=(self.num_gens - 6,))
         else:
             assert len(gen_costs) == self.num_gens
             self.gen_costs = gen_costs
@@ -171,7 +190,7 @@ class BatteryStorageInGridEnv(Env):
         self.num_bats = num_bats
 
         if battery_capacity is None:
-            self.battery_capacity = rng.uniform(30, 50, size=(self.num_bats,))
+            self.battery_capacity = rng.uniform(5, 10, size=(self.num_bats,))
         else:
             assert len(battery_capacity) == self.num_bats
             self.battery_capacity = battery_capacity
@@ -230,8 +249,37 @@ class BatteryStorageInGridEnv(Env):
         self.init = False
         self.count = 1
         self.market_op = MarketOperator(self)
+        self.df_load = self._get_load_data()
+    
+    def _get_load_data(self) -> pd.DataFrame:
+        """
+        Generates temporal pricing data.
 
+        Args:
+            N/A
+        Returns:
+            pandas dataframe containing price data
+        """
+        if self.LOCAL_PATH is not None:
+            return pd.read_csv(self.LOCAL_PATH)
+        else:
+            bytes_data = pkgutil.get_data(__name__, 'data/CAISO-demand-' + self.date + 
+                                        '.csv')
+            s = bytes_data.decode('utf-8')
+            data = StringIO(s)
+            return pd.read_csv(data)
+    
     def _generate_load_data(self) -> float:
+        """
+        TODO
+        """
+        if self.count == 1:
+            self.idx = np.random.choice(31) # random index for the day in May
+        if self.LOCAL_PATH is not None:
+            return self.df_load.iloc[self.idx, self.count]
+        return self.df_load.iloc[self.idx, self.count] / 6000.0 # scale to small grid scale
+
+    def _generate_load_data2(self) -> float:
         # TODO: describe this function
         return np.sin(2 * np.pi * self.count / 288) + 3.5
     
@@ -316,9 +364,12 @@ class BatteryStorageInGridEnv(Env):
             # print('Warning: selling cost (a) is less than buying cost (b)')
             action[0] = action[1]
 
-        self.gen_costs *= self.rng.uniform(0.8, 1.25, size=self.num_gens)
-        self.bats_charge_costs *= self.rng.uniform(0.8, 1.25, size=self.num_bats)
-        self.bats_discharge_costs *= self.rng.uniform(0.8, 1.25, size=self.num_bats)
+        self.gen_costs = self.init_gen_costs * self.rng.uniform(
+                                            0.8, 1.25, size=self.num_gens)
+        self.bats_charge_costs = self.init_bats_charge_costs * self.rng.uniform(
+                                            0.8, 1.25, size=self.num_bats)
+        self.bats_discharge_costs = self.init_bats_discharge_costs * self.rng.uniform(
+                                            0.8, 1.25, size=self.num_bats)
         self.bats_charge_costs[-1] = action[1]
         self.bats_discharge_costs[-1] = action[0]
 
@@ -385,8 +436,32 @@ class BatteryStorageInGridEnv(Env):
 
 
 # if __name__ == '__main__':
-#     from stable_baselines3.common.env_checker import check_env
-
 #     env = BatteryStorageInGridEnv()
 
-#     check_env(env)
+#     episodes = 100
+
+#     rewards_lst_1 = []
+
+#     for i in tqdm(range(episodes)):
+#         ob = env.reset()
+#         done = False
+#         rewards = np.zeros(env.MAX_STEPS_PER_EPISODE)
+
+#         while not done:
+#             # random action as policy
+#             action = env.action_space.sample()
+#             state, reward, done, info = env.step(action)
+#             rewards[env.count - 1] = reward
+#         # print("episode {} mean reward: {}".format(i, np.mean(rewards)))
+#         rewards_lst_1.append(np.sum(rewards))
+
+#     # print(rewards_lst_1)
+#     # plot episode # versus total episode reward
+#     plt.bar(list(range(episodes)), rewards_lst_1, width=0.5)
+
+    # # naming the x axis 
+    # plt.xlabel('episode #') 
+    # # naming the y axis 
+    # plt.ylabel('total reward')
+
+    # plt.show()

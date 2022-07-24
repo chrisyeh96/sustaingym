@@ -97,7 +97,7 @@ class BatteryStorageEnv(gym.Env):
         Args:
             N/A
         Returns:
-            pandas dataframe containg price data
+            pandas dataframe containing price data
         """
         if self.LOCAL_FILE:
             return pd.read_csv(self.FILE_PATH)
