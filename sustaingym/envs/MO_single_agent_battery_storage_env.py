@@ -70,6 +70,16 @@ class MarketOperator:
             Tuple: (generator dispatch values, battery dispatch values, and agent battery
             dispath value)
         """
+
+        # print("step: ", self.env.count)
+        # print("gen max production: ", self.env.gen_max_production)
+        # # print("battery max charge: ", self.env.bats_max_charge)
+        # print("battery max discharge: ", self.env.bats_max_discharge)
+        # print("battery discharge costs: ", self.env.bats_discharge_costs)
+        # print("battery charge costs: ", self.env.bats_charge_costs)
+        # print("gen costs: ", self.env.gen_costs)
+        # print("load: ", self.env.load_demand)
+
         self.gen_max_production.value = self.env.gen_max_production
         self.gen_costs.value = self.env.gen_costs
         self.bats_max_charge.value = self.env.bats_max_charge
@@ -77,15 +87,6 @@ class MarketOperator:
         self.bats_charge_costs.value = self.env.bats_charge_costs
         self.bats_discharge_costs.value = self.env.bats_discharge_costs
         self.load.value = self.env.load_demand
-
-        # print("step: ", self.env.count)
-        # print("gen max production: ", self.gen_max_production.value)
-        # print("battery max charge: ", self.bats_max_charge.value)
-        # print("battery max discharge: ", self.bats_max_discharge.value)
-        # print("battery discharge costs: ", self.bats_discharge_costs.value)
-        # print("battery charge costs: ", self.bats_charge_costs.value)
-        # print("gen costs: ", self.gen_costs.value)
-        # print("load: ", self.load.value)
         self.prob.solve()
         # print("status: ", self.prob.status)
         # print("x value: ", self.x.value)
@@ -207,7 +208,7 @@ class BatteryStorageInGridEnv(Env):
 
         self.bats_charge_costs = np.zeros((self.num_bats, ))
         if bats_charge_costs is None:
-            self.bats_charge_costs[:-1] = rng.uniform(0, 5, size=self.num_bats-1)
+            self.bats_charge_costs[:-1] = rng.uniform(2, 4, size=self.num_bats-1)
         else:
             assert len(bats_charge_costs) == self.num_bats - 1
             self.bats_charge_costs[:-1] = bats_charge_costs
@@ -216,7 +217,7 @@ class BatteryStorageInGridEnv(Env):
 
         self.bats_discharge_costs = np.zeros((self.num_bats, ))
         if bats_discharge_costs is None:
-            self.bats_discharge_costs[:-1] = rng.uniform(0, 4, size=self.num_bats-1)
+            self.bats_discharge_costs[:-1] = rng.uniform(5, 10, size=self.num_bats-1)
         else:
             assert len(bats_discharge_costs) == self.num_bats - 1
             self.bats_discharge_costs[:-1] = bats_discharge_costs
@@ -274,7 +275,11 @@ class BatteryStorageInGridEnv(Env):
         TODO
         """
         if self.count == 1:
-            self.idx = np.random.choice(31) # random index for the day in May
+            # random index for the day in May
+            pos_ids = [idx for idx in np.arange(len(
+                self.df_load.iloc[:,0])) if not pd.isnull(self.df_load.iloc[
+                    idx, :-1]).any()]
+            self.idx = self.rng.choice(pos_ids)
         if self.LOCAL_PATH is not None:
             return self.df_load.iloc[self.idx, self.count]
         return self.df_load.iloc[self.idx, self.count] / 6000.0 # scale to small grid scale
