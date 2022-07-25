@@ -47,6 +47,8 @@ INDEX_NAME = 'time'
 
 BALANCING_AUTHORITIES = ['SGIP_CAISO_PGE', 'SGIP_CAISO_SCE',]
 
+FIVEMINS = timedelta(seconds=300)
+
 
 def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) -> pd.DataFrame:
     """Retrieves data from the SGIP Signal API.
@@ -136,7 +138,6 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
 
     days30 = timedelta(days=30)
     days1 = timedelta(days=1)
-    fivemins = timedelta(seconds=300)
 
     combined_dfs = []
     for req_type in ['historical', 'forecasted']:
@@ -144,7 +145,7 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
         # Set up request range
         span = days30 if req_type == 'historical' else days1
         req_endtime = endtime
-        req_starttime = max(starttime, req_endtime - span + fivemins)
+        req_starttime = max(starttime, req_endtime - span + FIVEMINS)
 
         dfs = []
         while req_endtime >= starttime:
@@ -157,7 +158,7 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
 
             # Update request span
             req_endtime -= span
-            req_starttime = max(starttime, req_endtime - span + fivemins)
+            req_starttime = max(starttime, req_endtime - span + FIVEMINS)
 
             if df.index[-1] == req_endtime:
                 df.drop(df.tail(1).index, inplace=True)
@@ -262,7 +263,7 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
         data = pkgutil.get_data(MOER_DATA_MODULE, file_path).decode('utf-8')
         data = StringIO(data)
         df = pd.read_csv(data, compression=COMPRESSION, index_col=INDEX_NAME)
-
+    # TODO load in data from API using save_moer() if found in neither
     df.index = pd.to_datetime(pd.DatetimeIndex(df.index))  # set datetime index to UTC
     return df
 
@@ -274,10 +275,15 @@ def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str) ->
         starttime: start time for data. Only year and month are used.
         endtime: end time for data. See starttime.
         ba: balancing authority, responsible for region grid operation.
-        save_dir: directory to save compressed csv to.
+        save_dir: directory to load compressed csv from.
     Returns:
         A DataFrame of the emission rates for the all months of overlap. See
         ``get_historical_and_forecasts()`` for more info.
+    
+    Examples:
+        starttime, endtime = datetime(2021, 2, 1), datetime(2021, 5, 31)
+        ba = 'SGIP_CAISO_PGE'
+        df = load_moer(starttime, endtime, ba, 'sustaingym/data/moer_data')
     """
     syear, smonth = starttime.year, starttime.month
     eyear, emonth = endtime.year, endtime.month
@@ -297,6 +303,51 @@ def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str) ->
         else:
             emonth -= 1
     return pd.concat(dfs, axis=0)
+
+
+class MOERLoader:
+    """Class for loading emission rates data for gyms.
+
+    Attributes:
+        df: DataFrame of forecasted and historical data for date time range
+    """
+    def __init__(self, starttime: datetime, endtime: datetime, ba: str, save_dir: str):
+        """
+        Args:
+            starttime: start time for data. Only year and month are used.
+            endtime: end time for data. See starttime.
+            ba: balancing authority, responsible for region grid operation.
+            save_dir: directory to load compressed csv from.
+        """
+        self.df = load_moer(starttime, endtime, ba, save_dir)
+
+    def retrieve(self, dt: datetime, timestep: int | None = None) -> tuple:
+        """Retrieves MOER data from attribute.
+
+        If period is None, returns a tuple of historical and forecasted MOER
+        in the data that is closest to `dt`. Assumes datetime is in the date
+        range. If ``timestep`` is given, the hour, minute, and second
+        attribute of the datetime is ignored and ``timestep`` is used.
+
+        Args:
+            dt: a timezone-aware datetime object. 
+            timestep: integer between 0 and 288, inclusive, that points to the
+                5-minute interval during the day to be selected.
+        
+        Returns:
+            returns a tuple of (historical, forecasted) MOER nearest to the
+                datetime.
+        """
+        if timestep is not None:
+            assert (0 <= timestep) and (timestep <= 288)
+            if timestep == 288:
+                dt += timedelta(days=1)
+            else:
+                h, m, s = timestep // 12, timestep % 12, 0
+                dt = dt.replace(hour=h, minute=m, second=s)
+
+        start, end = dt - FIVEMINS / 2, dt + FIVEMINS / 2
+        return self.df[(start <= self.df.index) & (self.df.index < end)].iloc[0].values
 
 
 if __name__ == '__main__':
