@@ -18,7 +18,9 @@ import sklearn.mixture as mixture
 
 API_TOKEN = 'DEMO_TOKEN'
 DATE_FORMAT = '%Y-%m-%d'
-DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
+DT_STRING_FORMAT = '%a, %d %b %Y %H:%M:%S GMT'
+GMT = pytz.timezone('GMT')
+US_PACIFIC = pytz.timezone('US/Pacific')
 DEFAULT_SAVE_DIR = 'gmms_ev_charging'
 MINS_IN_DAY = 1440
 REQ_ENERGY_SCALE = 100
@@ -69,22 +71,23 @@ def get_sessions(start_date: datetime, end_date: datetime,
     """Retrieves charging sessions using ACNData.
 
     Args:
-        start_date: beginning time of interval, inclusive
-        end_date: ending time of interval, exclusive
+        start_date: beginning time of interval in Pacific time, inclusive.
+            Only year, month, and day are considered. The datetime should
+            be timezone-naive.
+        end_date: ending time of interval in Pacific time, exclusive. See
+            start_date.
         site: 'caltech' or 'jpl'
 
     Returns:
         iterator of sessions with a connection time starting on
             `start_date` and ending the day before `end_date`
 
-    Notes:
-        For `start_date` and `end_date` arguments, only year, month, and day
-            are considered.
-
     Example:
         fall2020_sessions = get_sessions(datetime(2020, 9, 1), datetime(2020, 12, 1))
     """
+    start_date = US_PACIFIC.localize(start_date.replace(hour=0, minute=0, second=0)).astimezone(GMT)
     start_time = start_date.strftime(DT_STRING_FORMAT)
+    end_date = US_PACIFIC.localize(end_date.replace(hour=0, minute=0, second=0)).astimezone(GMT)
     end_time = end_date.strftime(DT_STRING_FORMAT)
 
     cond = f'connectionTime>="{start_time}" and connectionTime<="{end_time}"'
