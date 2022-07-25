@@ -21,9 +21,8 @@ EPS = 1e-3
 MAX_ACTION = 4
 MAX_PILOT_SIGNAL = 32
 
-CHARGE_COST_WEIGHT = 0. #1.
+CARBON_COST_WEIGHT = 1.
 CONSTRAINT_VIOLATION_WEIGHT = 10.
-DELIVERED_CHARGE_WEIGHT = 0. #2. * CHARGE_COST_WEIGHT
 UNCHARGED_PUNISHMENT_WEIGHT = 2.5  #5.
 KA_HRS_FACTOR = 60 * 1000
 
@@ -102,13 +101,15 @@ class EVChargingEnv(gym.Env):
             'arrivals':         spaces.Box(low=0, high=self.max_timestamp, shape=(self.num_stations,), dtype=np.int32),
             'est_departures':   spaces.Box(low=0, high=self.max_timestamp, shape=(self.num_stations,), dtype=np.int32),
             'demands':          spaces.Box(low=0, high=data_generator.requested_energy_cap, shape=(self.num_stations,), dtype=np.float32),
+            'forecasted_moer':  spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32),
             'timestep':         spaces.Box(low=0, high=self.max_timestamp, shape=(1,), dtype=np.int32),
         })
         # Initialize information-tracking arrays once, always gets zeroed out at each step
         self.arrivals = np.zeros(self.num_stations, dtype=np.int32)
         self.est_departures = np.zeros(self.num_stations, dtype=np.int32)
         self.demands = np.zeros(self.num_stations, dtype=np.float32)
-        self.timestep_obs = np.zeros(1, dtype=np.float32)
+        self.forecasted_moer = np.zeros(1, dtype=np.float32)
+        self.timestep_obs = np.zeros(1, dtype=np.int32)
         self.phases = np.zeros(self.num_stations, dtype=np.float32)
         self.actual_departures = np.zeros(self.num_stations, dtype=np.int32)
 
@@ -260,18 +261,14 @@ class EVChargingEnv(gym.Env):
         self.cn = site_str_to_site(self.site)
         # Initialize event queue - always generates at least one RecomputeEvent
         self.events, self.evs, num_plugs = self.data_generator.get_event_queue()
+        # Initialize MOER data
+        self.moer = self.data_generator.get_moer()
 
         if self.verbose >= 1:
-            if isinstance(self.data_generator, RealTraceGenerator):
-                print(f'Simulating day {self.data_generator.day.strftime(DATE_FORMAT)} with {num_plugs} plug in events. ')
-            else:
-                print(f'Simulating {num_plugs} plug in events. ')
+            print(f'Simulating {num_plugs} events. Using {self.data_generator}')
 
         # Initialize simulator and interface
-        if isinstance(self.data_generator, RealTraceGenerator):
-            day = self.data_generator.day
-        else:
-            day = datetime.now()
+        day = self.data_generator.day
         self.simulator = acns.Simulator(network=self.cn, scheduler=None, events=self.events, start=day, period=self.period, verbose=False)
         self.interface = acns.Interface(self.simulator)
         # Initialize time steps
@@ -359,12 +356,15 @@ class EVChargingEnv(gym.Env):
             self.arrivals[station_idx] = session_info.arrival
             self.est_departures[station_idx] = session_info.estimated_departure
             self.demands[station_idx] = self.interface.remaining_amp_periods(session_info)
-        self.timestep_obs[0] = self.simulator._iteration
+        cur_time = self.simulator._iteration
+        self.forecasted_moer[0] = self.moer[len(self.moer)-1-cur_time, 1]  # array goes back in time, choose 2nd col
+        self.timestep_obs[0] = cur_time
 
         obs = {
             'arrivals': self.arrivals,
             'est_departures': self.est_departures,
             'demands': self.demands,
+            'forecasted_moer': self.forecasted_moer,
             'timestep': self.timestep_obs,
         }
 
@@ -414,11 +414,10 @@ class EVChargingEnv(gym.Env):
 
         next_interval_mins = (self.next_timestamp - self.timestamp) * self.period
 
+        # TODO: turn this into carbon
         # Charging cost: amount of charge sent out at current timestamp (A * mins)
         charging_cost = np.sum(schedule) * next_interval_mins
-
-        # Immediate charging reward: amount of charge delivered to vehicles at previous timestamp (A * mins)
-        charging_reward = np.sum(self.simulator.charging_rates[:, self.prev_timestamp:self.timestamp]) * self.period
+        charging_cost *= self.moer[len(self.moer)-1-self.simulator._iteration, 0]  # multiply by kg * CO2 per kWh
 
         # Network constraint violation punishment: amount of charge over maximum allowed rates at previous timestamp (A * mins)
         current_sum = np.abs(self.simulator.network.constraint_current(schedule))
@@ -434,20 +433,17 @@ class EVChargingEnv(gym.Env):
 
         # Convert to (kA * hrs)
         charging_cost /= KA_HRS_FACTOR
-        charging_reward /= KA_HRS_FACTOR
         constraint_punishment /= KA_HRS_FACTOR
         charge_left_amp_mins /= KA_HRS_FACTOR
 
         # Get total reward
         total_reward = (
-            - CHARGE_COST_WEIGHT * charging_cost
-            + DELIVERED_CHARGE_WEIGHT * charging_reward
+            - CARBON_COST_WEIGHT * charging_cost
             - CONSTRAINT_VIOLATION_WEIGHT * constraint_punishment
             - UNCHARGED_PUNISHMENT_WEIGHT * charge_left_amp_mins)
 
         info = {
             'charging_cost': charging_cost,
-            'charging_reward': charging_reward,
             'constraint_punishment': constraint_punishment,
             'remaining_charge_punishment': charge_left_amp_mins,
         }
@@ -463,144 +459,143 @@ class EVChargingEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    import argparse
-    from argparse import RawTextHelpFormatter
-    import os
+    # import argparse
+    # from argparse import RawTextHelpFormatter
+    # import os
 
-    import pandas as pd
-    from stable_baselines3 import PPO, DQN
-    from stable_baselines3.common.callbacks import EvalCallback, CallbackList
-    from stable_baselines3.common.env_util import make_vec_env
-    from stable_baselines3.common.utils import set_random_seed
-    from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+    # import pandas as pd
+    # from stable_baselines3 import PPO, DQN
+    # from stable_baselines3.common.callbacks import EvalCallback, CallbackList
+    # from stable_baselines3.common.env_util import make_vec_env
+    # from stable_baselines3.common.utils import set_random_seed
+    # from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
-    from sustaingym.envs.evcharging import EVChargingEnv, GMMsTraceGenerator
-    from sustaingym.algorithms.evcharging.base_algorithm import PPOAlgorithm, SelectiveChargingAlgorithm, GreedyAlgorithm
-
-
-    parser = argparse.ArgumentParser(description="Run Script", formatter_class=RawTextHelpFormatter)
-    # parser.add_argument("--CHARGE_COST_WEIGHT", type=float)
-    # parser.add_argument("--CONSTRAINT_VIOLATION_WEIGHT", type=float)
-    # parser.add_argument("--DELIVERED_CHARGE_WEIGHT", type=float)
-    # parser.add_argument("--UNCHARGED_PUNISHMENT_WEIGHT", type=float)
-    parser.add_argument("--EXP", type=int)
-    args = parser.parse_args()
+    # from sustaingym.envs.evcharging import EVChargingEnv, GMMsTraceGenerator
+    # from sustaingym.algorithms.evcharging.base_algorithm import PPOAlgorithm, SelectiveChargingAlgorithm, GreedyAlgorithm
 
 
-    # CHARGE_COST_WEIGHT = args.CHARGE_COST_WEIGHT
-    # CONSTRAINT_VIOLATION_WEIGHT = args.CONSTRAINT_VIOLATION_WEIGHT
-    # DELIVERED_CHARGE_WEIGHT = args.DELIVERED_CHARGE_WEIGHT
-    # UNCHARGED_PUNISHMENT_WEIGHT = args.UNCHARGED_PUNISHMENT_WEIGHT
-    print("weights: ", CHARGE_COST_WEIGHT, CONSTRAINT_VIOLATION_WEIGHT, DELIVERED_CHARGE_WEIGHT, UNCHARGED_PUNISHMENT_WEIGHT)
+    # parser = argparse.ArgumentParser(description="Run Script", formatter_class=RawTextHelpFormatter)
+    # # parser.add_argument("--CHARGE_COST_WEIGHT", type=float)
+    # # parser.add_argument("--CONSTRAINT_VIOLATION_WEIGHT", type=float)
+    # # parser.add_argument("--DELIVERED_CHARGE_WEIGHT", type=float)
+    # # parser.add_argument("--UNCHARGED_PUNISHMENT_WEIGHT", type=float)
+    # parser.add_argument("--EXP", type=int)
+    # args = parser.parse_args()
 
-    SITE = 'caltech'
-    TRAIN_DATE_RANGE = 'Summer 2019'
-    TEST_DATE_RANGE = 'Spring 2020'
-    EXP = args.EXP
 
-    def get_env(train=True):
-        date_period = TRAIN_DATE_RANGE if train else TEST_DATE_RANGE
+    # # CHARGE_COST_WEIGHT = args.CHARGE_COST_WEIGHT
+    # # CONSTRAINT_VIOLATION_WEIGHT = args.CONSTRAINT_VIOLATION_WEIGHT
+    # # DELIVERED_CHARGE_WEIGHT = args.DELIVERED_CHARGE_WEIGHT
+    # # UNCHARGED_PUNISHMENT_WEIGHT = args.UNCHARGED_PUNISHMENT_WEIGHT
+    # print("weights: ", CHARGE_COST_WEIGHT, CONSTRAINT_VIOLATION_WEIGHT, DELIVERED_CHARGE_WEIGHT, UNCHARGED_PUNISHMENT_WEIGHT)
 
-        def _get_env():
-            gen = GMMsTraceGenerator(site=SITE, date_period=date_period, random_seed=42)
-            return EVChargingEnv(gen, action_type='discrete', project_action=False)
+    # SITE = 'caltech'
+    # TRAIN_DATE_RANGE = 'Summer 2019'
+    # TEST_DATE_RANGE = 'Spring 2020'
+    # EXP = args.EXP
 
-        return _get_env
+    # def get_env(train=True):
+    #     date_period = TRAIN_DATE_RANGE if train else TEST_DATE_RANGE
+
+    #     def _get_env():
+    #         gen = GMMsTraceGenerator(site=SITE, date_period=date_period, random_seed=42)
+    #         return EVChargingEnv(gen, action_type='discrete', project_action=False)
+
+    #     return _get_env
     
-    save_path = f'./logs/exp_{EXP}/'
-    train_save_path = save_path + 'eval_on_train/'
-    eval_save_path = save_path + 'eval_on_eval/'
-    results_save_path = save_path + 'results.csv'
-    model_save_path = save_path + 'model_250k_timesteps'
-    os.makedirs(save_path, exist_ok=True)
-    os.makedirs(train_save_path, exist_ok=True)
-    os.makedirs(eval_save_path, exist_ok=True)
+    # save_path = f'./logs/exp_{EXP}/'
+    # train_save_path = save_path + 'eval_on_train/'
+    # eval_save_path = save_path + 'eval_on_eval/'
+    # results_save_path = save_path + 'results.csv'
+    # model_save_path = save_path + 'model_250k_timesteps'
+    # os.makedirs(save_path, exist_ok=True)
+    # os.makedirs(train_save_path, exist_ok=True)
+    # os.makedirs(eval_save_path, exist_ok=True)
 
-    vec_env = SubprocVecEnv([get_env(train=True) for _ in range(4)])
-    envs = {'train': get_env(train=True)(), 'eval': get_env(train=False)()}
+    # vec_env = SubprocVecEnv([get_env(train=True) for _ in range(4)])
+    # envs = {'train': get_env(train=True)(), 'eval': get_env(train=False)()}
 
-    # Use deterministic actions for evaluation
-    eval_on_train_callback = EvalCallback(envs['train'], best_model_save_path=train_save_path,
-                                        log_path=train_save_path, eval_freq=1000,
-                                        deterministic=True, render=False)
-    eval_on_eval_callback = EvalCallback(envs['eval'], best_model_save_path=eval_save_path,
-                                        log_path=eval_save_path, eval_freq=1000,
-                                        deterministic=True, render=False)
-    callback = CallbackList([eval_on_train_callback, eval_on_eval_callback])
+    # # Use deterministic actions for evaluation
+    # eval_on_train_callback = EvalCallback(envs['train'], best_model_save_path=train_save_path,
+    #                                     log_path=train_save_path, eval_freq=1000,
+    #                                     deterministic=True, render=False)
+    # eval_on_eval_callback = EvalCallback(envs['eval'], best_model_save_path=eval_save_path,
+    #                                     log_path=eval_save_path, eval_freq=1000,
+    #                                     deterministic=True, render=False)
+    # callback = CallbackList([eval_on_train_callback, eval_on_eval_callback])
 
-    model = PPO('MultiInputPolicy', vec_env)
-    print("Training model")
-    model.learn(total_timesteps=250_000, callback=callback)
-    # 1.5 hours for 250_000 timesteps
-    model.save(model_save_path)
+    # model = PPO('MultiInputPolicy', vec_env)
+    # print("Training model")
+    # model.learn(total_timesteps=250_000, callback=callback)
+    # # 1.5 hours for 250_000 timesteps
+    # model.save(model_save_path)
 
-    both_results = []
-    for env_type in envs:
-        env = envs[env_type]
-        algs = [PPOAlgorithm(env, model), SelectiveChargingAlgorithm(env, 2.0), GreedyAlgorithm(env)]
-        results = {}
-        for alg in algs:
-            results[alg.name] = alg.run(30)
-        results = pd.DataFrame(results).add_suffix(f'_{env_type}')
-        both_results.append(results)
-    both_results = pd.concat(both_results, axis=1)
-    both_results.to_csv(results_save_path, index=False)
-    print(pd.read_csv(results_save_path))
+    # both_results = []
+    # for env_type in envs:
+    #     env = envs[env_type]
+    #     algs = [PPOAlgorithm(env, model), SelectiveChargingAlgorithm(env, 2.0), GreedyAlgorithm(env)]
+    #     results = {}
+    #     for alg in algs:
+    #         results[alg.name] = alg.run(30)
+    #     results = pd.DataFrame(results).add_suffix(f'_{env_type}')
+    #     both_results.append(results)
+    # both_results = pd.concat(both_results, axis=1)
+    # both_results.to_csv(results_save_path, index=False)
+    # print(pd.read_csv(results_save_path))
 
 
 
-    # pass
-    # from .event_generation import GMMsTraceGenerator
-    # from acnportal.acnsim.events import PluginEvent
-    # import time
+    from .event_generation import GMMsTraceGenerator
+    from acnportal.acnsim.events import PluginEvent
+    import time
 
-    # np.random.seed(42)
-    # import random
-    # random.seed(42)
+    np.random.seed(42)
+    import random
+    random.seed(42)
 
-    # rtg1 = RealTraceGenerator(site='caltech', date_period=('2018-11-05', '2018-11-11'), sequential=True, period=5)
-    # atg = GMMsTraceGenerator(site='caltech', date_period=('2018-11-05', '2018-11-15'), n_components=50)
+    # rtg1 = RealTraceGenerator(site='caltech', date_period=('2019--05', '2018-11-11'), sequential=True, period=5)
+    atg = GMMsTraceGenerator(site='caltech', date_period=('2019-05-01', '2019-08-31'), n_components=50)
 
-    # for generator in [atg]:  # [rtg1, rtg2, atg]:
-    #     print("----------------------------")
-    #     print("----------------------------")
-    #     print("----------------------------")
-    #     print("----------------------------")
-    #     print(generator.site)
-    #     env1 = EVChargingEnv(generator, action_type='discrete', project_action=False)
-    #     env2 = EVChargingEnv(generator, action_type='discrete', project_action=True)
-    #     env3 = EVChargingEnv(generator, action_type='continuous', project_action=False)
-    #     env4 = EVChargingEnv(generator, action_type='continuous', project_action=True)
-    #     print("Finished building environments... ")
-    #     start = time.time()
-    #     for env in [env1, env2, env3, env4]:
-    #         for _ in range(1):
-    #             observation = env.reset()
+    for generator in [atg]:  # [rtg1, rtg2, atg]:
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        print("----------------------------")
+        print(generator.site)
+        env1 = EVChargingEnv(generator, action_type='discrete', project_action=False)
+        env2 = EVChargingEnv(generator, action_type='discrete', project_action=True)
+        env3 = EVChargingEnv(generator, action_type='continuous', project_action=False)
+        env4 = EVChargingEnv(generator, action_type='continuous', project_action=True)
+        print("Finished building environments... ")
+        start = time.time()
+        for env in [env1, env2, env3, env4]:
+            for _ in range(1):
+                observation = env.reset()
 
-    #             rewards = 0.
-    #             done = False
-    #             i = 0
-    #             action = np.random.random((54,)) * 4
-    #             # d = defaultdict(list)
-    #             while not done:
-    #                 # print(env, " stepping")
-    #                 # print(env.__repr__())
-    #                 observation, reward, done, info = env.step(action)
-    #                 # for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:
-    #                 # d[x].append(info[x])
-    #                 # d["reward"].append(reward)
-    #                 # print(observation['demands'][3])
-    #                 rewards += reward
-    #                 i += 1
-    #             # for k, v in d.items():
-    #             #     print(k)
-    #             #     d[k] = np.array(v)
-    #             #     print(d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
+                rewards = 0.
+                done = False
+                i = 0
+                action = np.random.random((54,)) * 4
+                # d = defaultdict(list)
+                while not done:
+                    # print(env, " stepping")
+                    # print(env.__repr__())
+                    observation, reward, done, info = env.step(action)
+                    # for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:
+                    # d[x].append(info[x])
+                    # d["reward"].append(reward)
+                    # print(observation['demands'][3])
+                    rewards += reward
+                    i += 1
+                # for k, v in d.items():
+                #     print(k)
+                #     d[k] = np.array(v)
+                #     print(d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
 
-    #             print()
-    #             print()
-    #             print("total iterations: ", i)
-    #             print("total reward: ", rewards)
-    #     print("Total time: ", time.time() - start)
-    # env.close()
-    # print(env.max_timestamp)
+                print()
+                print()
+                print("total iterations: ", i)
+                print("total reward: ", rewards)
+        print("Total time: ", time.time() - start)
+    env.close()
+    print(env.max_timestamp)

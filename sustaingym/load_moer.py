@@ -48,6 +48,7 @@ INDEX_NAME = 'time'
 BALANCING_AUTHORITIES = ['SGIP_CAISO_PGE', 'SGIP_CAISO_SCE',]
 
 FIVEMINS = timedelta(seconds=300)
+ONEDAY = timedelta(days=1)
 
 
 def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) -> pd.DataFrame:
@@ -133,11 +134,11 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
     endtime = endtime.astimezone(pytz.UTC)
 
     # Give one-day padding around starttime and endtime.
-    starttime -= timedelta(days=1)
-    endtime += timedelta(days=1)
+    starttime -= ONEDAY
+    endtime += ONEDAY
 
     days30 = timedelta(days=30)
-    days1 = timedelta(days=1)
+    days1 = ONEDAY
 
     combined_dfs = []
     for req_type in ['historical', 'forecasted']:
@@ -321,33 +322,23 @@ class MOERLoader:
         """
         self.df = load_moer(starttime, endtime, ba, save_dir)
 
-    def retrieve(self, dt: datetime, timestep: int | None = None) -> tuple:
+    def retrieve(self, dt: datetime) -> pd.DataFrame:
         """Retrieves MOER data from attribute.
 
-        If period is None, returns a tuple of historical and forecasted MOER
-        in the data that is closest to `dt`. Assumes datetime is in the date
-        range. If ``timestep`` is given, the hour, minute, and second
-        attribute of the datetime is ignored and ``timestep`` is used.
+        Returns data starting at datetime for the next 24 hours. Assumes that
+        dt is a timezone-aware datetime object.
 
         Args:
             dt: a timezone-aware datetime object. 
-            timestep: integer between 0 and 288, inclusive, that points to the
-                5-minute interval during the day to be selected.
-        
-        Returns:
-            returns a tuple of (historical, forecasted) MOER nearest to the
-                datetime.
-        """
-        if timestep is not None:
-            assert (0 <= timestep) and (timestep <= 288)
-            if timestep == 288:
-                dt += timedelta(days=1)
-            else:
-                h, m, s = timestep // 12, timestep % 12, 0
-                dt = dt.replace(hour=h, minute=m, second=s)
 
-        start, end = dt - FIVEMINS / 2, dt + FIVEMINS / 2
-        return self.df[(start <= self.df.index) & (self.df.index < end)].iloc[0].values
+        Returns:
+            A DataFrame of shape (289, 2). The first column is the historical
+                MOER and the second the forecasted; both are in units 
+                kg * CO2 per kWh. Note that the "rows" are backwards, in that
+                the most recent rates are at the top, sorted descending.
+        """
+        dt_one_day_later = dt + ONEDAY + FIVEMINS
+        return self.df[(dt <= self.df.index) & (self.df.index < dt_one_day_later)].values
 
 
 if __name__ == '__main__':

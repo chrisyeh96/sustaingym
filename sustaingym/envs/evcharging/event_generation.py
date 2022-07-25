@@ -18,12 +18,15 @@ import sklearn.mixture as mixture
 
 from .train_gmm_model import create_gmms
 from .utils import (COUNT_KEY, DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, GMM_KEY,
-                    MINS_IN_DAY, REQ_ENERGY_SCALE, DEFAULT_SAVE_DIR, STATION_USAGE_KEY,
+                    MINS_IN_DAY, REQ_ENERGY_SCALE, DEFAULT_SAVE_DIR, STATION_USAGE_KEY, US_PACIFIC,
                     DefaultPeriodStr, SiteStr, get_folder_name, load_gmm_model,
                     site_str_to_site, get_real_events)
+from ...load_moer import MOERLoader
 
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 MIN_BATTERY_CAPACITY, BATTERY_CAPACITY, MAX_POWER = 0, 100, 100
+BA_CALTECH_JPL = 'SGIP_CAISO_SCE'
+MOER_SAVE_DIR = 'sustaingym/data/moer_data'
 
 
 class AbstractTraceGenerator:
@@ -43,6 +46,8 @@ class AbstractTraceGenerator:
         requested_energy_cap: largest amount of requested energy allowed (kWh)
         station_ids: list of strings containing identifiers for stations
         num_stations: number of charging stations at site
+        day: day of simulation, either actual or fake
+        moer_loader: class for loading carbon emission rates data
     """
     def __init__(self,
                  site: SiteStr,
@@ -75,6 +80,7 @@ class AbstractTraceGenerator:
         self.requested_energy_cap = requested_energy_cap
         self.station_ids = site_str_to_site(site).station_ids
         self.num_stations = len(self.station_ids)
+        self.moer_loader = MOERLoader(self.date_range[0], self.date_range[1], BA_CALTECH_JPL, MOER_SAVE_DIR)
 
     def __repr__(self) -> str:
         """
@@ -83,6 +89,13 @@ class AbstractTraceGenerator:
         site = f'{self.site.capitalize()} site'
         dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
         return f'AbstractTraceGenerator from the {site} {dr}. '
+    
+    def _update_day(self):
+        """
+        Randomly sets ``day`` to a day in the date range.
+        """
+        interval_length = (self.date_range[1] - self.date_range[0]).days + 1  # make inclusive
+        self.day = self.date_range[0] + timedelta(randrange(interval_length))
 
     def _create_events(self) -> pd.DataFrame:
         """Creates a DataFrame of charging events information.
@@ -156,6 +169,12 @@ class AbstractTraceGenerator:
                 events.append(event)
         events = acns.EventQueue(events)
         return events, evs, num_plugin
+    
+    def get_moer(self):
+        """Retrieves MOER from the data loader.
+        """
+        dt = self.day.replace(tzinfo=US_PACIFIC)
+        return self.moer_loader.retrieve(dt)
 
 
 class RealTraceGenerator(AbstractTraceGenerator):
@@ -220,8 +239,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
             if self.day > self.date_range[1]:  # cycle back when the day has exceeded the current range
                 self.day = self.date_range[0]
         else:
-            interval_length = (self.date_range[1] - self.date_range[0]).days + 1  # make inclusive
-            self.day = self.date_range[0] + timedelta(randrange(interval_length))
+            super()._update_day()
 
     def _create_events(self) -> pd.DataFrame:
         """Retrieves and filters real events from a given day.
@@ -399,6 +417,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         Returns:
             DataFrame of artificial sessions.
         """
+        self._update_day()
         # generate samples from empirical pdf, capping maximum at the number of stations
         n = self.rng.choice(self.cnt)
         samples = self._sample(n)
