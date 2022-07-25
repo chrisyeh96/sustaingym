@@ -22,7 +22,6 @@ from .utils import (COUNT_KEY, DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, GMM_KEY,
                     DefaultPeriodStr, SiteStr, get_folder_name, load_gmm_model,
                     site_str_to_site, get_real_events)
 
-DT_STRING_FORMAT = '%a, %d %b %Y 7:00:00 GMT'
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 MIN_BATTERY_CAPACITY, BATTERY_CAPACITY, MAX_POWER = 0, 100, 100
 
