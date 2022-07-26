@@ -1,7 +1,7 @@
 """This module contains the central class for the EV Charging environment."""
 from __future__ import annotations
+from tkinter import TRUE
 
-from datetime import datetime
 from typing import Any
 import warnings
 
@@ -11,8 +11,8 @@ import gym
 from gym import spaces
 import numpy as np
 
-from .event_generation import AbstractTraceGenerator, RealTraceGenerator
-from .utils import MINS_IN_DAY, DATE_FORMAT, ActionType, site_str_to_site
+from .event_generation import AbstractTraceGenerator
+from .utils import MINS_IN_DAY, ActionType, site_str_to_site
 
 
 ACTION_SCALING_FACTOR = 8
@@ -23,7 +23,7 @@ MAX_PILOT_SIGNAL = 32
 
 CARBON_COST_WEIGHT = 0.01
 CONSTRAINT_VIOLATION_WEIGHT = 10.
-UNCHARGED_PUNISHMENT_WEIGHT = 2.5  #5.
+UNCHARGED_PUNISHMENT_WEIGHT = 20.
 KA_HRS_FACTOR = 60 * 1000
 W_MINS_TO_KG_CO2 = 60 * 1000
 
@@ -53,7 +53,8 @@ class EVChargingEnv(gym.Env):
         cn: charging network in use, either Caltech's or JPL's
         infrastructure_info: info on the charging network's infrastructure
         observation_space: the space of available observations
-        action_space: the space of actions for the charging network. Note that
+        action_space: the space of actions for the charging network. Can be
+            set to be either continuous or discrete.
     """
     metadata: dict = {"render_modes": []}
 
@@ -206,20 +207,17 @@ class EVChargingEnv(gym.Env):
                     'remaining_charge_punishment': punishment for charge left
                         to deliver to vehicles in kA * hrs
         """
+        self.prev_timestamp = self.simulator._iteration
         # Step internal simulator
         schedule = self.to_schedule(action)  # transform action to pilot signals
         done = self.simulator.step(schedule)
         self.simulator._resolve = False  # work-around to keep iterating
-        # Next timestamp
-        self.next_timestamp = self.max_timestamp if done else self.simulator.event_queue.queue[0][0]
+        self.timestamp = self.simulator._iteration
+
         # Retrieve environment information
         observation, info = self.get_observation(return_info=return_info)
         reward, reward_info = self.get_rewards(schedule, done)
-        # Update timestamps
-        self.prev_timestamp = self.timestamp
-        self.timestamp = self.next_timestamp
 
-        # Add reward calculations to info
         info['reward'] = reward_info
         return observation, reward, done, info
 
@@ -267,19 +265,19 @@ class EVChargingEnv(gym.Env):
         self.cn = site_str_to_site(self.site)
         # Initialize event queue - always generates at least one RecomputeEvent
         self.events, self.evs, num_plugs = self.data_generator.get_event_queue()
-        # Initialize MOER data
-        self.moer = self.data_generator.get_moer()
-
         if self.verbose >= 1:
             print(f'Simulating {num_plugs} events. Using {self.data_generator}')
+        # Initialize MOER data
+        self.moer = self.data_generator.get_moer()
 
         # Initialize simulator and interface
         day = self.data_generator.day
         self.simulator = acns.Simulator(network=self.cn, scheduler=None, events=self.events, start=day, period=self.period, verbose=False)
         self.interface = acns.Interface(self.simulator)
+
         # Initialize time steps
-        self.prev_timestamp = 0
-        self.timestamp = self.simulator.event_queue.queue[0][0]
+        self.prev_timestamp, self.timestamp = self.simulator._iteration, self.simulator._iteration
+
         # Retrieve environment information
         if return_info:
             return self.get_observation(True)
@@ -352,7 +350,6 @@ class EVChargingEnv(gym.Env):
                 departures (which an online algorithm should not know),
                 history of charging rates, and pilot signals.
         """
-        # Reset arrays
         self.arrivals.fill(0)
         self.est_departures.fill(0)
         self.demands.fill(0)
@@ -362,9 +359,8 @@ class EVChargingEnv(gym.Env):
             self.arrivals[station_idx] = session_info.arrival
             self.est_departures[station_idx] = session_info.estimated_departure
             self.demands[station_idx] = self.interface.remaining_amp_periods(session_info)
-        cur_time = self.simulator._iteration
-        self.forecasted_moer[0] = self.moer[len(self.moer)-1-cur_time, 1]  # array goes back in time, choose 2nd col
-        self.timestep_obs[0] = cur_time
+        self.forecasted_moer[0] = self.moer[len(self.moer)-1-self.timestamp, 1]  # array goes back in time, choose 2nd col
+        self.timestep_obs[0] = self.timestamp
 
         obs = {
             'arrivals': self.arrivals,
@@ -416,40 +412,33 @@ class EVChargingEnv(gym.Env):
             info: dictionary containing the individual, unweighted
                 components that make up the total reward
         """
+        # schedule for the interval between self.prev_timestamp and self.timestamp
         schedule = np.array(list(map(lambda x: x[0], schedule.values())))  # convert to numpy
 
-        next_interval_mins = (self.next_timestamp - self.timestamp) * self.period
+        interval_mins = (self.timestamp - self.prev_timestamp) * self.period
+        # Carbon cost for interval in milli-kg * CO2 * mins 
+        carbon_cost = np.dot(self.simulator.network._voltages, schedule) * interval_mins
+        carbon_cost *= self.moer[len(self.moer)-1-self.prev_timestamp, 0]
 
-        # Carbon cost
-        # V * (A * mins) = W * mins
-        carbon_cost = np.dot(self.simulator.network._voltages, schedule) * next_interval_mins
-        # W * mins * kg * CO2 per kWh = milli-kg * CO2 * mins 
-        carbon_cost *= self.moer[len(self.moer)-1-self.simulator._iteration, 0]
-
-        # Network constraint violation punishment: amount of charge over maximum allowed rates at previous timestamp (A * mins)
+        # Constraint violations: amount of charge over maximum allowed rates (A * mins)
         current_sum = np.abs(self.simulator.network.constraint_current(schedule))
         over_current = np.maximum(current_sum - self.simulator.network.magnitudes, 0)
-        constraint_punishment = sum(over_current) * next_interval_mins
+        constraint_punishment = sum(over_current) * interval_mins
 
-        # Customer satisfaction reward: margin between energy requested and delivered (A * mins)
-        # only computed once when simulation is finished
+        # Customer satisfaction reward: diff btwn energy requested and delivered for day (A * mins)
         charge_left_amp_mins = 0.
         if done:
             for ev in self.evs:
                 charge_left_amp_mins += self.interface._convert_to_amp_periods(ev.remaining_demand, ev.station_id) * self.period
 
-        # milli-kg * CO2 * mins -> kg * CO2
-        carbon_cost /= W_MINS_TO_KG_CO2
-        # Convert to (kA * hrs)
-        constraint_punishment /= KA_HRS_FACTOR
+        carbon_cost /= W_MINS_TO_KG_CO2  # # milli-kg * CO2 * mins -> kg * CO2
+        constraint_punishment /= KA_HRS_FACTOR  # A * mins -> kA * hrs
         charge_left_amp_mins /= KA_HRS_FACTOR
 
-        # Get total reward
         total_reward = (
             - CARBON_COST_WEIGHT * carbon_cost
             - CONSTRAINT_VIOLATION_WEIGHT * constraint_punishment
             - UNCHARGED_PUNISHMENT_WEIGHT * charge_left_amp_mins)
-
         info = {
             'carbon_cost': carbon_cost,
             'constraint_punishment': constraint_punishment,
@@ -569,14 +558,15 @@ if __name__ == "__main__":
         print("----------------------------")
         print("----------------------------")
         print(generator.site)
-        env1 = EVChargingEnv(generator, action_type='discrete', project_action=False)
+        env1 = EVChargingEnv(generator, action_type='discrete', project_action=True)
         # env2 = EVChargingEnv(generator, action_type='discrete', project_action=True)
         # env3 = EVChargingEnv(generator, action_type='continuous', project_action=False)
         # env4 = EVChargingEnv(generator, action_type='continuous', project_action=True)
         print("Finished building environments... ")
         start = time.time()
         for env in [env1]:#[env1, env2, env3, env4]:
-            for _ in range(5):
+            all_rewards = 0.
+            for _ in range(10):
                 observation = env.reset()
 
                 rewards = 0.
@@ -589,17 +579,19 @@ if __name__ == "__main__":
                     action = np.random.random((54,)) * 4
                     observation, reward, done, info = env.step(action)
 
-                    for k in info['reward']:
-                        d[k].append(info['reward'][k])
+                    # for k in info['reward']:
+                    #     d[k].append(info['reward'][k])
                     rewards += reward
                     i += 1
-                for k, v in d.items():
-                    d[k] = np.array(v)
-                    print(k, d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
+                # for k, v in d.items():
+                #     d[k] = np.array(v)
+                #     print(k, d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
                 print("total iterations: ", i)
                 print("total reward: ", rewards)
-                print("\n\n")
+                all_rewards += rewards
+                print("\n")
 
         print("Total time: ", time.time() - start)
+        print("Average rewards: ", all_rewards / 10)
     env.close()
     print(env.max_timestamp)
