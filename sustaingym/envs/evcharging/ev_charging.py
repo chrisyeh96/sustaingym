@@ -21,10 +21,11 @@ EPS = 1e-3
 MAX_ACTION = 4
 MAX_PILOT_SIGNAL = 32
 
-CARBON_COST_WEIGHT = 1.
+CARBON_COST_WEIGHT = 0.01
 CONSTRAINT_VIOLATION_WEIGHT = 10.
 UNCHARGED_PUNISHMENT_WEIGHT = 2.5  #5.
 KA_HRS_FACTOR = 60 * 1000
+W_MINS_TO_KG_CO2 = 60 * 1000
 
 
 class EVChargingEnv(gym.Env):
@@ -127,6 +128,9 @@ class EVChargingEnv(gym.Env):
             self.set_up_action_projection()
     
     def set_up_action_projection(self):
+        """
+        Creates cvx-py variables and parameters for action projection.
+        """
         self.projected_action = cp.Variable(self.num_stations, nonneg=True)
 
         # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
@@ -177,6 +181,8 @@ class EVChargingEnv(gym.Env):
                     as a numpy array. If the EVSE corresponding to the index
                     is not currently charging an EV, the entry is zero.
                 'demands': amount of charge demanded in Amp * periods.
+                'forecasted_moer': next timestep's forecasted emissions rate in
+                    kg * CO2 per kWh
                 'timestep': simulation's current iteration.
             reward: a float representing scheduler's performance.
             done: a boolean indicating whether episode is finished
@@ -414,10 +420,11 @@ class EVChargingEnv(gym.Env):
 
         next_interval_mins = (self.next_timestamp - self.timestamp) * self.period
 
-        # TODO: turn this into carbon
-        # Charging cost: amount of charge sent out at current timestamp (A * mins)
-        charging_cost = np.sum(schedule) * next_interval_mins
-        charging_cost *= self.moer[len(self.moer)-1-self.simulator._iteration, 0]  # multiply by kg * CO2 per kWh
+        # Carbon cost
+        # V * (A * mins) = W * mins
+        carbon_cost = np.dot(self.simulator.network._voltages, schedule) * next_interval_mins
+        # W * mins * kg * CO2 per kWh = milli-kg * CO2 * mins 
+        carbon_cost *= self.moer[len(self.moer)-1-self.simulator._iteration, 0]
 
         # Network constraint violation punishment: amount of charge over maximum allowed rates at previous timestamp (A * mins)
         current_sum = np.abs(self.simulator.network.constraint_current(schedule))
@@ -431,19 +438,20 @@ class EVChargingEnv(gym.Env):
             for ev in self.evs:
                 charge_left_amp_mins += self.interface._convert_to_amp_periods(ev.remaining_demand, ev.station_id) * self.period
 
+        # milli-kg * CO2 * mins -> kg * CO2
+        carbon_cost /= W_MINS_TO_KG_CO2
         # Convert to (kA * hrs)
-        charging_cost /= KA_HRS_FACTOR
         constraint_punishment /= KA_HRS_FACTOR
         charge_left_amp_mins /= KA_HRS_FACTOR
 
         # Get total reward
         total_reward = (
-            - CARBON_COST_WEIGHT * charging_cost
+            - CARBON_COST_WEIGHT * carbon_cost
             - CONSTRAINT_VIOLATION_WEIGHT * constraint_punishment
             - UNCHARGED_PUNISHMENT_WEIGHT * charge_left_amp_mins)
 
         info = {
-            'charging_cost': charging_cost,
+            'carbon_cost': carbon_cost,
             'constraint_punishment': constraint_punishment,
             'remaining_charge_punishment': charge_left_amp_mins,
         }
@@ -543,11 +551,10 @@ if __name__ == "__main__":
     # both_results.to_csv(results_save_path, index=False)
     # print(pd.read_csv(results_save_path))
 
-
-
     from .event_generation import GMMsTraceGenerator
     from acnportal.acnsim.events import PluginEvent
     import time
+    from collections import defaultdict
 
     np.random.seed(42)
     import random
@@ -563,39 +570,36 @@ if __name__ == "__main__":
         print("----------------------------")
         print(generator.site)
         env1 = EVChargingEnv(generator, action_type='discrete', project_action=False)
-        env2 = EVChargingEnv(generator, action_type='discrete', project_action=True)
-        env3 = EVChargingEnv(generator, action_type='continuous', project_action=False)
-        env4 = EVChargingEnv(generator, action_type='continuous', project_action=True)
+        # env2 = EVChargingEnv(generator, action_type='discrete', project_action=True)
+        # env3 = EVChargingEnv(generator, action_type='continuous', project_action=False)
+        # env4 = EVChargingEnv(generator, action_type='continuous', project_action=True)
         print("Finished building environments... ")
         start = time.time()
-        for env in [env1, env2, env3, env4]:
-            for _ in range(1):
+        for env in [env1]:#[env1, env2, env3, env4]:
+            for _ in range(5):
                 observation = env.reset()
 
                 rewards = 0.
                 done = False
                 i = 0
-                action = np.random.random((54,)) * 4
-                # d = defaultdict(list)
+                d = defaultdict(list)
                 while not done:
                     # print(env, " stepping")
                     # print(env.__repr__())
+                    action = np.random.random((54,)) * 4
                     observation, reward, done, info = env.step(action)
-                    # for x in ["charging_cost", "charging_reward", "constraint_punishment", "remaining_amp_periods_punishment"]:
-                    # d[x].append(info[x])
-                    # d["reward"].append(reward)
-                    # print(observation['demands'][3])
+
+                    for k in info['reward']:
+                        d[k].append(info['reward'][k])
                     rewards += reward
                     i += 1
-                # for k, v in d.items():
-                #     print(k)
-                #     d[k] = np.array(v)
-                #     print(d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
-
-                print()
-                print()
+                for k, v in d.items():
+                    d[k] = np.array(v)
+                    print(k, d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
                 print("total iterations: ", i)
                 print("total reward: ", rewards)
+                print("\n\n")
+
         print("Total time: ", time.time() - start)
     env.close()
     print(env.max_timestamp)
