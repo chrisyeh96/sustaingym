@@ -153,7 +153,9 @@ class BatteryStorageInGridEnv(Env):
                 excluding the agent-controlled battery ($/MWh)
             seed: random seed
         """
-        assert date in ['2019-05', '2020-05', '2021-05'] # update for future dates
+        if LOCAL_FILE_PATH is not None:
+            assert date in ['2019-05', '2020-05', '2021-05'] # update for future dates
+        
         self.date = date
 
         self.LOCAL_PATH = LOCAL_FILE_PATH
@@ -264,7 +266,7 @@ class BatteryStorageInGridEnv(Env):
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
-            bytes_data = pkgutil.get_data(__name__, 'data/CAISO-demand-' + self.date + 
+            bytes_data = pkgutil.get_data(__name__, 'data/CAISO-netdemand-' + self.date + 
                                         '.csv')
             s = bytes_data.decode('utf-8')
             data = StringIO(s)
@@ -314,7 +316,14 @@ class BatteryStorageInGridEnv(Env):
         else:
             self.rng = np.random.default_rng()
 
-        self.gen_costs *= self.rng.uniform(0.8, 1.25, size=self.num_gens)
+        # initialize gen costs for all time steps
+        self.all_gen_costs = np.zeros((self.num_gens, self.MAX_STEPS_PER_EPISODE))
+
+        for i in range(self.num_gens):
+            self.all_gen_costs[i, :] = self.rng.uniform(0.8*self.init_gen_costs[i],
+                                        1.25*self.init_gen_costs[i], size=self.MAX_STEPS_PER_EPISODE)
+
+        self.gen_costs = self.all_gen_costs[:, 0]
 
         self.a = 0.0
         self.b = 0.0
@@ -369,8 +378,7 @@ class BatteryStorageInGridEnv(Env):
             # print('Warning: selling cost (a) is less than buying cost (b)')
             action[0] = action[1]
 
-        self.gen_costs = self.init_gen_costs * self.rng.uniform(
-                                            0.8, 1.25, size=self.num_gens)
+        self.gen_costs = self.all_gen_costs[:, self.count - 1]
         self.bats_charge_costs = self.init_bats_charge_costs * self.rng.uniform(
                                             0.8, 1.25, size=self.num_bats)
         self.bats_discharge_costs = self.init_bats_discharge_costs * self.rng.uniform(
