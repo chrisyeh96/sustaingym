@@ -5,8 +5,10 @@ import cvxpy as cp
 import numpy as np
 from stable_baselines3 import PPO
 
-from ...envs.evcharging.ev_charging import ACTION_SCALING_FACTOR
-from ...envs.evcharging.ev_charging import EVChargingEnv
+# from ...envs.evcharging.ev_charging import ACTION_SCALING_FACTOR
+# from ...envs.evcharging.ev_charging import EVChargingEnv
+
+ACTION_SCALING_FACTOR = 8
 
 EPS = 1e-3
 MAX_ACTION = 4
@@ -26,7 +28,7 @@ class BaseOnlineAlgorithm:
     """
     name = "base online algorithm"
 
-    def __init__(self, env: EVChargingEnv):
+    def __init__(self, env):
         self.env = deepcopy(env)
         # self.num_constraints, self.num_stations = self.env.cn.constraint_matrix.shape
 
@@ -85,7 +87,7 @@ class SelectiveChargingAlgorithm(BaseOnlineAlgorithm):
             the pilot signal that is to be distributed to all EVs.
         *See BaseOnlineAlgorithm for more attributes
     """
-    def __init__(self, env: EVChargingEnv, rate: float):
+    def __init__(self, env, rate: float):
         """
         Args:
             rate: float between [0, 4], which will be scaled up by 8 to
@@ -127,7 +129,7 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
     """
     name = 'optimal greedy'
 
-    def __init__(self, env: EVChargingEnv):
+    def __init__(self, env):
         super().__init__(env)
 
         self.first_run = True
@@ -176,7 +178,7 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
 class PPOAlgorithm(BaseOnlineAlgorithm):
     """Algorithm that outputs prediction of a PPO RL agent.
     """
-    def __init__(self, env: EVChargingEnv, rl_model: PPO, name: str="PPO algorithm"):
+    def __init__(self, env, rl_model: PPO, name: str="PPO algorithm"):
         super().__init__(env)
         self.rl_model = rl_model
         self.name = name

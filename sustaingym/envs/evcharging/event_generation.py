@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import os
-from random import randrange
 import uuid
 
 import acnportal.acnsim as acns
@@ -48,13 +47,16 @@ class AbstractTraceGenerator:
         num_stations: number of charging stations at site
         day: day of simulation, either actual or fake
         moer_loader: class for loading carbon emission rates data
+        rng: random number generator
     """
     def __init__(self,
                  site: SiteStr,
                  period: int,
                  recompute_freq: int,
                  date_period: tuple[str, str] | DefaultPeriodStr,
-                 requested_energy_cap: float = 100):
+                 requested_energy_cap: float = 100,
+                 random_seed=42
+                ):
         """
         Args:
             site: either 'caltech' or 'jpl' garage to get events from
@@ -65,6 +67,7 @@ class AbstractTraceGenerator:
                 of strings with both strings in the format YYYY-MM-DD.
                 Otherwise, should be a default period string.
             requested_energy_cap: largest amount of requested energy allowed (kWh)
+            random_seed: seed for random sampling
         """
         if MINS_IN_DAY % period != 0:
             raise ValueError(f'Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0')
@@ -81,6 +84,7 @@ class AbstractTraceGenerator:
         self.station_ids = site_str_to_site(site).station_ids
         self.num_stations = len(self.station_ids)
         self.moer_loader = MOERLoader(self.date_range[0], self.date_range[1], BA_CALTECH_JPL, MOER_SAVE_DIR)
+        self.rng = np.random.default_rng(seed=random_seed)
 
     def __repr__(self) -> str:
         """
@@ -95,7 +99,13 @@ class AbstractTraceGenerator:
         Randomly sets ``day`` to a day in the date range.
         """
         interval_length = (self.date_range[1] - self.date_range[0]).days + 1  # make inclusive
-        self.day = self.date_range[0] + timedelta(randrange(interval_length))
+        self.day = self.date_range[0] + timedelta(days=self.rng.choice(interval_length))
+    
+    def set_random_seed(self, random_seed):
+        """
+        Sets random seed to make sampling reproducible.
+        """
+        self.rng = np.random.default_rng(seed=random_seed)
 
     def _create_events(self) -> pd.DataFrame:
         """Creates a DataFrame of charging events information.
@@ -287,14 +297,13 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         gmm: Gaussian Mixture Model from sklearn for session modeling
         cnt: empirical distribution on the number of sessions per day
         station_usage: total number of sessions during interval for each station
-        rng: random number generator
         *See AbstractTraceGenerator for more attributes
 
     Notes about saving GMMs:
         package default gmm directory: Default GMMs come with the package under
-            the folder name 'gmms' in the package sustaingym.envs.evcharging.
-            The folder structure of gmms is as follows:
-            gmms
+            the folder name 'gmms_ev_charging' in the package
+            sustaingym.envs.evcharging. The folder structure is as follows:
+            gmms_ev_charging
             |----caltech
             |   |--------2019-05-01 2019-08-31 50
             |   |--------2019-09-01 2019-12-31 50
@@ -326,14 +335,13 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         """
         Args:
             n_components: number of components in GMM
-            random_seed: seed for random sampling
             *See AbstractTraceGenerator for more arguments
         
         Notes:
             The generator first searches for a matching GMM directory. If
             unfound, it creates one.
         """
-        super().__init__(site, period, recompute_freq, date_period, requested_energy_cap)
+        super().__init__(site, period, recompute_freq, date_period, requested_energy_cap, random_seed)
         self.n_components = n_components
 
         gmm_folder = get_folder_name(self.date_range_str[0], self.date_range_str[1], n_components = n_components)
@@ -348,8 +356,6 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         self.cnt: np.ndarray =  data[COUNT_KEY]
         self.station_usage: np.ndarray = data[STATION_USAGE_KEY]
 
-        self.rng = np.random.default_rng(seed=random_seed)
-
     def __repr__(self) -> str:
         """
         Returns string representation of GMMsTracesGenerator.
@@ -357,6 +363,14 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         site = f'{self.site.capitalize()} site'
         dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
         return f'GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
+    
+    def set_random_seed(self, random_seed):
+        """
+        Sets random seed to make GMM sampling reproducible.
+        """
+        super().set_random_seed(random_seed)
+        self.gmm.set_params(**{'random_state': random_seed})
+
 
     def _sample(self, n: int, oversample_factor: float = 0.2) -> np.ndarray:
         """Returns samples from GMM.
@@ -468,10 +482,13 @@ if __name__ == '__main__':
     for generator in [atg]:
         start = time.time()
         total_events = 0
-        episodes = 100
+        episodes = 5
         for _ in range(episodes):
-            print(generator)
+            generator.set_random_seed(106)
             eq, evs, num_events = generator.get_event_queue()
+            a = generator.get_moer()
+            b, c = a[240, 1], a[20, 0]
+            print("num events: ", num_events, b, c, evs[0].arrival, evs[1].departure)
             total_events += num_events
         end = time.time()
         print('time: ', end - start)

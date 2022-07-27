@@ -21,11 +21,13 @@ EPS = 1e-3
 MAX_ACTION = 4
 MAX_PILOT_SIGNAL = 32
 
-CARBON_COST_WEIGHT = 0.01
-CONSTRAINT_VIOLATION_WEIGHT = 10.
-UNCHARGED_PUNISHMENT_WEIGHT = 20.
-KA_HRS_FACTOR = 60 * 1000
-W_MINS_TO_KG_CO2 = 60 * 1000
+VOLTAGE = 208
+MARGINAL_PROFIT_PER_KWH = 0.10  # revenue in $ / kWh
+CO2_COST_PER_METRIC_TON = 30.85
+A_MINS_TO_KWH = (1 / 60) * VOLTAGE * (1 / 1000)
+VIOLATION_WEIGHT = 0.01  # cost in $ / kWh of violation
+VIOLATION_FACTOR = A_MINS_TO_KWH * VIOLATION_WEIGHT
+CARBON_COST_FACTOR = A_MINS_TO_KWH * (1 / 1000) * CO2_COST_PER_METRIC_TON
 
 
 class EVChargingEnv(gym.Env):
@@ -249,8 +251,7 @@ class EVChargingEnv(gym.Env):
         """
         if seed is not None:
             self.rng = np.random.default_rng(seed)
-        else:
-            self.rng = np.random.default_rng()
+            self.data_generator.set_random_seed(seed)
 
         if options and 'verbose' in options:
             if 'verbose' in options:
@@ -416,33 +417,30 @@ class EVChargingEnv(gym.Env):
         schedule = np.array(list(map(lambda x: x[0], schedule.values())))  # convert to numpy
 
         interval_mins = (self.timestamp - self.prev_timestamp) * self.period
-        # Carbon cost for interval in milli-kg * CO2 * mins 
-        carbon_cost = np.dot(self.simulator.network._voltages, schedule) * interval_mins
-        carbon_cost *= self.moer[len(self.moer)-1-self.prev_timestamp, 0]
 
-        # Constraint violations: amount of charge over maximum allowed rates (A * mins)
-        current_sum = np.abs(self.simulator.network.constraint_current(schedule))
-        over_current = np.maximum(current_sum - self.simulator.network.magnitudes, 0)
-        constraint_punishment = sum(over_current) * interval_mins
-
-        # Customer satisfaction reward: diff btwn energy requested and delivered for day (A * mins)
-        charge_left_amp_mins = 0.
+        # Total revenue ($)
+        profit = 0.
         if done:
+            energy_delivered = 0.
             for ev in self.evs:
-                charge_left_amp_mins += self.interface._convert_to_amp_periods(ev.remaining_demand, ev.station_id) * self.period
+                energy_delivered += ev.energy_delivered
+            profit = energy_delivered * MARGINAL_PROFIT_PER_KWH
 
-        carbon_cost /= W_MINS_TO_KG_CO2  # # milli-kg * CO2 * mins -> kg * CO2
-        constraint_punishment /= KA_HRS_FACTOR  # A * mins -> kA * hrs
-        charge_left_amp_mins /= KA_HRS_FACTOR
+        # Network constraints - amount of charge over maximum allowed rates ($)
+        current_sum = np.abs(self.simulator.network.constraint_current(schedule))
+        excess_current = np.sum(np.maximum(current_sum - self.simulator.network.magnitudes, 0))
+        excess_charge = excess_current * interval_mins * VIOLATION_FACTOR
 
-        total_reward = (
-            - CARBON_COST_WEIGHT * carbon_cost
-            - CONSTRAINT_VIOLATION_WEIGHT * constraint_punishment
-            - UNCHARGED_PUNISHMENT_WEIGHT * charge_left_amp_mins)
+        # Carbon cost ($)
+        carbon_cost = np.sum(schedule) * interval_mins * self.moer[len(self.moer)-1-self.prev_timestamp, 0]
+        carbon_cost *= CARBON_COST_FACTOR
+
+        total_reward = profit - carbon_cost - excess_charge
+
         info = {
+            'profit': profit,
             'carbon_cost': carbon_cost,
-            'constraint_punishment': constraint_punishment,
-            'remaining_charge_punishment': charge_left_amp_mins,
+            'excess_charge': excess_charge,
         }
         return total_reward, info
 
@@ -456,19 +454,19 @@ class EVChargingEnv(gym.Env):
 
 
 if __name__ == "__main__":
-    # import argparse
-    # from argparse import RawTextHelpFormatter
-    # import os
+    import argparse
+    from argparse import RawTextHelpFormatter
+    import os
 
-    # import pandas as pd
-    # from stable_baselines3 import PPO, DQN
-    # from stable_baselines3.common.callbacks import EvalCallback, CallbackList
-    # from stable_baselines3.common.env_util import make_vec_env
-    # from stable_baselines3.common.utils import set_random_seed
-    # from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+    import pandas as pd
+    from stable_baselines3 import PPO, DQN
+    from stable_baselines3.common.callbacks import EvalCallback, CallbackList
+    from stable_baselines3.common.env_util import make_vec_env
+    from stable_baselines3.common.utils import set_random_seed
+    from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
-    # from sustaingym.envs.evcharging import EVChargingEnv, GMMsTraceGenerator
-    # from sustaingym.algorithms.evcharging.base_algorithm import PPOAlgorithm, SelectiveChargingAlgorithm, GreedyAlgorithm
+    from sustaingym.envs.evcharging import EVChargingEnv, GMMsTraceGenerator
+    from sustaingym.algorithms.evcharging.base_algorithm import PPOAlgorithm, SelectiveChargingAlgorithm, GreedyAlgorithm
 
 
     # parser = argparse.ArgumentParser(description="Run Script", formatter_class=RawTextHelpFormatter)
@@ -484,7 +482,6 @@ if __name__ == "__main__":
     # # CONSTRAINT_VIOLATION_WEIGHT = args.CONSTRAINT_VIOLATION_WEIGHT
     # # DELIVERED_CHARGE_WEIGHT = args.DELIVERED_CHARGE_WEIGHT
     # # UNCHARGED_PUNISHMENT_WEIGHT = args.UNCHARGED_PUNISHMENT_WEIGHT
-    # print("weights: ", CHARGE_COST_WEIGHT, CONSTRAINT_VIOLATION_WEIGHT, DELIVERED_CHARGE_WEIGHT, UNCHARGED_PUNISHMENT_WEIGHT)
 
     # SITE = 'caltech'
     # TRAIN_DATE_RANGE = 'Summer 2019'
@@ -545,12 +542,14 @@ if __name__ == "__main__":
     import time
     from collections import defaultdict
 
+    from ...algorithms.evcharging.base_algorithm import GreedyAlgorithm
+
     np.random.seed(42)
     import random
     random.seed(42)
 
     # rtg1 = RealTraceGenerator(site='caltech', date_period=('2019--05', '2018-11-11'), sequential=True, period=5)
-    atg = GMMsTraceGenerator(site='caltech', date_period=('2019-05-01', '2019-08-31'), n_components=50)
+    atg = GMMsTraceGenerator(site='caltech', date_period=('2019-05-01', '2019-08-31'), n_components=50, random_seed=106)
 
     for generator in [atg]:  # [rtg1, rtg2, atg]:
         print("----------------------------")
@@ -558,7 +557,7 @@ if __name__ == "__main__":
         print("----------------------------")
         print("----------------------------")
         print(generator.site)
-        env1 = EVChargingEnv(generator, action_type='discrete', project_action=True)
+        env1 = EVChargingEnv(generator, action_type='continuous', project_action=False)
         # env2 = EVChargingEnv(generator, action_type='discrete', project_action=True)
         # env3 = EVChargingEnv(generator, action_type='continuous', project_action=False)
         # env4 = EVChargingEnv(generator, action_type='continuous', project_action=True)
@@ -566,28 +565,33 @@ if __name__ == "__main__":
         start = time.time()
         for env in [env1]:#[env1, env2, env3, env4]:
             all_rewards = 0.
-            for _ in range(10):
+            for _ in range(100):
                 observation = env.reset()
 
+                greedy_alg = GreedyAlgorithm(env)
                 rewards = 0.
                 done = False
                 i = 0
                 d = defaultdict(list)
+                d2 = defaultdict(list)
                 while not done:
                     # print(env, " stepping")
                     # print(env.__repr__())
-                    action = np.random.random((54,)) * 4
+                    action = np.ones((54,)) * 4
                     observation, reward, done, info = env.step(action)
 
-                    # for k in info['reward']:
-                    #     d[k].append(info['reward'][k])
+                    for k in info['reward']:
+                        d[k].append(info['reward'][k])
                     rewards += reward
                     i += 1
-                # for k, v in d.items():
-                #     d[k] = np.array(v)
-                #     print(k, d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
+                for k, v in d.items():
+                    d[k] = np.array(v)
+                    print(k, len(d[k]), d[k].min(), d[k].max(), d[k].mean(), d[k].sum())
+                    d2[k] = d[k].mean()
                 print("total iterations: ", i)
                 print("total reward: ", rewards)
+                for k, v in d2.items():
+                    print("mean: ", k, v)
                 all_rewards += rewards
                 print("\n")
 
