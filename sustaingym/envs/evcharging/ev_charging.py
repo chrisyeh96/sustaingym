@@ -25,7 +25,7 @@ VOLTAGE = 208
 MARGINAL_PROFIT_PER_KWH = 0.10  # revenue in $ / kWh
 CO2_COST_PER_METRIC_TON = 30.85
 A_MINS_TO_KWH = (1 / 60) * VOLTAGE * (1 / 1000)
-VIOLATION_WEIGHT = 0.01  # cost in $ / kWh of violation
+VIOLATION_WEIGHT = 0.02  # cost in $ / kWh of violation
 VIOLATION_FACTOR = A_MINS_TO_KWH * VIOLATION_WEIGHT
 CARBON_COST_FACTOR = A_MINS_TO_KWH * (1 / 1000) * CO2_COST_PER_METRIC_TON
 
@@ -565,7 +565,7 @@ if __name__ == "__main__":
         start = time.time()
         for env in [env1]:#[env1, env2, env3, env4]:
             all_rewards = 0.
-            for _ in range(100):
+            for _ in range(10):
                 observation = env.reset()
 
                 greedy_alg = GreedyAlgorithm(env)
@@ -577,7 +577,8 @@ if __name__ == "__main__":
                 while not done:
                     # print(env, " stepping")
                     # print(env.__repr__())
-                    action = np.ones((54,)) * 4
+                    # action = np.ones((54,)) * 4
+                    action = np.random.randint(size=(54,), low=0, high=5)
                     observation, reward, done, info = env.step(action)
 
                     for k in info['reward']:
