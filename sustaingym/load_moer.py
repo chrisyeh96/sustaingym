@@ -12,9 +12,17 @@ from typing import Literal
 import pandas as pd
 import pytz
 
-from .envs.evcharging.utils import DEFAULT_DATE_RANGES, DATE_FORMAT
 
 DataTypeStr = Literal['historical', 'forecasted']
+
+DEFAULT_DATE_RANGES = [
+    ('2019-05-01', '2019-08-31'),
+    ('2019-09-01', '2019-12-31'),
+    ('2020-02-01', '2020-05-31'),
+    ('2021-05-01', '2021-08-31'),
+]
+DATE_FORMAT = '%Y-%m-%d'
+
 
 USERNAME = 'caltech'
 PASSWORD = 'caltechsgip.2022'
@@ -41,7 +49,7 @@ MOER_COLUMN = {
 SGIP_DT_FORMAT = '%Y-%m-%dT%H:%M:%S'  # ISO 8601 timestamp
 
 FNAME_FORMAT_STR = '{ba}_{year}-{month:02}.csv'
-DEFAULT_SAVE_DIR = 'moer_data'
+DEFAULT_SAVE_DIR = 'moer_data2'
 COMPRESSION = 'gzip'
 INDEX_NAME = 'time'
 
@@ -196,6 +204,7 @@ def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
     starttime = datetime(year, month, 1, tzinfo=pytz.UTC)
     endtime = datetime(year, month, num_days, tzinfo=pytz.UTC)
     df = get_historical_and_forecasts(starttime, endtime, ba)
+    df = df.fillna(method='bfill')
     df.to_csv(save_path, compression=COMPRESSION, index=True)  # keep datetime index
 
 
