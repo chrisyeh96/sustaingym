@@ -253,20 +253,39 @@ class BatteryStorageInGridEnv(Env):
         self.count = 1
         self.market_op = MarketOperator(self)
         self.df_load = self._get_load_data()
+        self.df_moer = self._get_moer_data()
     
     def _get_load_data(self) -> pd.DataFrame:
         """
-        Generates temporal pricing data.
+        Generates temporal load data.
 
         Args:
             N/A
         Returns:
-            pandas dataframe containing price data
+            pandas dataframe containing load data
         """
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
             bytes_data = pkgutil.get_data(__name__, 'data/CAISO-netdemand-' + self.date + 
+                                        '.csv')
+            s = bytes_data.decode('utf-8')
+            data = StringIO(s)
+            return pd.read_csv(data)
+    
+    def _get_moer_data(self) -> pd.DataFrame:
+        """
+        Generates temporal moer data.
+
+        Args:
+            N/A
+        Returns:
+            pandas dataframe containing moer data
+        """
+        if self.LOCAL_PATH is not None:
+            return pd.read_csv(self.LOCAL_PATH)
+        else:
+            bytes_data = pkgutil.get_data(__name__, 'data/SGIP_CAISO_SCE_' + self.date + 
                                         '.csv')
             s = bytes_data.decode('utf-8')
             data = StringIO(s)
@@ -283,8 +302,16 @@ class BatteryStorageInGridEnv(Env):
                     idx, :-1]).any()]
             self.idx = self.rng.choice(pos_ids)
         if self.LOCAL_PATH is not None:
-            return self.df_load.iloc[self.idx, self.count]
-        return self.df_load.iloc[self.idx, self.count] / 6000.0 # scale to small grid scale
+            return self.df_load.iloc[self.idx, self.count-1]
+        return self.df_load.iloc[self.idx, self.count-1] / 6000.0 # scale to small grid scale
+    
+    def _generate_moer_data(self) -> float:
+        """
+        TODO
+        """
+        if self.LOCAL_PATH is not None:
+            return self.df_load.iloc[self.idx, self.count-1]
+        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + (self.count-1), 1]
 
     def _generate_load_data2(self) -> float:
         # TODO: describe this function
