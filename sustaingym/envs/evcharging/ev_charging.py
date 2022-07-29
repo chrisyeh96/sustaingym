@@ -1,6 +1,5 @@
 """This module contains the central class for the EV Charging environment."""
 from __future__ import annotations
-from tkinter import TRUE
 
 from typing import Any
 import warnings
