@@ -499,7 +499,8 @@ if __name__ == "__main__":
     # save_path = f'./logs/exp_{EXP}/'
     # train_save_path = save_path + 'eval_on_train/'
     # eval_save_path = save_path + 'eval_on_eval/'
-    # results_save_path = save_path + 'results.csv'
+    # results_save_path = save_path + 'results
+    # '
     # model_save_path = save_path + 'model_250k_timesteps'
     # os.makedirs(save_path, exist_ok=True)
     # os.makedirs(train_save_path, exist_ok=True)

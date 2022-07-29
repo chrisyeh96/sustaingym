@@ -25,7 +25,7 @@ from ...load_moer import MOERLoader
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 MIN_BATTERY_CAPACITY, BATTERY_CAPACITY, MAX_POWER = 0, 100, 100
 BA_CALTECH_JPL = 'SGIP_CAISO_SCE'
-MOER_SAVE_DIR = 'sustaingym/data/moer_data2'
+MOER_SAVE_DIR = 'sustaingym/data/moer_data'
 
 
 class AbstractTraceGenerator:

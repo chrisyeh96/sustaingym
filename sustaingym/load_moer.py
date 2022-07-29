@@ -48,8 +48,8 @@ MOER_COLUMN = {
 
 SGIP_DT_FORMAT = '%Y-%m-%dT%H:%M:%S'  # ISO 8601 timestamp
 
-FNAME_FORMAT_STR = '{ba}_{year}-{month:02}.csv'
-DEFAULT_SAVE_DIR = 'moer_data2'
+FNAME_FORMAT_STR = '{ba}_{year}-{month:02}.csv.gz'
+DEFAULT_SAVE_DIR = 'moer_data'
 COMPRESSION = 'gzip'
 INDEX_NAME = 'time'
 
@@ -263,6 +263,7 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     """
     # first search through custom models
     file_name = FNAME_FORMAT_STR.format(ba=ba, year=year, month=month)
+    print(f"Looking for {file_name}")
     file_path = os.path.join(save_dir, file_name)
     if os.path.exists(file_path):
         df = pd.read_csv(file_path,
