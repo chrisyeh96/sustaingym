@@ -169,9 +169,16 @@ class BatteryStorageInGridEnv(Env):
     MAX_STEPS_PER_EPISODE = 288
     # probability for running price average in state/observation space
     eta = 0.5
+    # default max production rates (MW)
+    DEFAULT_GEN_MAX_PRODUCTION = (36.8, 31.19, 3.8, 9.92, 49.0, 50.0, 50.0, 15.0, 48.5, 56.7)
+    # default max discharging rates for batteries (MW)
+    DEFAULT_BAT_MAX_DISCHARGE = (30.0, 20.0, 29.7, 7.5, 2.0)
+    # default max capacity for batteries (MWh)
+    DEFAULT_BAT_CAPACITY = (120.0, 80.0, 118.8, 30.0, 8.0)
+
 
     def __init__(self, render_mode: str | None = None, num_gens: int = 10,
-        gen_max_production: np.ndarray | None = None, gen_costs: np.ndarray | None
+        gen_max_production: tuple = DEFAULT_GEN_MAX_PRODUCTION, gen_costs: np.ndarray | None
          = None, num_bats: int = 5, date: str = '2019-05',
          battery_capacity: np.ndarray | None
          = None,
@@ -212,27 +219,22 @@ class BatteryStorageInGridEnv(Env):
 
         self.num_gens = num_gens
 
-        if gen_max_production is None:
-            self.gen_max_production = np.zeros((self.num_gens,))
-            self.gen_max_production[:3] = rng.uniform(3, 5, size=(3,))
-            self.gen_max_production[3:6] = rng.uniform(6, 7, size=(3,))
-            self.gen_max_production[6:] = rng.uniform(8, 15, size=(self.num_gens - 6,))
-        else:
-            assert len(gen_max_production) == self.num_gens
-            self.gen_max_production = gen_max_production
+        # if gen_max_production is None:
+        #     self.gen_max_production = np.zeros((self.num_gens,))
+        #     self.gen_max_production[:3] = rng.uniform(3, 5, size=(3,))
+        #     self.gen_max_production[3:6] = rng.uniform(6, 7, size=(3,))
+        #     self.gen_max_production[6:] = rng.uniform(8, 15, size=(self.num_gens - 6,))
+        # else:
+        assert len(gen_max_production) == self.num_gens
+        self.gen_max_production = np.array(gen_max_production)
         
         self.init_gen_max_production = self.gen_max_production.copy()
 
         if gen_costs is None:
-            self.gen_costs = np.zeros((self.num_gens,))
-            self.gen_costs[:3] = rng.uniform(0, 2, size=(3,))
-            self.gen_costs[3:6] = rng.uniform(4, 6, size=(3,))
-            self.gen_costs[6:] = rng.uniform(10, 15, size=(self.num_gens - 6,))
+            self.init_gen_costs = rng.uniform(50, 100, size=(self.num_gens,))
         else:
             assert len(gen_costs) == self.num_gens
-            self.gen_costs = gen_costs
-        
-        self.init_gen_costs = self.gen_costs.copy()
+            self.init_gen_costs = gen_costs
 
         self.num_bats = num_bats
 
@@ -366,7 +368,6 @@ class BatteryStorageInGridEnv(Env):
         return self.count / self.MAX_STEPS_PER_EPISODE
 
     def reset(self, *,
-              seed: int | None = None,
               return_info: bool = False,
               options: dict | None = None) -> dict[str, Any] | tuple[dict[str,
                Any], dict[str, Any]]:
@@ -382,10 +383,6 @@ class BatteryStorageInGridEnv(Env):
         Returns:
             tuple containing the initial observation for env's episode
         """
-        if seed is not None:
-            self.rng = np.random.default_rng(seed)
-        else:
-            self.rng = np.random.default_rng()
 
         # initialize gen costs for all time steps
         self.all_gen_costs = np.zeros((self.num_gens, self.MAX_STEPS_PER_EPISODE))
@@ -523,7 +520,7 @@ class BatteryStorageInGridEnv(Env):
         }
         # TODO: figure what additional info could be helpful here
         info = {"curr info": None}
-        reward = price * x_agent + 60.06 * moer * x_agent
+        reward = (price + 30.85 * moer) * x_agent
         return obs, reward, done, info
     
     def _calculate_off_optimal_total_episode_reward(self) -> float:
@@ -596,7 +593,7 @@ class BatteryStorageInGridEnv(Env):
             moers[i] = self._generate_moer_data(i + 1)
 
         obj = cp.sum(cp.multiply(prices, x))
-        obj += 60.06*cp.sum(cp.multiply(moers, x))
+        obj += 30.85*cp.sum(cp.multiply(moers, x))
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp()
         assert prob.is_dpp()
