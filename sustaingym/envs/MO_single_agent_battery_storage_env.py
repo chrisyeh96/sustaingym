@@ -149,14 +149,17 @@ class BatteryStorageInGridEnv(Env):
         a ($ / MWh)                         -Inf                    Inf
         b ($ / MWh)                         -Inf                    Inf
     Observation:
-        Type: Box(5)
+        Type: Box(9)
                                             Min                     Max
         Energy storage level (MWh)           0                     Max Capacity
         Time (fraction of day)               0                       1
         Previous charge cost ($ / MWh)       0                     Max Cost
         Previous discharge cost ($ / MWh)    0                     Max Cost
         Previous agent dispatch (MWh)        Max Charge            Max Discharge
-        Previous load demand (MWh)           0                     55
+        Previous load demand (MWh)           0                     Inf
+        Load Forecast (MWh)                  0                     Inf
+        Previous MOER value                  0                     Inf
+        MOER Forecast                        0                     Inf
     """
 
     # Charge efficiency
@@ -290,7 +293,11 @@ class BatteryStorageInGridEnv(Env):
                                                 shape=(1,), dtype=float),
             "previous load demand": spaces.Box(low=0, high=np.inf,
                                                 shape=(1,), dtype=float),
+            "load forecast": spaces.Box(low=0, high=np.inf,
+                                                shape=(1,), dtype=float),
             "previous moer value": spaces.Box(low=0, high=np.inf,
+                                                shape=(1,), dtype=float),
+            "moer forecast": spaces.Box(low=0, high=np.inf,
                                                 shape=(1,), dtype=float)
         })
         self.init = False
@@ -603,8 +610,8 @@ class BatteryStorageInGridEnv(Env):
             self.load_demand_cpy = self._generate_load_data(count)
             _, x_bats, price = self.market_op.get_dispatch_no_agent()
             
-            print("agent change: ", x_bats[-1])
-            print("price: ", price)
+            # print("agent change: ", x_bats[-1])
+            # print("price: ", price)
 
             # sanity checks
             assert abs(x_bats[-1] - 0) <= 10**-9 and 0 <= price
