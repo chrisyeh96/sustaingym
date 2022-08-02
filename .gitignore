@@ -2,6 +2,7 @@
 .DS_STORE
 .vscode/
 sandbox/
+logs/
 ## END CUSTOM EXCLUSIONS
 
 # Byte-compiled / optimized / DLL files

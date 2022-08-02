@@ -2,11 +2,10 @@
 GMM training script.
 
 Example command line usage
-python -m sustaingym.envs.evcharging.train_artificial_data_model --site caltech --gmm_n_components 50 --date_range 2019-02-01 2019-04-30
+python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 50 --date_range 2020-02-01 2020-05-31
 
-usage: train_artificial_data_model.py [-h] [--site SITE] [--gmm_n_components GMM_N_COMPONENTS] [--date_ranges DATE_RANGES [DATE_RANGES ...]]
-
-GMM Training Script
+usage: train_gmm_model.py [-h] [--site SITE] [--gmm_n_components GMM_N_COMPONENTS]
+                          [--date_ranges DATE_RANGES [DATE_RANGES ...]]
 
 optional arguments:
   -h, --help            show this help message and exit
@@ -14,9 +13,9 @@ optional arguments:
   --gmm_n_components GMM_N_COMPONENTS
   --date_ranges DATE_RANGES [DATE_RANGES ...]
                         Date ranges for GMM models to be trained on.
-                        Number of dates must be divisible by 2,
-                        with the second later than the first.
-                        Dates should be formatted as YYYY-MM-DD.
+                        Number of dates must be divisible by 2, 
+                        with the second later than the first. 
+                        Dates should be formatted as YYYY-MM-DD. 
                         Supported ranges in between 2018-11-01 and 2021-08-31.
 """
 from __future__ import annotations
@@ -25,7 +24,6 @@ import argparse
 from argparse import RawTextHelpFormatter
 from collections.abc import Sequence
 from datetime import datetime
-from itertools import chain
 import os
 
 import numpy as np
@@ -221,5 +219,5 @@ if __name__ == '__main__':
     if args.date_ranges is None:
         create_gmms(args.site, args.gmm_n_components)
     else:
-        date_ranges = [(args.date_range[2*i], args.date_range[2*i+1]) for i in range(len(args.date_range) // 2)]
+        date_ranges = [(args.date_ranges[2*i], args.date_ranges[2*i+1]) for i in range(len(args.date_ranges) // 2)]
         create_gmms(args.site, args.gmm_n_components, date_ranges)

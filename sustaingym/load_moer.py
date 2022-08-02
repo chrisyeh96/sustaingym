@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import calendar
 from datetime import datetime, timedelta
-from io import StringIO
 import os
-import pkgutil
 import requests
+import sys
 from typing import Literal
 
 import pandas as pd
@@ -263,17 +262,15 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     """
     # first search through custom models
     file_name = FNAME_FORMAT_STR.format(ba=ba, year=year, month=month)
-    print(f"Looking for {file_name}")
     file_path = os.path.join(save_dir, file_name)
-    if os.path.exists(file_path):
-        df = pd.read_csv(file_path,
-                         compression=COMPRESSION,
-                         index_col=INDEX_NAME)
-    else:  # TODO check that this works
-        MOER_DATA_MODULE = 'sustaingym.data'
-        data = pkgutil.get_data(MOER_DATA_MODULE, file_path).decode('utf-8')
-        data = StringIO(data)
-        df = pd.read_csv(data, compression=COMPRESSION, index_col=INDEX_NAME)
+    # search default models
+    if not os.path.exists(file_path):  # TODO having trouble with gzip - work-around
+        module_path = os.path.dirname(sys.modules['sustaingym'].__file__)
+        file_path = os.path.join(module_path, 'data', 'moer_data', file_name)
+
+    df = pd.read_csv(file_path,
+                     compression=COMPRESSION,
+                     index_col=INDEX_NAME)
     # TODO load in data from API using save_moer() if found in neither
     df.index = pd.to_datetime(pd.DatetimeIndex(df.index))  # set datetime index to UTC
     return df

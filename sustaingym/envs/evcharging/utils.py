@@ -6,6 +6,7 @@ from datetime import timedelta, datetime
 import os
 import pickle
 import pkgutil
+import sys
 from typing import Any, Literal
 
 import acnportal.acndata as acnd
@@ -17,11 +18,12 @@ import sklearn.mixture as mixture
 
 
 API_TOKEN = 'DEMO_TOKEN'
+DEFAULT_SAVE_DIR = 'gmms_ev_charging'
+
+AM_LA = pytz.timezone('America/Los_Angeles')
+GMT = pytz.timezone('GMT')
 DATE_FORMAT = '%Y-%m-%d'
 DT_STRING_FORMAT = '%a, %d %b %Y %H:%M:%S GMT'
-GMT = pytz.timezone('GMT')
-US_PACIFIC = pytz.timezone('US/Pacific')
-DEFAULT_SAVE_DIR = 'gmms_ev_charging'
 MINS_IN_DAY = 1440
 REQ_ENERGY_SCALE = 100
 START_DATE, END_DATE = datetime(2018, 11, 1), datetime(2021, 8, 31)
@@ -37,7 +39,6 @@ DEFAULT_DATE_RANGES = [
     ('2020-02-01', '2020-05-31'),
     ('2021-05-01', '2021-08-31'),
 ]
-
 DEFAULT_PERIOD_TO_RANGE = {
     'Summer 2019':          DEFAULT_DATE_RANGES[0],
     'Pre-COVID-19 Summer':  DEFAULT_DATE_RANGES[0],
@@ -49,12 +50,16 @@ DEFAULT_PERIOD_TO_RANGE = {
     'Post-COVID-19':        DEFAULT_DATE_RANGES[3],
 }
 
-
 GMM_KEY = 'gmm'
 COUNT_KEY = 'count'
 STATION_USAGE_KEY = 'station_usage'
 MODEL_NAME = 'model.pkl'
 EV_CHARGING_MODULE = 'sustaingym.envs.evcharging'
+
+
+def to_la_dt(s: str) -> datetime:
+    """Converts string '%Y-%m-%d' to datetime localized in LA Time."""
+    return datetime.strptime(s, DATE_FORMAT).astimezone(tz=AM_LA)
 
 
 def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
@@ -71,10 +76,10 @@ def get_sessions(start_date: datetime, end_date: datetime,
     """Retrieves charging sessions using ACNData.
 
     Args:
-        start_date: beginning time of interval in Pacific time, inclusive.
+        start_date: beginning time of interval in LA time, inclusive.
             Only year, month, and day are considered. The datetime should
-            be timezone-naive.
-        end_date: ending time of interval in Pacific time, exclusive. See
+            be localized in America/Los_Angeles.
+        end_date: ending time of interval in LA time, exclusive. See
             start_date.
         site: 'caltech' or 'jpl'
 
@@ -85,9 +90,9 @@ def get_sessions(start_date: datetime, end_date: datetime,
     Example:
         fall2020_sessions = get_sessions(datetime(2020, 9, 1), datetime(2020, 12, 1))
     """
-    start_date = US_PACIFIC.localize(start_date.replace(hour=0, minute=0, second=0)).astimezone(GMT)
+    start_date = start_date.replace(hour=0, minute=0, second=0).astimezone(GMT)
     start_time = start_date.strftime(DT_STRING_FORMAT)
-    end_date = US_PACIFIC.localize(end_date.replace(hour=0, minute=0, second=0)).astimezone(GMT)
+    end_date = end_date.replace(hour=0, minute=0, second=0).astimezone(GMT)
     end_time = end_date.strftime(DT_STRING_FORMAT)
 
     cond = f'connectionTime>="{start_time}" and connectionTime<="{end_time}"'
@@ -98,10 +103,15 @@ def get_sessions(start_date: datetime, end_date: datetime,
 def get_real_events(start_date: datetime, end_date: datetime,
                     site: SiteStr) -> pd.DataFrame:
     """Returns a pandas DataFrame of charging events.
+    
+    Either loads data from package or retrieves from ACN-Data.
 
     Args:
-        start_date: beginning time of interval, inclusive
-        end_date: ending time of interval, inclusive
+        start_date: beginning time of interval in LA time, inclusive.
+            Only year, month, and day are considered. The datetime should
+            be localized in America/Los_Angeles.
+        end_date: ending time of interval in LA time, exclusive. See
+            start_date.
         site: 'caltech' or 'jpl'
 
     Returns:
@@ -118,6 +128,33 @@ def get_real_events(start_date: datetime, end_date: datetime,
     Assumes:
         sessions are in Pacific time
     """
+    # search default date ranges
+    for date_range in DEFAULT_DATE_RANGES:
+        if to_la_dt(date_range[0]) <= start_date and end_date <= to_la_dt(date_range[1]) + timedelta(days=1):
+            file_name = f'{date_range[0]} {date_range[1]}.csv.gz'
+            module_path = os.path.dirname(sys.modules['sustaingym'].__file__)
+            file_path = os.path.join(module_path, 'data', 'acn_evcharging_data', site, file_name)
+            df = pd.read_csv(file_path, compression='gzip')
+
+            for time_col in ['arrival', 'departure', 'estimated_departure']:
+                df[time_col] = pd.to_datetime(df[time_col], utc=True).dt.tz_convert(AM_LA)
+
+            return df[(start_date <= df.arrival) & (df.arrival <= end_date + timedelta(days=1))].copy()
+    # otherwise, use API
+    return fetch_real_events(start_date, end_date, site)
+
+
+def fetch_real_events(start_date: datetime, end_date: datetime,
+                    site: SiteStr) -> pd.DataFrame:
+    """Returns a pandas DataFrame of charging events from ACN-Data.
+
+    Args:
+        *See get_real_events
+
+    Returns:
+        *See get_reala_events
+    """
+    # add timedelta to make start and end date inclusive
     sessions = get_sessions(start_date, end_date + timedelta(days=1), site=site)
 
     # TODO(chris): explore more efficient ways to convert JSON-like data to DataFrame
@@ -144,7 +181,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
         else:
             requested_energy = userInputs[0]['kWhRequested']
             est_depart_time = userInputs[0]['requestedDeparture']
-            est_depart_dt = acnd.utils.parse_http_date(est_depart_time, pytz.timezone('UTC'))
+            est_depart_dt = acnd.utils.parse_http_date(est_depart_time, GMT).astimezone(AM_LA)
             claimed = True
 
         d['requested_energy (kWh)'].append(requested_energy)
@@ -154,10 +191,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
         d['estimated_departure'].append(est_depart_dt)
         d['claimed'].append(claimed)
 
-    d['estimated_departure'] = np.array(d['estimated_departure'], dtype='datetime64')
-    df = pd.DataFrame(d)
-    df['estimated_departure'] = df['estimated_departure'].dt.tz_localize('UTC').dt.tz_convert('America/Los_Angeles')
-    return df
+    return pd.DataFrame(d)
 
 
 def get_folder_name(begin: str, end: str, n_components: int) -> str:

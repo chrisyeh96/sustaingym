@@ -17,7 +17,7 @@ import sklearn.mixture as mixture
 
 from .train_gmm_model import create_gmms
 from .utils import (COUNT_KEY, DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, GMM_KEY,
-                    MINS_IN_DAY, REQ_ENERGY_SCALE, DEFAULT_SAVE_DIR, STATION_USAGE_KEY, US_PACIFIC,
+                    MINS_IN_DAY, REQ_ENERGY_SCALE, DEFAULT_SAVE_DIR, STATION_USAGE_KEY, AM_LA,
                     DefaultPeriodStr, SiteStr, get_folder_name, load_gmm_model,
                     site_str_to_site, get_real_events)
 from ...load_moer import MOERLoader
@@ -55,7 +55,7 @@ class AbstractTraceGenerator:
                  recompute_freq: int,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
-                 random_seed=42
+                 random_seed: int = 42
                 ):
         """
         Args:
@@ -79,7 +79,7 @@ class AbstractTraceGenerator:
         self.site = site
         self.period = period
         self.recompute_freq = recompute_freq
-        self.date_range = tuple(datetime.strptime(x, DATE_FORMAT) for x in self.date_range_str)  # convert strings to datetime objects
+        self.date_range = tuple(datetime.strptime(x, DATE_FORMAT).replace(tzinfo=AM_LA) for x in self.date_range_str)  # convert strings to datetime objects
         self.requested_energy_cap = requested_energy_cap
         self.station_ids = site_str_to_site(site).station_ids
         self.num_stations = len(self.station_ids)
@@ -183,7 +183,7 @@ class AbstractTraceGenerator:
     def get_moer(self):
         """Retrieves MOER from the data loader.
         """
-        dt = self.day.replace(tzinfo=US_PACIFIC)
+        dt = self.day.replace(tzinfo=AM_LA)
         return self.moer_loader.retrieve(dt)
 
 
@@ -230,6 +230,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
             self.day = self.date_range[0] - timedelta(days=1)
         else:
             self._update_day()
+        self.events_df = get_real_events(self.date_range[0], self.date_range[1], site)
 
     def __repr__(self) -> str:
         """
@@ -261,7 +262,8 @@ class RealTraceGenerator(AbstractTraceGenerator):
             DataFrame of real sessions with datetimes in terms of timestamps.
         """
         self._update_day()
-        df = get_real_events(self.day, self.day, site=self.site)  # Get events dataframe
+        df = self.events_df[(self.day <= self.events_df.arrival) & 
+                            (self.events_df.arrival <= self.day + timedelta(days=1))]
         if not self.use_unclaimed:
             df = df[df['claimed']]
 
