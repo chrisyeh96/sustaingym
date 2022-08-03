@@ -26,7 +26,7 @@ DATE_FORMAT = '%Y-%m-%d'
 DT_STRING_FORMAT = '%a, %d %b %Y %H:%M:%S GMT'
 MINS_IN_DAY = 1440
 REQ_ENERGY_SCALE = 100
-START_DATE, END_DATE = datetime(2018, 11, 1), datetime(2021, 8, 31)
+START_DATE, END_DATE = datetime(2018, 11, 1, tzinfo=AM_LA), datetime(2021, 8, 31, tzinfo=AM_LA)
 
 ActionType = Literal['discrete', 'continuous']
 SiteStr = Literal['caltech', 'jpl']

@@ -2,7 +2,7 @@
 GMM training script.
 
 Example command line usage
-python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 50 --date_range 2020-02-01 2020-05-31
+python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
 
 usage: train_gmm_model.py [-h] [--site SITE] [--gmm_n_components GMM_N_COMPONENTS]
                           [--date_ranges DATE_RANGES [DATE_RANGES ...]]
@@ -30,10 +30,14 @@ import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 
-from .utils import DEFAULT_SAVE_DIR, DEFAULT_DATE_RANGES, get_real_events, get_folder_name, save_gmm_model, site_str_to_site, DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, SiteStr
+from .utils import (
+    DEFAULT_SAVE_DIR, DEFAULT_DATE_RANGES, AM_LA,
+    get_real_events, get_folder_name, save_gmm_model, site_str_to_site,
+    DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, SiteStr
+)
 
 
-def preprocess(df: pd.DataFrame) -> pd.DataFrame:
+def preprocess(df: pd.DataFrame, filter: bool = True) -> pd.DataFrame:
     """
     Preprocessing script for real event sessions before GMM modeling.
 
@@ -45,14 +49,16 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
     Args:
         df: DataFrame of charging events, expected to be gotten from
             get_real_events in the .utils module.
+        filter: option to filter cars staying overnight
 
     Returns:
         Filtered copy of DataFrame with normalized parameters.
     """
-    # Filter cars staying overnight
-    max_depart = np.maximum(df['departure'], df['estimated_departure'])
-    mask = (df['arrival'].dt.day == max_depart.dt.day)
-    df = df[mask].copy()
+    if filter:
+        # Filter cars staying overnight
+        max_depart = np.maximum(df['departure'], df['estimated_departure'])
+        mask = (df['arrival'].dt.day == max_depart.dt.day)
+        df = df[mask].copy()
 
     # Get arrival time, departure time, estimated departure time from datetimes and normalize between [0, 1]
     for col in ['arrival', 'departure', 'estimated_departure']:
@@ -110,7 +116,7 @@ def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime
     if len(date_range) % 2 != 0:
         raise ValueError(f'Number of dates must be divisible by 2, found length {len(date_range)} with the second later than the first.')
 
-    date_range_dt = [datetime.strptime(date_str, DATE_FORMAT) for date_str in date_range]
+    date_range_dt = [datetime.strptime(date_str, DATE_FORMAT).replace(tzinfo=AM_LA) for date_str in date_range]
     date_ranges = []
     for i in range(len(date_range) // 2):
         begin, end = date_range_dt[2 * i], date_range_dt[2 * i + 1]
@@ -149,7 +155,7 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     # check string dates can be converted to datetimes
     date_range_str = tuple(date_range[i].strftime(DATE_FORMAT) for i in range(2))
     range_str = date_range_str[0] + ' ' + date_range_str[1]
-    print(f'Fetching data from site {site.capitalize()} for date range {range_str}... ')
+    print(f'Getting data from site {site.capitalize()} for date range {range_str}... ')
 
     # Retrieve events and filter only claimed sessions
     df = get_real_events(date_range[0], date_range[1], site=site)
