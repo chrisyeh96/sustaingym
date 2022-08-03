@@ -13,9 +13,9 @@ optional arguments:
   --gmm_n_components GMM_N_COMPONENTS
   --date_ranges DATE_RANGES [DATE_RANGES ...]
                         Date ranges for GMM models to be trained on.
-                        Number of dates must be divisible by 2, 
-                        with the second later than the first. 
-                        Dates should be formatted as YYYY-MM-DD. 
+                        Number of dates must be divisible by 2,
+                        with the second later than the first.
+                        Dates should be formatted as YYYY-MM-DD.
                         Supported ranges in between 2018-11-01 and 2021-08-31.
 """
 from __future__ import annotations
@@ -38,8 +38,7 @@ from .utils import (
 
 
 def preprocess(df: pd.DataFrame, filter: bool = True) -> pd.DataFrame:
-    """
-    Preprocessing script for real event sessions before GMM modeling.
+    """Preprocessing script for real event sessions before GMM modeling.
 
     Filters EVs with departures / estimated departures on a different date
     than arrival date. The arrival, departure, and estimated departure are
@@ -71,12 +70,11 @@ def preprocess(df: pd.DataFrame, filter: bool = True) -> pd.DataFrame:
 
 
 def station_id_cnts(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
-    """
-    Returns the usage counts for a network's charging station ids.
+    """Returns the usage counts for a network's charging station ids.
 
     Args:
         df: DataFrame of session observations.
-        n2i: dictionary mapping charging station id to position in numpy array.
+        n2i: dict mapping charging station id to position in numpy array.
 
     Returns:
         cnts: number of sessions associated with each station id.
@@ -94,9 +92,7 @@ def station_id_cnts(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
 
 
 def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime, datetime]]:
-    """
-    Parses a sequence of date ranges in string form and convert them to
-    datetimes.
+    """Converts a sequence of date ranges from string form to datetimes.
 
     Args:
         date_range: an even-length sequence of dates. Each consecutive pair of
@@ -134,8 +130,7 @@ def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime
 
 
 def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, datetime]) -> None:
-    """
-    Creates a custom GMM and saves in the `gmms_ev_charging` folder.
+    """Creates a custom GMM and saves in the `gmms_ev_charging` folder.
 
     Args:
         site: either 'caltech' or 'jpl'
@@ -169,7 +164,7 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     # get counts and station ids data
     cnt = df.arrival.dt.date.value_counts().to_numpy()
     num_unseen_days = num_days_total - len(cnt)  # account for days when there are no EVs
-    cnt = np.concatenate((cnt, np.zeros(num_unseen_days, )))
+    cnt = np.concatenate((cnt, np.zeros(num_unseen_days)))
 
     sid = station_id_cnts(df, n2i)
 

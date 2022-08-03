@@ -8,9 +8,9 @@ import requests
 import sys
 from typing import Literal
 
+import numpy as np
 import pandas as pd
 import pytz
-
 
 DataTypeStr = Literal['historical', 'forecasted']
 
@@ -22,10 +22,10 @@ DEFAULT_DATE_RANGES = [
 ]
 DATE_FORMAT = '%Y-%m-%d'
 
-
+# TODO: use os.environ['SGIPSIGNAL_USERNAME'] by default. If mising, then
+# default to the following:
 USERNAME = 'caltech'
 PASSWORD = 'caltechsgip.2022'
-EMAIL = 'cyeh@caltech.edu'
 
 LOGIN_URL = 'https://sgipsignal.com/login/'
 DATA_URLS = {
@@ -72,17 +72,20 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) 
         endtime: end time for data. See starttime.
         ba: balancing authority, responsible for region grid operation.
         req_type: either 'historical' or 'forecast'
+
     Returns:
         A single-column DataFrame containing either historical or forecasted
-            rates with a DateTimeIndex labeled as time. The time index type
+            rates with a DateTimeIndex named as "time". The time index type
             is datetime64[ns, UTC] (in UTC time).
         If forecast:
             forecast                  float64
         If historical:
             moer                      float64
+
     Notes:
         Historical queries are limited to 31 days. Queries on forecasts
         are limited to 1 day.
+
     Examples:
         starttimestr = '2021-02-20T00:00:00'
         endtimestr = '2021-02-20T23:10:00'
@@ -94,22 +97,19 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) 
     token = r.json()['token']
 
     # Create API fields
-    headers = {
-        'Authorization': f'Bearer {token}'
-    }
+    headers = {'Authorization': f'Bearer {token}'}
     params = dict(
         ba=ba,
         starttime=starttime,
         endtime=endtime,
-        version=DATA_VERSIONS[req_type]
-    )
+        version=DATA_VERSIONS[req_type])
 
     r = requests.get(DATA_URLS[req_type], params=params, headers=headers)
     df = pd.DataFrame(r.json())
 
     if req_type == 'forecasted':
         df['forecast'] = df['forecast'].map(lambda x: x[0]['value'])  # take next 5-min prediction
-    
+
     time_column = TIME_COLUMN[req_type]
     moer_column = MOER_COLUMN[req_type]
 
@@ -122,16 +122,17 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
     """Retrieves both forecasted and historical data.
 
     May request forecasted data repeatedly due to API constraints.
-    See notes section in get_data_sgip for more info.
+    See notes section in get_data_sgip() for more info.
 
     Args:
         starttime: start time. A timezone-aware datetime object. If not
             timezone-aware, assumes UTC time.
         endtime: timezone-aware datetime object. See starttime.
         ba: balancing authority, responsible for region grid operation.
+
     Returns:
         A 2-column DataFrame containing both historical and forecasted
-            rates with a DateTimeIndex labeled as time. The time index type
+            rates with a DateTimeIndex named as "time". The index type
             is datetime64[ns, UTC] (in UTC time).
             forecast                  float64
             moer                      float64
@@ -161,13 +162,14 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
             req_starttimestr = datetime.strftime(req_starttime, SGIP_DT_FORMAT)
             req_endtimestr = datetime.strftime(req_endtime, SGIP_DT_FORMAT)
             print(f"Retrieving {ba} {req_type}: {req_starttimestr}, {req_endtimestr}")
-            df = get_data_sgip(req_starttimestr, req_endtimestr, ba, req_type)
+            df = get_data_sgip(req_starttimestr, req_endtimestr, ba, req_type)  # type: ignore
             df.sort_index(axis=0, ascending=False, inplace=True)
 
             # Update request span
             req_endtime -= span
             req_starttime = max(starttime, req_endtime - span + FIVEMINS)
 
+            # Drop last row to avoid duplicate row (from next CSV)
             if df.index[-1] == req_endtime:
                 df.drop(df.tail(1).index, inplace=True)
 
@@ -183,7 +185,7 @@ def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
 
     Saves month of forecasted and historical data from the balancing
     authority to a compressed csv file. May request forecasted data repeatedly
-    due to API constraints. See notes section in get_data_sgip for more info. 
+    due to API constraints. See notes section in get_data_sgip() for more info.
 
     Args:
         year: year of requested month
@@ -203,7 +205,10 @@ def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
     starttime = datetime(year, month, 1, tzinfo=pytz.UTC)
     endtime = datetime(year, month, num_days, tzinfo=pytz.UTC)
     df = get_historical_and_forecasts(starttime, endtime, ba)
-    df = df.fillna(method='bfill')
+
+    # data sometimes has NaNs. In these cases, propagate values forward in time.
+    # We use "bfill" because the dataframe is sorted backwards in time.
+    df.fillna(method='bfill', inplace=True)
     df.to_csv(save_path, compression=COMPRESSION, index=True)  # keep datetime index
 
 
@@ -233,7 +238,7 @@ def save_moer(starttime: datetime, endtime: datetime, ba: str) -> None:
             smonth += 1
 
 
-def save_moer_default_ranges():
+def save_moer_default_ranges() -> None:
     """Saves all monthly data for default date ranges.
 
     Repeatedly calls ``save_moer()`` for all months spanned by the default
@@ -265,8 +270,8 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     file_path = os.path.join(save_dir, file_name)
     # search default models
     if not os.path.exists(file_path):  # TODO having trouble with gzip - work-around
-        module_path = os.path.dirname(sys.modules['sustaingym'].__file__)
-        file_path = os.path.join(module_path, 'data', 'moer_data', file_name)
+        module_path = os.path.dirname(sys.modules['sustaingym'].__file__)  # type: ignore
+        file_path = os.path.join(module_path, 'data', 'moer_data', file_name)  # type: ignore
 
     df = pd.read_csv(file_path,
                      compression=COMPRESSION,
@@ -284,10 +289,11 @@ def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str) ->
         endtime: end time for data. See starttime.
         ba: balancing authority, responsible for region grid operation.
         save_dir: directory to load compressed csv from.
+
     Returns:
         A DataFrame of the emission rates for the all months of overlap. See
         ``get_historical_and_forecasts()`` for more info.
-    
+
     Examples:
         starttime, endtime = datetime(2021, 2, 1), datetime(2021, 5, 31)
         ba = 'SGIP_CAISO_PGE'
@@ -296,7 +302,7 @@ def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str) ->
     syear, smonth = starttime.year, starttime.month
     eyear, emonth = endtime.year, endtime.month
 
-    dfs = []
+    dfs: list[pd.DataFrame] = []
     # Go backwards in time so order is descending
     while (syear < eyear) or (syear == eyear and smonth <= emonth):
         df = load_monthly_moer(eyear, emonth, ba, save_dir)
@@ -329,18 +335,18 @@ class MOERLoader:
         """
         self.df = load_moer(starttime, endtime, ba, save_dir)
 
-    def retrieve(self, dt: datetime) -> pd.DataFrame:
+    def retrieve(self, dt: datetime) -> np.ndarray:
         """Retrieves MOER data from attribute.
 
         Returns data starting at datetime for the next 24 hours. Assumes that
         dt is a timezone-aware datetime object.
 
         Args:
-            dt: a timezone-aware datetime object. 
+            dt: a timezone-aware datetime object
 
         Returns:
-            A DataFrame of shape (289, 2). The first column is the historical
-                MOER and the second the forecasted; both are in units 
+            array of shape (289, 2). The first column is the historical
+                MOER and the second the forecasted; both are in units
                 kg * CO2 per kWh. Note that the "rows" are backwards, in that
                 the most recent rates are at the top, sorted descending.
         """

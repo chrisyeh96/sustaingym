@@ -103,7 +103,7 @@ def get_sessions(start_date: datetime, end_date: datetime,
 def get_real_events(start_date: datetime, end_date: datetime,
                     site: SiteStr) -> pd.DataFrame:
     """Returns a pandas DataFrame of charging events.
-    
+
     Either loads data from package or retrieves from ACN-Data.
 
     Args:

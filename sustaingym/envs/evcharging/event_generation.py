@@ -87,24 +87,18 @@ class AbstractTraceGenerator:
         self.rng = np.random.default_rng(seed=random_seed)
 
     def __repr__(self) -> str:
-        """
-        Returns the string representation of the generator object.
-        """
+        """Returns string representation of the generator object."""
         site = f'{self.site.capitalize()} site'
         dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
         return f'AbstractTraceGenerator from the {site} {dr}. '
-    
-    def _update_day(self):
-        """
-        Randomly sets ``day`` to a day in the date range.
-        """
+
+    def _update_day(self) -> None:
+        """Randomly sets ``day`` to a day in the date range."""
         interval_length = (self.date_range[1] - self.date_range[0]).days + 1  # make inclusive
         self.day = self.date_range[0] + timedelta(days=self.rng.choice(interval_length))
-    
-    def set_random_seed(self, random_seed):
-        """
-        Sets random seed to make sampling reproducible.
-        """
+
+    def set_random_seed(self, random_seed) -> None:
+        """Sets random seed to make sampling reproducible."""
         self.rng = np.random.default_rng(seed=random_seed)
 
     def _create_events(self) -> pd.DataFrame:
@@ -179,10 +173,10 @@ class AbstractTraceGenerator:
                 events.append(event)
         events = acns.EventQueue(events)
         return events, evs, num_plugin
-    
+
+    # TODO(victor): typing annotation for return type
     def get_moer(self):
-        """Retrieves MOER from the data loader.
-        """
+        """Retrieves MOER from the data loader."""
         dt = self.day.replace(tzinfo=AM_LA)
         return self.moer_loader.retrieve(dt)
 
@@ -242,9 +236,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
         return f'RealTracesGenerator from the {site} {dr}. Current day {day}. '
 
     def _update_day(self) -> None:
-        """
-        Either increments day or randomly samples from date range.
-        """
+        """Either increments day or randomly samples from date range."""
         if self.sequential:
             self.day += timedelta(days=1)
             if self.day > self.date_range[1]:  # cycle back when the day has exceeded the current range
@@ -262,7 +254,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
             DataFrame of real sessions with datetimes in terms of timestamps.
         """
         self._update_day()
-        df = self.events_df[(self.day <= self.events_df.arrival) & 
+        df = self.events_df[(self.day <= self.events_df.arrival) &
                             (self.events_df.arrival <= self.day + timedelta(days=1))]
         if not self.use_unclaimed:
             df = df[df['claimed']]
@@ -338,7 +330,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         Args:
             n_components: number of components in GMM
             *See AbstractTraceGenerator for more arguments
-        
+
         Notes:
             The generator first searches for a matching GMM directory. If
             unfound, it creates one.
@@ -355,7 +347,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             create_gmms(site, n_components, [self.date_range_str])
             data = load_gmm_model(model_path)
         self.gmm: mixture.GaussianMixture = data[GMM_KEY]
-        self.cnt: np.ndarray =  data[COUNT_KEY]
+        self.cnt: np.ndarray = data[COUNT_KEY]
         self.station_usage: np.ndarray = data[STATION_USAGE_KEY]
 
     def __repr__(self) -> str:
@@ -365,7 +357,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         site = f'{self.site.capitalize()} site'
         dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
         return f'GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
-    
+
     def set_random_seed(self, random_seed):
         """
         Sets random seed to make GMM sampling reproducible.
@@ -387,15 +379,15 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                 minutes, and requested energy in kWh.
         """
         # use while loop for quality check
-        all_samples, all_samples_length = [], 0
-        while all_samples_length < n:
+        all_samples = []
+        while len(all_samples) < n:
             samples = self.gmm.sample(int(n * (1 + oversample_factor)))[0]  # shape (1.5n, 4)
-            
+
             # discard sample if arrival, departure, estimated departure or
-            #  requested energy not in bound
+            # requested energy not in bound
             samples = samples[
                 (0 <= samples[:, ARRCOL]) &
-                (samples[:, DEPCOL] < 1) & 
+                (samples[:, DEPCOL] < 1) &
                 (samples[:, ESTCOL] < 1) &
                 (samples[:, EREQCOL] >= 0)
             ]
@@ -413,10 +405,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             samples[:, EREQCOL] *= REQ_ENERGY_SCALE
 
             all_samples.append(samples)
-            all_samples_length += len(samples)
 
-            if all_samples_length >= n:
-                break
         return np.concatenate(all_samples, axis=0)[:n]
 
 

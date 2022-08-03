@@ -1,7 +1,9 @@
-from sustaingym.envs.evcharging.utils import *
-from datetime import datetime, timedelta
+"""Script to download data from ACNData."""
+from datetime import datetime
 import os
-import pandas as pd
+
+from sustaingym.envs.evcharging.utils import *
+
 
 print(DEFAULT_DATE_RANGES)
 print(DATE_FORMAT)
@@ -17,4 +19,4 @@ for start, end in DEFAULT_DATE_RANGES:
         fname = f'{start} {end}.csv'
         fpath = os.path.join(fdir, fname)
 
-        df.to_csv(fpath, compression='gzip', index=False)   
+        df.to_csv(fpath, compression='gzip', index=False)
