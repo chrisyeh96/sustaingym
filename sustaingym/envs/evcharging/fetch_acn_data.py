@@ -16,7 +16,7 @@ for start, end in DEFAULT_DATE_RANGES:
 
         fdir = os.path.join('sustaingym', 'data', 'acn_evcharging_data', site)
         os.makedirs(fdir, exist_ok=True)
-        fname = f'{start} {end}.csv'
+        fname = f'{start} {end}.csv.gz'
         fpath = os.path.join(fdir, fname)
 
         df.to_csv(fpath, compression='gzip', index=False)

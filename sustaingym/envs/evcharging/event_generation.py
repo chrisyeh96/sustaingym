@@ -97,7 +97,7 @@ class AbstractTraceGenerator:
         interval_length = (self.date_range[1] - self.date_range[0]).days + 1  # make inclusive
         self.day = self.date_range[0] + timedelta(days=self.rng.choice(interval_length))
 
-    def set_random_seed(self, random_seed) -> None:
+    def set_random_seed(self, random_seed: int) -> None:
         """Sets random seed to make sampling reproducible."""
         self.rng = np.random.default_rng(seed=random_seed)
 
@@ -174,8 +174,7 @@ class AbstractTraceGenerator:
         events = acns.EventQueue(events)
         return events, evs, num_plugin
 
-    # TODO(victor): typing annotation for return type
-    def get_moer(self):
+    def get_moer(self) -> np.ndarray:
         """Retrieves MOER from the data loader."""
         dt = self.day.replace(tzinfo=AM_LA)
         return self.moer_loader.retrieve(dt)
@@ -358,13 +357,10 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
         return f'GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
 
-    def set_random_seed(self, random_seed):
-        """
-        Sets random seed to make GMM sampling reproducible.
-        """
+    def set_random_seed(self, random_seed: int) -> None:
+        """Sets random seed to make GMM sampling reproducible."""
         super().set_random_seed(random_seed)
         self.gmm.set_params(**{'random_state': random_seed})
-
 
     def _sample(self, n: int, oversample_factor: float = 0.2) -> np.ndarray:
         """Returns samples from GMM.
@@ -407,7 +403,6 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             all_samples.append(samples)
 
         return np.concatenate(all_samples, axis=0)[:n]
-
 
     def _create_events(self) -> pd.DataFrame:
         """Creates artificial events for the event queue.

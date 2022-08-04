@@ -24,7 +24,8 @@ VOLTAGE = 208
 MARGINAL_REVENUE_PER_KWH = 0.10  # revenue in $ / kWh
 CO2_COST_PER_METRIC_TON = 30.85
 A_MINS_TO_KWH = (1 / 60) * VOLTAGE * (1 / 1000)
-VIOLATION_WEIGHT = 0.02  # cost in $ / kWh of violation
+VIOLATION_WEIGHT = 0.005  # cost in $ / kWh of violation
+REVENUE_FACTOR = A_MINS_TO_KWH * MARGINAL_REVENUE_PER_KWH
 VIOLATION_FACTOR = A_MINS_TO_KWH * VIOLATION_WEIGHT
 CARBON_COST_FACTOR = A_MINS_TO_KWH * (1 / 1000) * CO2_COST_PER_METRIC_TON
 
@@ -410,14 +411,9 @@ class EVChargingEnv(gym.Env):
 
         interval_mins = (self.timestamp - self.prev_timestamp) * self.period
 
-        # Total revenue ($)
-        # TODO(victor): use per-time-step revenue
-        revenue = 0.
-        if done:
-            energy_delivered = 0.
-            for ev in self.evs:
-                energy_delivered += ev.energy_delivered
-            revenue = energy_delivered * MARGINAL_REVENUE_PER_KWH
+        # revenue calculation (Amp * period) -> (Amp * mins) -> (KWH) -> ($)
+        revenue = np.sum(self.simulator.charging_rates[:, self.prev_timestamp: self.timestamp])
+        revenue *= self.period * A_MINS_TO_KWH * MARGINAL_REVENUE_PER_KWH
 
         # Network constraints - amount of charge over maximum allowed rates ($)
         current_sum = np.abs(self.simulator.network.constraint_current(schedule))
@@ -471,7 +467,7 @@ if __name__ == "__main__":
         print("----------------------------")
         print("----------------------------")
         print(generator.site)
-        env1 = EVChargingEnv(generator, action_type='continuous', project_action=False)
+        env1 = EVChargingEnv(generator, action_type='discrete', project_action=False)
         # env2 = EVChargingEnv(generator, action_type='discrete', project_action=True)
         # env3 = EVChargingEnv(generator, action_type='continuous', project_action=False)
         # env4 = EVChargingEnv(generator, action_type='continuous', project_action=True)
@@ -479,10 +475,10 @@ if __name__ == "__main__":
         start = time.time()
         for env in [env1]:#[env1, env2, env3, env4]:
             all_rewards = 0.
-            for _ in range(10):
+            for _ in range(3):
                 observation = env.reset()
 
-                # greedy_alg = GreedyAlgorithm(env)
+                greedy_alg = GreedyAlgorithm(env)
                 rewards = 0.
                 done = False
                 i = 0
@@ -492,7 +488,8 @@ if __name__ == "__main__":
                     # print(env, " stepping")
                     # print(env.__repr__())
                     # action = np.ones((54,)) * 4
-                    action = np.random.randint(size=(54,), low=0, high=5)
+                    action = np.random.randint(size=(54,), low=4, high=5)
+                    # action = greedy_alg.get_action(observation)
                     observation, reward, done, info = env.step(action)
 
                     for k in info['reward']:
@@ -506,11 +503,11 @@ if __name__ == "__main__":
                 print("total iterations: ", i)
                 print("total reward: ", rewards)
                 for k, v in d2.items():
-                    print("mean: ", k, v)
+                    print("about total: ", k, v * 200)
                 all_rewards += rewards
                 print("\n")
 
         print("Total time: ", time.time() - start)
-        print("Average rewards: ", all_rewards / 10)
+        print("Average rewards: ", all_rewards / 3)
     env.close()
     print(env.max_timestamp)

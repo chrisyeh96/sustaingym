@@ -22,10 +22,11 @@ DEFAULT_DATE_RANGES = [
 ]
 DATE_FORMAT = '%Y-%m-%d'
 
-# TODO: use os.environ['SGIPSIGNAL_USERNAME'] by default. If mising, then
-# default to the following:
-USERNAME = 'caltech'
-PASSWORD = 'caltechsgip.2022'
+USERNAME = os.environ.get('SGIPSIGNAL_USER')
+PASSWORD = os.environ.get('SGIPSIGNAL_PASS')
+if USERNAME is None or PASSWORD is None:
+    USERNAME = 'caltech'
+    PASSWORD = 'caltechsgip.2022'
 
 LOGIN_URL = 'https://sgipsignal.com/login/'
 DATA_URLS = {
@@ -48,7 +49,7 @@ MOER_COLUMN = {
 SGIP_DT_FORMAT = '%Y-%m-%dT%H:%M:%S'  # ISO 8601 timestamp
 
 FNAME_FORMAT_STR = '{ba}_{year}-{month:02}.csv.gz'
-DEFAULT_SAVE_DIR = 'moer_data'
+DEFAULT_SAVE_DIR = 'moer_data2'
 COMPRESSION = 'gzip'
 INDEX_NAME = 'time'
 
@@ -203,7 +204,7 @@ def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
     # Find range of dates for month and retrieve data
     num_days = calendar.monthrange(year, month)[1]
     starttime = datetime(year, month, 1, tzinfo=pytz.UTC)
-    endtime = datetime(year, month, num_days, tzinfo=pytz.UTC)
+    endtime = datetime(year, month, num_days, tzinfo=pytz.UTC) + ONEDAY
     df = get_historical_and_forecasts(starttime, endtime, ba)
 
     # data sometimes has NaNs. In these cases, propagate values forward in time.
@@ -276,7 +277,7 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     df = pd.read_csv(file_path,
                      compression=COMPRESSION,
                      index_col=INDEX_NAME)
-    # TODO load in data from API using save_moer() if found in neither
+
     df.index = pd.to_datetime(pd.DatetimeIndex(df.index))  # set datetime index to UTC
     return df
 
