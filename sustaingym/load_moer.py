@@ -178,6 +178,7 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
         dfs = pd.concat(dfs, axis=0)
         combined_dfs.append(dfs)
     combined_dfs = pd.concat(combined_dfs, axis=1)
+    combined_dfs.sort_index(axis=0, ascending=False, inplace=True)
     return combined_dfs
 
 
