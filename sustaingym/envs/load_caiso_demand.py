@@ -33,7 +33,7 @@ def get_demand_and_forecast_on_date(date: datetime.date) -> tuple[pd.Series, pd.
     df['Time'] = TIME_INDEX
 
     # drop last row, which is the '00:00' time step of the next day
-    df.drop(df.tail(1).index, inplace=True)
+    # df.drop(df.tail(1).index, inplace=True)
     df.set_index('Time', inplace=True)
 
     net_demand = df['Net demand']
@@ -73,8 +73,8 @@ def get_demand_and_forecast_on_month(year: int, month: int) -> tuple[pd.DataFram
 
 if __name__ == '__main__':
     for year in [2019, 2020, 2021]:
-        for month in tqdm([3, 4, 5]):
-            demand_df, forecast_df = get_demand_and_forecast_on_month(2021, 5)
+        for month in tqdm([3, 4, 5, 6, 7, 8]):
+            demand_df, forecast_df = get_demand_and_forecast_on_month(year, month)
 
             csv_path = f'data/CAISO-netdemand-{year}-{month:02d}.csv.gz'
             demand_df.to_csv(csv_path, compression='gzip')

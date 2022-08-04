@@ -12,12 +12,9 @@ from typing import Literal
 import pandas as pd
 import pytz
 
-from .envs.evcharging.utils import DEFAULT_DATE_RANGES, DATE_FORMAT
-
 DEFAULT_DATE_RANGES = [
     ('2019-05-01', '2019-08-31'),
-    ('2019-09-01', '2019-12-31'),
-    ('2020-02-01', '2020-05-31'),
+    ('2020-05-01', '2020-08-31'),
     ('2021-05-01', '2021-08-31'),
 ]
 
@@ -54,7 +51,7 @@ DEFAULT_SAVE_DIR = 'moer_data'
 COMPRESSION = 'gzip'
 INDEX_NAME = 'time'
 
-BALANCING_AUTHORITIES = ['SGIP_CAISO_PGE', 'SGIP_CAISO_SCE',]
+BALANCING_AUTHORITIES = ['SGIP_CAISO_SCE',]
 
 FIVEMINS = timedelta(seconds=300)
 ONEDAY = timedelta(days=1)
