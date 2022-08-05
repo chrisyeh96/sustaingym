@@ -1,4 +1,7 @@
-"""This module contains utility methods for interacting with data and GMMs."""
+"""
+This module contains utility methods for interacting with ACN-data
+and GMMs.
+"""
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -23,16 +26,17 @@ DEFAULT_SAVE_DIR = 'gmms_ev_charging'
 AM_LA = pytz.timezone('America/Los_Angeles')
 GMT = pytz.timezone('GMT')
 DATE_FORMAT = '%Y-%m-%d'
-DT_STRING_FORMAT = '%a, %d %b %Y %H:%M:%S GMT'
+DT_STRING_FORMAT = '%a, %d %b %Y %H:%M:%S GMT'  # for API call
 MINS_IN_DAY = 1440
 REQ_ENERGY_SCALE = 100
-START_DATE, END_DATE = datetime(2018, 11, 1, tzinfo=AM_LA), datetime(2021, 8, 31, tzinfo=AM_LA)
+START_DATE = datetime(2018, 11, 1, tzinfo=AM_LA)
+END_DATE = datetime(2021, 8, 31, tzinfo=AM_LA)
 
 ActionType = Literal['discrete', 'continuous']
 SiteStr = Literal['caltech', 'jpl']
-DefaultPeriodStr = Literal['Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer 2021',
-'Pre-COVID-19 Summer', 'Pre-COVID-19 Fall', 'In-COVID-19', 'Post-COVID-19']
-
+DefaultPeriodStr = Literal['Summer 2019', 'Fall 2019', 'Spring 2020',
+                           'Summer 2021', 'Pre-COVID-19 Summer',
+                           'Pre-COVID-19 Fall', 'In-COVID-19', 'Post-COVID-19']
 DEFAULT_DATE_RANGES = [
     ('2019-05-01', '2019-08-31'),
     ('2019-09-01', '2019-12-31'),
@@ -76,11 +80,10 @@ def get_sessions(start_date: datetime, end_date: datetime,
     """Retrieves charging sessions using ACNData.
 
     Args:
-        start_date: beginning time of interval in LA time, inclusive.
-            Only year, month, and day are considered. The datetime should
-            be localized in America/Los_Angeles.
-        end_date: ending time of interval in LA time, exclusive. See
-            start_date.
+        start_date: beginning time of interval. Only year, month, and day
+            are considered. The datetime is expected to be localized in
+            LA time, the timezone of the charging garages.
+        end_date: ending time of interval, exclusive. See start_date.
         site: 'caltech' or 'jpl'
 
     Returns:
@@ -100,19 +103,12 @@ def get_sessions(start_date: datetime, end_date: datetime,
     return data_client.get_sessions(site, cond=cond)
 
 
-def get_real_events(start_date: datetime, end_date: datetime,
+def fetch_real_events(start_date: datetime, end_date: datetime,
                     site: SiteStr) -> pd.DataFrame:
-    """Returns a pandas DataFrame of charging events.
-
-    Either loads data from package or retrieves from ACN-Data.
+    """Returns a pandas DataFrame of charging events from ACN-Data.
 
     Args:
-        start_date: beginning time of interval in LA time, inclusive.
-            Only year, month, and day are considered. The datetime should
-            be localized in America/Los_Angeles.
-        end_date: ending time of interval in LA time, exclusive. See
-            start_date.
-        site: 'caltech' or 'jpl'
+        *See get_sessions()
 
     Returns:
         DataFrame containing charging info.
@@ -124,38 +120,9 @@ def get_real_events(start_date: datetime, end_date: datetime,
             session_id                str
             estimated_departure       datetime64[ns, America/Los_Angeles]
             claimed                   bool
-
-    Assumes:
-        sessions are in Pacific time
-    """
-    # search default date ranges
-    for date_range in DEFAULT_DATE_RANGES:
-        if to_la_dt(date_range[0]) <= start_date and end_date <= to_la_dt(date_range[1]) + timedelta(days=1):
-            file_name = f'{date_range[0]} {date_range[1]}.csv.gz'
-            module_path = os.path.dirname(sys.modules['sustaingym'].__file__)
-            file_path = os.path.join(module_path, 'data', 'acn_evcharging_data', site, file_name)
-            df = pd.read_csv(file_path, compression='gzip')
-
-            for time_col in ['arrival', 'departure', 'estimated_departure']:
-                df[time_col] = pd.to_datetime(df[time_col], utc=True).dt.tz_convert(AM_LA)
-
-            return df[(start_date <= df.arrival) & (df.arrival <= end_date + timedelta(days=1))].copy()
-    # otherwise, use API
-    return fetch_real_events(start_date, end_date, site)
-
-
-def fetch_real_events(start_date: datetime, end_date: datetime,
-                    site: SiteStr) -> pd.DataFrame:
-    """Returns a pandas DataFrame of charging events from ACN-Data.
-
-    Args:
-        *See get_real_events
-
-    Returns:
-        *See get_reala_events
     """
     # add timedelta to make start and end date inclusive
-    sessions = get_sessions(start_date, end_date + timedelta(days=1), site=site)
+    sessions = get_sessions(start_date, end_date, site=site)
 
     # TODO(chris): explore more efficient ways to convert JSON-like data to DataFrame
 
@@ -194,22 +161,52 @@ def fetch_real_events(start_date: datetime, end_date: datetime,
     return pd.DataFrame(d)
 
 
+def get_real_events(start_date: datetime, end_date: datetime,
+                    site: SiteStr) -> pd.DataFrame:
+    """Returns a pandas DataFrame of charging events.
+
+    Either loads data from package or retrieves from ACN-Data.
+
+    Args:
+        *See fetch_real_events(), except function is now inclusive of
+            ``end_date``
+
+    Returns:
+        *See fetch_real_events()
+    """
+    end_date += timedelta(days=1)
+    # search in package
+    for date_range in DEFAULT_DATE_RANGES:
+        if to_la_dt(date_range[0]) <= start_date and end_date <= to_la_dt(date_range[1]) + timedelta(days=1):
+            file_name = f'{date_range[0]} {date_range[1]}.csv.gz'
+            module_path = os.path.dirname(sys.modules['sustaingym'].__file__)
+            file_path = os.path.join(module_path, 'data', 'acn_evcharging_data', site, file_name)
+            df = pd.read_csv(file_path, compression='gzip')
+
+            for time_col in ['arrival', 'departure', 'estimated_departure']:
+                df[time_col] = pd.to_datetime(df[time_col], utc=True).dt.tz_convert(AM_LA)
+
+            return df[(start_date <= df.arrival) & (df.arrival <= end_date)].copy()
+    # data not found in package, use API
+    return fetch_real_events(start_date, end_date, site)
+
+
 def get_folder_name(begin: str, end: str, n_components: int) -> str:
     """Returns folder name for a trained GMM."""
     return begin + ' ' + end + ' ' + str(n_components)
 
 
 def save_gmm_model(gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarray, save_dir: str) -> None:
-    """Saves GMM and other information (presumably trained) to directory.
+    """Saves GMM (presumably trained) and other information to directory.
 
     Args:
         gmm: trained Gaussian Mixture Model
         cnt: a 1-D np.ndarray
-            the session counts per day during date period, expected to have
+            session counts per day during date period, expected to have
             the same length as the number of days, inclusive, in the date
             period
         station_usage: a 1-D np.ndarray
-            each station's usage counts for entire date period, expected to
+            stations' usage counts for entire date period, expected to
             have the same length as the number of stations in the network
         save_dir: save directory of gmm
     """
@@ -227,9 +224,6 @@ def save_gmm_model(gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarra
 def load_gmm_model(save_dir: str) -> dict[str, np.ndarray | mixture.GaussianMixture]:
     """Load pickled GMM and other data from folder.
 
-    First searches through custom folder. If not found, searches through
-    default models in package.
-
     Args:
         save_dir: save directory of gmm. If searching for a custom model,
             searches relative to the current working directory. If searching
@@ -238,14 +232,13 @@ def load_gmm_model(save_dir: str) -> dict[str, np.ndarray | mixture.GaussianMixt
             to save in.
 
     Returns:
-        A dictionary containing the following attributes:
-            'gmm' (mixture.GaussianMixture): train gmm with training data and
-                components as specified on folder
-            'count' (np.ndarray): the session counts per day
-            'station_usage' (np.ndarray): each station's usage counts for
-                entire sampling period
+        A dictionary containing the following key-value pairs:
+            'gmm' (mixture.GaussianMixture): trained gmm, date range and
+                components are specified on folder
+            'count' (np.ndarray): session counts per day
+            'station_usage' (np.ndarray): stations' usage counts for date range
     """
-    # first search through custom models
+    # search throuh custom folders
     if os.path.exists(save_dir):
         with open(os.path.join(save_dir, MODEL_NAME), 'rb') as f:
             return pickle.load(f)

@@ -30,11 +30,10 @@ import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 
-from .utils import (
-    DEFAULT_SAVE_DIR, DEFAULT_DATE_RANGES, AM_LA,
-    get_real_events, get_folder_name, save_gmm_model, site_str_to_site,
-    DATE_FORMAT, MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE, SiteStr
-)
+from .utils import (AM_LA, DEFAULT_SAVE_DIR, DEFAULT_DATE_RANGES, DATE_FORMAT,
+                    MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE,
+                    get_real_events, get_folder_name, save_gmm_model,
+                    site_str_to_site, SiteStr)
 
 
 def preprocess(df: pd.DataFrame, filter: bool = True) -> pd.DataFrame:
@@ -92,17 +91,15 @@ def station_id_cnts(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
 
 
 def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime, datetime]]:
-    """Converts a sequence of date ranges from string form to datetimes.
+    """Converts a sequence of string date ranges to datetimes.
 
     Args:
-        date_range: an even-length sequence of dates. Each consecutive pair of
-            dates describes a range of dates, with the first the start of the
-            range and the second the end. Each item must be a string with
-            format 'YYYY-MM-DD'. Each pair must describe a date range inside
-            the range 2018-11-01 and 2021-08-31.
+        date_range: an even-length sequence of string dates in the format
+            'YYYY-MM-DD'. Each consecutive pair describes a date range, and
+            should fall inside the range 2018-11-01 and 2021-08-31.
 
     Returns:
-        A sequence of 2-tuples that contain a begin and end datetime.
+        A sequence of 2-tuples containing a begin and end datetime.
 
     Raises:
         ValueError: length of date_range is odd
@@ -135,11 +132,9 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     Args:
         site: either 'caltech' or 'jpl'
         n_components: number of components of Gaussian mixture model
-        date_range: a 2-tuple describing a range of dates, with the first the
-            start of the range and the second the end. Each item must be a
-            datetime, and only the date of the objects is considered. The
-            range that the tuple describes must fall inside the range
-            2018-11-01 and 2021-08-31.
+        date_range: an even-length sequence of datetime objects. Each
+            consecutive pair describes a date range, and should fall
+            inside the range 2018-11-01 and 2021-08-31.
     """
     SAVE_DIR = os.path.join(DEFAULT_SAVE_DIR, site)
 
@@ -193,11 +188,9 @@ def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[tuple[st
     Args:
         site: either 'caltech' or 'jpl'
         n_components: number of components of Gaussian mixture model
-        date_range: a sequence of 2-tuples each describing a range of dates,
-            with the first the start of the range and the second the end.
-            Each item in the tuples must be a string with format 'YYYY-MM-DD',
-            and the tuples must describe a date range inside the range
-            2018-11-01 and 2021-08-31.
+        date_range: a sequence of 2-tuples of string dates in the format
+            'YYYY-MM-DD'. Each tuple describes a date range, and
+            should fall inside the range 2018-11-01 and 2021-08-31.
     """
     print('\n--- Training GMMs ---\n')
     for date_range in date_ranges:
