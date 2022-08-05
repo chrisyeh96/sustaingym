@@ -26,7 +26,7 @@ def get_demand_and_forecast_on_date(date: datetime.date) -> tuple[pd.Series, pd.
         forecast: Series of net demand forecast, same format as net_demand
     """
     date_str_url = date.strftime(r'%Y%m%d')
-    r = requests.get(f'https://www.caiso.com/outlook/SP/History/{date_str_url}/netdemand.csv')
+    r = requests.get(f'https://www.caiso.com/outlook/SP/History/{date_str_url}/demand.csv')
     df = pd.read_csv(StringIO(r.text))
 
     assert len(df) == 289
@@ -36,9 +36,9 @@ def get_demand_and_forecast_on_date(date: datetime.date) -> tuple[pd.Series, pd.
     # df.drop(df.tail(1).index, inplace=True)
     df.set_index('Time', inplace=True)
 
-    net_demand = df['Net demand']
+    print(df.columns)
+    net_demand = df['Current demand']
     net_demand.name = date
-
     forecast = df['Hour ahead forecast']
     forecast.name = date
 
@@ -76,7 +76,7 @@ if __name__ == '__main__':
         for month in tqdm([3, 4, 5, 6, 7, 8]):
             demand_df, forecast_df = get_demand_and_forecast_on_month(year, month)
 
-            csv_path = f'data/CAISO-netdemand-{year}-{month:02d}.csv.gz'
+            csv_path = f'data/CAISO-demand-{year}-{month:02d}.csv.gz'
             demand_df.to_csv(csv_path, compression='gzip')
 
             csv_path = f'data/CAISO-demand-forecast-{year}-{month:02d}.csv.gz'
