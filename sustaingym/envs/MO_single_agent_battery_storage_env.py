@@ -68,8 +68,8 @@ class MarketOperator:
         self.gen_costs.value = self.env.gen_costs
         self.bats_max_charge.value = self.env.bats_max_charge
         self.bats_max_discharge.value = self.env.bats_max_discharge
-        self.bats_charge_costs.value = self.env.bats_charge_costs
-        self.bats_discharge_costs.value = self.env.bats_discharge_costs
+        self.bats_discharge_costs.value = self.env.bats_costs[:, 0]
+        self.bats_charge_costs.value = self.env.bats_costs[:, 1]
         self.load.value = self.env.demand
         # print("gen_max_production: ", self.env.gen_max_production)
         # print("gen_costs: ", self.env.gen_costs)
@@ -103,8 +103,8 @@ class MarketOperator:
         bats_max_charge[-1] = 0
         bats_max_discharge[-1] = 0
 
-        bats_charge_costs = self.env.bats_charge_costs
-        bats_discharge_costs = self.env.bats_discharge_costs
+        bats_discharge_costs = self.env.bats_costs[:, 0]
+        bats_charge_costs = self.env.bats_costs[:, 1]
         # restrict agent to not charge or discharge
         bats_charge_costs[-1] = 10**20
         bats_discharge_costs[-1] = 0
@@ -178,8 +178,7 @@ class BatteryStorageInGridEnv(Env):
                  num_bats: int = 5,
                  battery_capacity: Sequence[float] = DEFAULT_BAT_CAPACITY,
                  bats_max_discharge_range: Sequence[Sequence[float]] = DEFAULT_BAT_MAX_RATES,
-                 bats_charge_costs: np.ndarray | None = None,
-                 bats_discharge_costs: np.ndarray | None = None,
+                 bats_costs: np.ndarray | None = None,
                  date: str = '2019-05',
                  seed: int | None = None,
                  LOCAL_FILE_PATH: str | None = None):
@@ -192,10 +191,8 @@ class BatteryStorageInGridEnv(Env):
             battery_capacity: shape [num_bats], capacity of each battery (MWh)
             bats_max_discharge_range: shape [num_bats, 2],
                 maximum charge (-) and discharge (+) rates of each battery (MW)
-            bats_charge_costs: shape [num_bats - 1], charging cost for each battery,
-                excluding the agent-controlled battery ($/MWh)
-            bats_discharge_costs: shape [num_bats - 1], discharging cost for each battery,
-                excluding the agent-controlled battery ($/MWh)
+            bats_costs: shape [num_bats - 1, 2], discharging and charging costs
+                for each battery, excluding the agent-controlled battery ($/MWh)
             date: string representing the year and month to load moer and net demand data
                 from
             seed: random seed
@@ -228,22 +225,16 @@ class BatteryStorageInGridEnv(Env):
         assert (self.bats_max_discharge_range[:, 0] < 0).all()
         assert (self.bats_max_discharge_range[:, 1] > 0).all()
 
-        self.init_bats_discharge_costs = np.zeros(self.num_bats)
-        if bats_discharge_costs is None:
-            self.init_bats_discharge_costs[:-1] = rng.uniform(50, 100, size=self.num_bats-1)
+        self.init_bats_costs = np.zeros((self.num_bats, 2))
+        if bats_costs is None:
+            self.init_bats_costs[:-1, 0] = rng.uniform(50, 100, size=self.num_bats-1)
+            self.init_bats_costs[:-1, 1] = 0.75 * self.init_bats_costs[:-1, 0]
         else:
-            assert len(bats_discharge_costs) == self.num_bats - 1
-            self.init_bats_discharge_costs[:-1] = bats_discharge_costs
-
-        self.init_bats_charge_costs = np.zeros(self.num_bats)
-        if bats_charge_costs is None:
-            self.init_bats_charge_costs[:-1] = 0.75 * self.init_bats_discharge_costs[:-1]
-        else:
-            assert len(bats_charge_costs) == self.num_bats - 1
-            self.init_bats_charge_costs[:-1] = bats_charge_costs
+            self.init_bats_costs[:-1] = bats_costs
+        assert (self.init_bats_costs >= 0).all()
 
         # determine the maximum possible cost of energy ($ / MWh)
-        max_init_cost = np.max(np.concatenate((self.init_gen_costs, self.init_bats_charge_costs, self.init_bats_discharge_costs)))
+        max_init_cost = max(self.init_gen_costs.max(), self.init_bats_costs.max())
         max_cost = max_init_cost * 1.025**self.MAX_STEPS_PER_EPISODE
 
         # action space is two values for the charging and discharging costs
@@ -273,6 +264,8 @@ class BatteryStorageInGridEnv(Env):
     def _get_demand_data(self) -> pd.DataFrame:
         """Get net demand data.
 
+        TODO: verify data is actually net demand
+
         Returns:
             DataFrame with net demand, columns are 'HH:MM' at 5-min intervals
         """
@@ -281,10 +274,14 @@ class BatteryStorageInGridEnv(Env):
         else:
             csv_path = f'data/CAISO-demand-{self.date}.csv.gz'
             bytes_data = pkgutil.get_data(__name__, csv_path)
-            return pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
+            df_demand = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
+            # TODO: assert shape of DataFrame
+            return df_demand / 1800.
 
     def _get_demand_forecast_data(self) -> pd.DataFrame:
         """Get temporal load forecast data.
+
+        TODO: verify data is actually net demand forecast
 
         Returns:
             Dataframe with demand forecast, columns are 'HH:MM' at 5-min intervals
@@ -294,10 +291,14 @@ class BatteryStorageInGridEnv(Env):
         else:
             csv_path = f'data/CAISO-demand-forecast-{self.date}.csv.gz'
             bytes_data = pkgutil.get_data(__name__, csv_path)
-            return pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
+            df_demand_forecast = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
+            # TODO: assert shape of DataFrame
+            return df_demand_forecast / 1800.
 
     def _get_moer_data(self) -> pd.DataFrame:
         """Get temporal moer data.
+
+        TODO: use gzip compression
 
         Returns:
             DataFrame with moer data
@@ -309,28 +310,16 @@ class BatteryStorageInGridEnv(Env):
             s = pkgutil.get_data(__name__, csv_path).decode('utf-8')
             return pd.read_csv(StringIO(s))
 
-    def _generate_load_data(self, count: int,
-                            rng: np.random.Generator | None = None)-> float:
+    def _generate_load_data(self, count: int) -> float:
         """Generate net demand for the time step associated with the given count.
 
         Args:
             count: integer representing a given time step
 
         Returns:
-            `float` representing the net demand for the given time step
+            net demand for the given time step (TODO: units)
         """
-        if count == 1:
-            # random index for the day in May
-            pos_ids = [
-                idx for idx in range(len(self.df_demand))
-                if not pd.isnull(self.df_demand.iloc[idx, :-1]).any()
-            ]
-            if rng is None:
-                rng = np.random.default_rng()
-            self.idx = rng.choice(pos_ids)
-        if self.LOCAL_PATH is not None:
-            return self.df_demand.iloc[self.idx, count-1]
-        return self.df_demand.iloc[self.idx, count-1] / 1800.0
+        return self.df_demand.iloc[self.idx, count]
 
     def _generate_load_forecast_data(self, count: int) -> float:
         """Generate hour ahead forecast of the net demand for the time step associated
@@ -340,52 +329,51 @@ class BatteryStorageInGridEnv(Env):
             count: integer representing a given time step
 
         Returns:
-            `float` representing the net demand for the given time step
+            net demand for the given time step (TODO: units)
         """
-        if self.LOCAL_PATH is not None:
-            return self.df_demand_forecast.iloc[self.idx, count]
-        return self.df_demand_forecast.iloc[self.idx, count] / 1800.0
+        if count > self.df_demand_forecast.shape[1]:
+            return np.nan
+        return self.df_demand_forecast.iloc[self.idx, count]
 
     def _generate_moer_data(self, count: int) -> float:
         """Generate moer data for the time step associated with the given count.
 
         Args:
             count: integer representing a given time step
-        
+
         Returns:
-            `float` representing the MOER value for the given time step
+            MOER value for the given time step (TODO: units)
         """
-        if self.LOCAL_PATH is not None:
-            return self.df_moer.iloc[self.idx, count-1]
-        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + (count-1), 1]
+        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + count, 1]
 
     def _generate_moer_forecast_data(self, count: int) -> float:
         """Generate fifteen minute ahead forecast of MOER data for the time step
         associated with the given count.
 
+        TODO: check that forecast and actual MOER values are aligned
+
         Args:
             count: integer representing a given time step
-        
+
         Returns:
-            `float` representing the forecasted MOER value for the given time step
+            forecasted MOER value for the given time step (TODO: units)
         """
-        if self.LOCAL_PATH is not None:
-            return self.df_moer.iloc[self.idx, count-1]
-        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + (count-1), 2]
+        if self.MAX_STEPS_PER_EPISODE * (self.idx + 1) + count > len(self.df_moer):
+            return np.nan
+        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + count, 2]
 
     def _get_time(self) -> float:
         """Determine the fraction of the day that has elapsed based on the current
         count.
 
         Returns:
-            `float` representing the fraction of the day that has elapsed
+            fraction of the day that has elapsed
         """
         return self.count / self.MAX_STEPS_PER_EPISODE
 
-    def reset(self,
-              seed: int | None = None,
-              return_info: bool = False,
-              options: dict | None = None) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
+    def reset(self, seed: int | None = None, return_info: bool = False,
+              options: dict | None = None
+              ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an instance of an episode for the BatteryStorageEnv.
 
         Args:
@@ -402,80 +390,77 @@ class BatteryStorageInGridEnv(Env):
 
         # initialize gen costs, battery charge costs, and battery discharge costs for all time steps
         self.all_gen_costs = self.init_gen_costs[:, None] * rng.uniform(0.8, 1.25, size=(self.num_gens, self.MAX_STEPS_PER_EPISODE))
-        self.all_bats_charge_costs = self.init_bats_charge_costs[:, None] * rng.uniform(0.8, 1.25, size=(self.num_bats, self.MAX_STEPS_PER_EPISODE))
-        self.all_bats_discharge_costs = self.init_bats_discharge_costs[:, None] * rng.uniform(0.8, 1.25, size=(self.num_bats, self.MAX_STEPS_PER_EPISODE))
+        self.all_bats_costs = self.init_bats_costs[:, None, :] * rng.uniform(0.8, 1.25, size=(self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
 
-        # enforce convexity of battery bids
-        self.all_bats_discharge_costs = np.maximum(self.all_bats_discharge_costs, self.all_bats_charge_costs)
+        # enforce convexity of battery bids:
+        # discharge costs must be >= charge costs
+        self.all_bats_costs[:, :, 0] = np.maximum(
+            self.all_bats_costs[:, :, 0], self.all_bats_costs[:, :, 1])
 
-        # initial values
-        self.gen_costs = self.all_gen_costs[:, 0]
-        self.bats_charge_costs = self.all_bats_charge_costs[:, 0]
-        self.bats_discharge_costs = self.all_bats_discharge_costs[:, 0]
+        # randomly pick a day for the episode, among the days with complete demand data
+        pos_ids = [
+            idx for idx in range(len(self.df_demand))
+            if not pd.isnull(self.df_demand.iloc[idx, :-1]).any()
+        ]
+        self.idx = rng.choice(pos_ids)
 
         self.action = np.zeros(2)
-        self.dispatch = 0.
-        self.count = 1  # counter for the step in current episode
+        self.dispatch = np.zeros(1)
+        self.count = 0  # counter for the step in current episode
         self.battery_charge = self.battery_capacity / 2.
 
-        self.reward_type = 0  # default reward type without moving price average
-        if options and 'reward' in options.keys():
-            if options.get('reward') == 1:
-                self.reward_type = 1
-
         self.init = True
-        self.demand = self._generate_load_data(self.count, rng)
-        self.demand_forecast = self._generate_load_forecast_data(self.count)
-        self.moer = 0.
-        self.moer_forecast = self._generate_moer_forecast_data(self.count)
+        self.demand = np.array([self._generate_load_data(self.count)])
+        self.demand_forecast = np.array([self._generate_load_forecast_data(self.count+1)])
+        self.moer = np.array([self._generate_moer_data(self.count)])
+        self.moer_forecast = np.array([self._generate_moer_forecast_data(self.count+1)])
+        self.time = np.array([self._get_time()])
 
         # set up observations
-        obs = {
+        self.obs = {
             "energy": self.battery_charge[-1:],
-            "time": np.array([self._get_time()], dtype=np.float32),
+            "time": self.time,
             "previous action": self.action,
-            "previous agent dispatch": np.array([self.dispatch], dtype=np.float32),
-            "demand previous": np.array([self.demand], dtype=np.float32),
-            "demand forecast": np.array([self.demand_forecast], dtype=np.float32),
-            "moer previous": np.array([self.moer], dtype=np.float32),
-            "moer forecast": np.array([self.moer_forecast], dtype=np.float32)
+            "previous agent dispatch": self.dispatch,
+            "demand previous": self.demand,
+            "demand forecast": self.demand_forecast,
+            "moer previous": self.moer,
+            "moer forecast": self.moer_forecast
         }
         # TODO: figure what additional info could be helpful here
         info = {"curr info": None}
-        return obs if not return_info else (obs, info)
+        return self.obs if not return_info else (self.obs, info)
 
     def step(self, action: Sequence[float]) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
         """Executes a single time step in the environments current trajectory.
 
         Args:
             action: array of shape [2], two float values representing
-                charging and discharging costs during this time step
+                discharging and charging costs during this time step
 
         Returns:
             dict representing the resulting state from that action
         """
         assert self.init
-        assert self.reward_type == 0
         assert self.action_space.contains(action)
 
         self.count += 1
 
-        # ensure selling cost (a) for charge is at least as large as buying cost (b)
+        # ensure selling cost (discharging) is at least as large as buying cost (charging)
         if action[0] < action[1]:
-            # print('Warning: selling cost (a) is less than buying cost (b)')
+            # print('Warning: selling cost (discharging) is less than buying cost (charging)')
             action[0] = action[1]
         self.action[:] = action
 
-        self.gen_costs = self.all_gen_costs[:, self.count - 1]
-        self.bats_charge_costs = self.all_bats_charge_costs[:, self.count - 1]
-        self.bats_discharge_costs = self.all_bats_discharge_costs[:, self.count - 1]
-        self.bats_discharge_costs[-1] = action[0]
-        self.bats_charge_costs[-1] = action[1]
-        assert (self.bats_discharge_costs >= self.bats_charge_costs).all()
+        self.gen_costs = self.all_gen_costs[:, self.count]
+        self.bats_costs = self.all_bats_costs[:, self.count]
+        self.bats_costs[-1] = action
+        assert (self.bats_costs[:, 0] >= self.bats_costs[:, 1]).all()
+
+        self.demand[:] = self._generate_load_data(self.count)
+        self.moer[:] = self._generate_moer_data(self.count)
 
         time_step = self.TIME_STEP_DURATION / 60  # min -> hr
-
-        prev_dispatch = self.dispatch
 
         self.bats_max_charge = np.maximum(
             self.bats_max_discharge_range[:, 0],
@@ -483,38 +468,26 @@ class BatteryStorageInGridEnv(Env):
         self.bats_max_discharge = np.minimum(
             self.bats_max_discharge_range[:, 1],
             self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
-        
+
         _, x_bats, price = self.market_op.get_dispatch()
         x_agent = x_bats[-1]
+        self.dispatch[:] = x_agent
 
-        self.dispatch = np.array([x_agent], dtype=np.float32)
-        prev_load_demand = self.demand
-        self.demand_forecast = self._generate_load_forecast_data(self.count)
-        self.demand = self._generate_load_data(self.count)
-        self.moer_forecast = self._generate_moer_forecast_data(self.count)
         # update battery charges
         charging = (x_bats < 0)
         self.battery_charge[charging] -= self.CHARGE_EFFICIENCY * x_bats[charging]
         self.battery_charge[~charging] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[~charging]
         self.battery_charge[:] = self.battery_charge.clip(0, self.battery_capacity)
 
-        done = (self.count >= self.MAX_STEPS_PER_EPISODE)
-        moer = self._generate_moer_data(self.count)
-        obs = {
-            "energy": self.battery_charge[-1:],
-            "time": np.array([self._get_time()], dtype=np.float32),
-            "previous action": self.action,
-            "previous agent dispatch": np.array([prev_dispatch], dtype=np.float32),
-            "demand previous": np.array([prev_load_demand], dtype=np.float32),
-            "demand forecast": np.array([self.demand_forecast], dtype=np.float32),
-            "moer previous": np.array([self.moer], dtype=np.float32),
-            "moer forecast": np.array([self.moer_forecast], dtype=np.float32)
-        }
+        # get forecasts for next time step
+        self.time[:] = self._get_time()
+        self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1)
+        self.moer_forecast[:] = self._generate_moer_forecast_data(self.count + 1)
 
-        info = {"curr info": None}
-        reward = (price + self.CARBON_COST * moer) * x_agent
-        self.moer = moer
-        return obs, reward, done, info
+        reward = (price + self.CARBON_COST * self.moer) * x_agent
+        done = (self.count >= self.MAX_STEPS_PER_EPISODE)
+        info = {}  # TODO: figure what additional info could be helpful here
+        return self.obs, reward, done, info
 
     def _calculate_off_optimal_total_episode_reward(self) -> float:
         """Calculates an approximate total offline optimal reward for the current
@@ -526,28 +499,26 @@ class BatteryStorageInGridEnv(Env):
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
 
         # get prices from market for all time steps
-        for i in range(self.MAX_STEPS_PER_EPISODE-1):
-            count = i + 1
+        for count in range(1, self.MAX_STEPS_PER_EPISODE):
             time_step = self.TIME_STEP_DURATION / 60  # min -> hr
 
-            self.bats_charge_costs = self.all_bats_charge_costs[:, count - 1]
-            self.bats_discharge_costs = self.all_bats_discharge_costs[:, count - 1]
-            self.gen_costs = self.all_gen_costs[:, count - 1]
+            self.gen_costs = self.all_gen_costs[:, count]
+            self.bats_costs = self.all_bats_costs[:, count]
 
             # update charging range for each battery
             self.bats_max_charge = np.maximum(
-                    self.bats_max_discharge_range[:, 0],
-                    -(self.battery_capacity - self.battery_charge) / (
-                        time_step * self.CHARGE_EFFICIENCY))
+                self.bats_max_discharge_range[:, 0],
+                -(self.battery_capacity - self.battery_charge) / (time_step * self.CHARGE_EFFICIENCY))
             self.bats_max_discharge = np.minimum(
-                    self.bats_max_discharge_range[:, 1],
-                    self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
+                self.bats_max_discharge_range[:, 1],
+                self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
 
             self.demand = self._generate_load_data(count)
             _, x_bats, price = self.market_op.get_dispatch_no_agent()
 
             # sanity checks
             assert abs(x_bats[-1] - 0) <= 10**-9 and 0 <= price
+            prices[count] = price
 
             # update battery charges
             charging = (x_bats < 0)
@@ -555,11 +526,9 @@ class BatteryStorageInGridEnv(Env):
             self.battery_charge[~charging] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[~charging]
             self.battery_charge[:] = self.battery_charge.clip(0, self.battery_capacity)
 
-            prices[i] = price
-
         # find optimal total reward for episode based on prices (price taking assumption)
 
-        x = cp.Variable(self.MAX_STEPS_PER_EPISODE)
+        x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)
 
         init_battery_charge = self.battery_capacity / 2.0
 
@@ -568,11 +537,8 @@ class BatteryStorageInGridEnv(Env):
             init_battery_charge[-1] + cp.cumsum(-x) <= self.battery_capacity[-1],
         ]
 
-        moers = np.zeros(self.MAX_STEPS_PER_EPISODE)
-        for i in range(self.MAX_STEPS_PER_EPISODE):
-            moers[i] = self._generate_moer_data(i + 1)
-
-        obj = (prices + self.CARBON_COST * moers) @ x
+        moers = np.array([self._generate_moer_data(i) for i in range(1, self.MAX_STEPS_PER_EPISODE)])
+        obj = (prices[1:] + self.CARBON_COST * moers) @ x
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
 
