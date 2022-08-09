@@ -1,3 +1,4 @@
+from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
@@ -38,7 +39,7 @@ class BaseOnlineAlgorithm:
         """
         raise NotImplementedError
 
-    def run(self, seeds: Sequence[int], env: EVChargingEnv) -> list[float]:
+    def run(self, seeds: Sequence[int], env: EVChargingEnv) -> tuple[list[float], dict]:
         """
         Runs the scheduling algorithm for the current period and returns the
         resulting reward.
@@ -49,20 +50,22 @@ class BaseOnlineAlgorithm:
 
         Returns:
             list of total rewards for each iteration.
+            dict of sum of each individual reward component
         """
         total_rewards = []
+        reward_components = {'revenue': 0., 'carbon_cost': 0., 'excess_charge': 0.}
         for seed in seeds:
             done = False
             obs = env.reset(seed=seed)
-            acc_reward = 0.0
+            episode_reward = 0.0
             while not done:
                 action = self.get_action(obs, env)
-                # if env.action_type == 'discrete':
-                #     action = np.round(action).astype(np.int32)
-                obs, reward, done, _ = env.step(action)
-                acc_reward += reward
-            total_rewards.append(acc_reward)
-        return total_rewards
+                obs, reward, done, info = env.step(action)
+                for comp in info['reward']:
+                    reward_components[comp] += info['reward'][comp]
+                episode_reward += reward
+            total_rewards.append(episode_reward)
+        return total_rewards, reward_components
 
 
 class GreedyAlgorithm(BaseOnlineAlgorithm):

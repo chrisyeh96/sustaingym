@@ -121,6 +121,7 @@ def fetch_real_events(start_date: datetime, end_date: datetime,
             estimated_departure       datetime64[ns, America/Los_Angeles]
             claimed                   bool
     """
+    print("Fetching from API")
     # add timedelta to make start and end date inclusive
     sessions = get_sessions(start_date, end_date, site=site)
 
@@ -174,7 +175,6 @@ def get_real_events(start_date: datetime, end_date: datetime,
     Returns:
         *See fetch_real_events()
     """
-    end_date += timedelta(days=1)
     # search in package
     for date_range in DEFAULT_DATE_RANGES:
         if to_la_dt(date_range[0]) <= start_date and end_date <= to_la_dt(date_range[1]) + timedelta(days=1):
@@ -188,6 +188,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
 
             return df[(start_date <= df.arrival) & (df.arrival <= end_date)].copy()
     # data not found in package, use API
+    end_date += timedelta(days=1)
     return fetch_real_events(start_date, end_date, site)
 
 
