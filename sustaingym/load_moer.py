@@ -349,7 +349,7 @@ class MOERLoader:
         Returns:
             array of shape (289, 2). The first column is the historical
                 MOER and the second the forecasted; both are in units
-                kg * CO2 per kWh. Note that the "rows" are backwards, in that
+                kg CO2 per kWh. Note that the "rows" are backwards, in that
                 the most recent rates are at the top, sorted descending.
         """
         dt_one_day_later = dt + ONEDAY + FIVEMINS

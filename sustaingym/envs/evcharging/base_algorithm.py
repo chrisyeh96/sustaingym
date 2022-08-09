@@ -3,11 +3,10 @@ from typing import Any
 
 import cvxpy as cp
 import numpy as np
-from stable_baselines3 import PPO
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 
-
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
+
 
 ACTION_SCALING_FACTOR = 8
 EPS = 1e-3
@@ -56,7 +55,7 @@ class BaseOnlineAlgorithm:
             obs = env.reset(seed=seed)
             acc_reward = 0.0
             while not done:
-                action = self.get_action(obs, env)
+                action = self.get_action(obs, env)  # typing: ignore
                 # if env.action_type == 'discrete':
                 #     action = np.round(action).astype(np.int32)
                 obs, reward, done, _ = env.step(action)
@@ -86,7 +85,7 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
 
         Args:
             *See get_action() in BaseOnlineAlgorithm.
-        
+
         Returns:
             *See get_action() in BaseOnlineAlgorithm.
         """
@@ -126,7 +125,7 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
             action_suggested /= ACTION_SCALING_FACTOR
         else:
             action_suggested = np.where(np.modf(action_suggested)[0] > ROUND_UP_THRESH, np.round(action_suggested), np.floor(action_suggested))
-    
+
         return action_suggested
 
 
@@ -146,13 +145,13 @@ class RLAlgorithm(BaseOnlineAlgorithm):
         """
         self.rl_model = rl_model
         self.name = name
-    
+
     def get_action(self, observation: dict[str, Any], env: EVChargingEnv) -> np.ndarray:
         """Returns output of RL model.
 
         Args:
             *See get_action() in BaseOnlineAlgorithm.
-        
+
         Returns:
             *See get_action() in BaseOnlineAlgorithm.
         """

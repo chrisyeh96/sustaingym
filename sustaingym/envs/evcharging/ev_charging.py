@@ -1,6 +1,7 @@
 """This module contains the central class for the EV Charging environment."""
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
 import warnings
 
@@ -21,7 +22,7 @@ EPS = 1e-3
 MAX_ACTION = 4
 
 # Reward calculation factors
-VOLTAGE = 208
+VOLTAGE = 208  # in volts (V), default value from ACN-Sim
 MARGINAL_REVENUE_PER_KWH = 0.10  # revenue in $ / kWh
 CO2_COST_PER_METRIC_TON = 30.85
 A_MINS_TO_KWH = (1 / 60) * VOLTAGE * (1 / 1000)
@@ -106,7 +107,7 @@ class EVChargingEnv(gym.Env):
         # Define observation space and action space
 
         # Observations are dictionaries describing the current demand for charge
-        self.observation_space =  spaces.Dict({
+        self.observation_space = spaces.Dict({
             'arrivals':        spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.int32),
             'est_departures':  spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.int32),
             'demands':         spaces.Box(0, data_generator.requested_energy_cap, shape=(self.num_stations,), dtype=np.float32),
@@ -157,9 +158,10 @@ class EVChargingEnv(gym.Env):
         self.demands_cvx = cp.Parameter((self.num_stations,))
 
         objective = cp.Minimize(cp.norm(self.projected_action - self.actual_action, p=2))
-        constraints = [self.projected_action <= MAX_ACTION + EPS,
-                       agg_magnitude <= magnitude_limit,
-                       self.projected_action <= self.demands_cvx]
+        constraints = [
+            self.projected_action <= cp.minimum(MAX_ACTION + EPS, self.demands_cvx),
+            agg_magnitude <= magnitude_limit
+        ]
         self.prob = cp.Problem(objective, constraints)
 
         assert self.prob.is_dpp() and self.prob.is_dcp()
@@ -171,7 +173,7 @@ class EVChargingEnv(gym.Env):
         project_action = f'action projection {self.project_action}'
         return f'EVChargingGym for the {site}, {action_type}, {project_action}. '
 
-    def step(self, action: np.ndarray, return_info: bool = False) -> tuple[dict[str, Any], float, bool, dict[Any, Any]]:
+    def step(self, action: np.ndarray, return_info: bool = False) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
         """Steps the environment.
 
         Calls the step function of the internal simulator and generate the
@@ -195,7 +197,7 @@ class EVChargingEnv(gym.Env):
                     is empty, the entry is zero.
                 'demands': amount of charge demanded in Amp * periods.
                 'forecasted_moer': next timestep's forecasted emissions rate in
-                    kg * CO2 per kWh
+                    kg CO2 per kWh
                 'timestep': simulation's current iteration.
             reward: float representing scheduler's performance.
             done: bool indicating whether episode is finished
@@ -209,7 +211,7 @@ class EVChargingEnv(gym.Env):
                     is not currently charging an EV, the entry is zero.
                 'pilot_signals': entire history of pilot signals throughout
                     simulation.
-                'reward': dict with the following key-value pairs
+                'reward': dict, str => float
                     'revenue': revenue from charge delivered ($)
                     'carbon_cost': marginal CO2 emissions rate ($)
                     'excess_charge': costs for violating network constraints ($)
@@ -377,7 +379,7 @@ class EVChargingEnv(gym.Env):
         else:
             return self.obs, {}
 
-    def get_rewards(self, schedule: dict) -> tuple[float, dict[str, Any]]:
+    def get_rewards(self, schedule: Mapping[str, Sequence[float]]) -> tuple[float, dict[str, float]]:
         """Returns reward for scheduler's performance.
 
         The reward is a weighted sum of charging rewards, carbon costs,
@@ -393,17 +395,17 @@ class EVChargingEnv(gym.Env):
                 components making up total reward. See step().
         """
         # schedule for the interval between self.prev_timestamp and self.timestamp
-        schedule = np.array(list(map(lambda x: x[0], schedule.values())))  # convert to numpy
+        schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
 
         interval_mins = (self.timestamp - self.prev_timestamp) * self.period
 
         # revenue calculation (Amp * period) -> (Amp * mins) -> (KWH) -> ($)
-        revenue = np.sum(self.simulator.charging_rates[:, self.prev_timestamp: self.timestamp])
+        revenue = np.sum(self.simulator.charging_rates[:, self.prev_timestamp:self.timestamp])
         revenue *= self.period * REVENUE_FACTOR
 
         # Network constraints - amount of charge over maximum allowed rates ($)
         current_sum = np.abs(self.simulator.network.constraint_current(schedule))
-        excess_current = np.sum(np.maximum(current_sum - self.simulator.network.magnitudes, 0))
+        excess_current = np.sum(np.maximum(0, current_sum - self.simulator.network.magnitudes))
         excess_charge = excess_current * interval_mins * VIOLATION_FACTOR
 
         # Carbon cost ($)

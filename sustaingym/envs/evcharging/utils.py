@@ -44,14 +44,14 @@ DEFAULT_DATE_RANGES = [
     ('2021-05-01', '2021-08-31'),
 ]
 DEFAULT_PERIOD_TO_RANGE = {
-    'Summer 2019':          DEFAULT_DATE_RANGES[0],
-    'Pre-COVID-19 Summer':  DEFAULT_DATE_RANGES[0],
-    'Fall 2019':            DEFAULT_DATE_RANGES[1],
-    'Pre-COVID-19 Fall':    DEFAULT_DATE_RANGES[1],
-    'Spring 2020':          DEFAULT_DATE_RANGES[2],
-    'In-COVID-19':          DEFAULT_DATE_RANGES[2],
-    'Summer 2021':          DEFAULT_DATE_RANGES[3],
-    'Post-COVID-19':        DEFAULT_DATE_RANGES[3],
+    'Summer 2019':         DEFAULT_DATE_RANGES[0],
+    'Pre-COVID-19 Summer': DEFAULT_DATE_RANGES[0],
+    'Fall 2019':           DEFAULT_DATE_RANGES[1],
+    'Pre-COVID-19 Fall':   DEFAULT_DATE_RANGES[1],
+    'Spring 2020':         DEFAULT_DATE_RANGES[2],
+    'In-COVID-19':         DEFAULT_DATE_RANGES[2],
+    'Summer 2021':         DEFAULT_DATE_RANGES[3],
+    'Post-COVID-19':       DEFAULT_DATE_RANGES[3],
 }
 
 GMM_KEY = 'gmm'
@@ -103,8 +103,8 @@ def get_sessions(start_date: datetime, end_date: datetime,
     return data_client.get_sessions(site, cond=cond)
 
 
-def fetch_real_events(start_date: datetime, end_date: datetime,
-                    site: SiteStr) -> pd.DataFrame:
+def fetch_real_events(start_date: datetime, end_date: datetime, site: SiteStr
+                      ) -> pd.DataFrame:
     """Returns a pandas DataFrame of charging events from ACN-Data.
 
     Args:
@@ -179,7 +179,8 @@ def get_real_events(start_date: datetime, end_date: datetime,
     for date_range in DEFAULT_DATE_RANGES:
         if to_la_dt(date_range[0]) <= start_date and end_date <= to_la_dt(date_range[1]) + timedelta(days=1):
             file_name = f'{date_range[0]} {date_range[1]}.csv.gz'
-            module_path = os.path.dirname(sys.modules['sustaingym'].__file__)
+            module_path = os.path.dirname(sys.modules['sustaingym'].__file__)  # type: ignore
+            assert module_path is not None
             file_path = os.path.join(module_path, 'data', 'acn_evcharging_data', site, file_name)
             df = pd.read_csv(file_path, compression='gzip')
 
@@ -238,11 +239,12 @@ def load_gmm_model(save_dir: str) -> dict[str, np.ndarray | mixture.GaussianMixt
             'count' (np.ndarray): session counts per day
             'station_usage' (np.ndarray): stations' usage counts for date range
     """
-    # search throuh custom folders
+    # search through custom folders
     if os.path.exists(save_dir):
         with open(os.path.join(save_dir, MODEL_NAME), 'rb') as f:
             return pickle.load(f)
     # search through default models
     else:
         data = pkgutil.get_data(EV_CHARGING_MODULE, os.path.join(save_dir, MODEL_NAME))
+        assert data is not None
         return pickle.loads(data)

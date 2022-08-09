@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 import os
-from typing import List
 import uuid
 
 import acnportal.acnsim as acns
@@ -56,7 +55,7 @@ class AbstractTraceGenerator:
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
                  random_seed: int = 42
-                ):
+                 ):
         """
         Args:
             site: garage to get events from, either 'caltech' or 'jpl'
@@ -174,7 +173,14 @@ class AbstractTraceGenerator:
         return events, evs, num_plugin
 
     def get_moer(self) -> np.ndarray:
-        """Retrieves MOER data from the MOERLoader()."""
+        """Retrieves MOER data from the MOERLoader().
+
+        Returns:
+            array of shape (289, 2). The first column is the historical
+                MOER and the second the forecasted; both are in units
+                kg CO2 per kWh. Note that the "rows" are backwards, in that
+                the most recent rates are at the top, sorted descending.
+        """
         dt = self.day.replace(tzinfo=AM_LA)
         return self.moer_loader.retrieve(dt)
 
@@ -326,7 +332,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         self.n_components = n_components
 
         # use existing gmm if exists; otherwise, create gmm
-        gmm_folder = get_folder_name(self.date_range_str[0], self.date_range_str[1], n_components = n_components)
+        gmm_folder = get_folder_name(self.date_range_str[0], self.date_range_str[1], n_components=n_components)
         model_path = os.path.join(DEFAULT_SAVE_DIR, site, gmm_folder)
         try:
             data = load_gmm_model(model_path)
@@ -361,7 +367,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                 minutes, and requested energy in kWh.
         """
         # use while loop for quality check
-        all_samples: List[np.ndarray] = []
+        all_samples: list[np.ndarray] = []
         while len(all_samples) < n:
             samples = self.gmm.sample(int(n * (1 + oversample_factor)))[0]  # shape (1.2n, 4)
 
