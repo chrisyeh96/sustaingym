@@ -241,8 +241,6 @@ class BatteryStorageInGridEnv(Env):
             assert len(bats_charge_costs) == self.num_bats - 1
             self.init_bats_charge_costs[:-1] = bats_charge_costs
 
-        self.battery_charge = self.battery_capacity / 2.0
-
         # determine the maximum possible cost of energy ($ / MWh)
         max_init_cost = np.max(np.concatenate((self.init_gen_costs, self.init_bats_charge_costs, self.init_bats_discharge_costs)))
         max_cost = max_init_cost * 1.025**self.MAX_STEPS_PER_EPISODE
@@ -266,7 +264,6 @@ class BatteryStorageInGridEnv(Env):
             "moer forecast":   spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float)
         })
         self.init = False
-        self.count = 1
         self.market_op = MarketOperator(self)
         self.df_demand = self._get_demand_data()
         self.df_moer = self._get_moer_data()
@@ -474,7 +471,6 @@ class BatteryStorageInGridEnv(Env):
         self.bats_discharge_costs = self.all_bats_discharge_costs[:, self.count - 1]
         self.bats_discharge_costs[-1] = action[0]
         self.bats_charge_costs[-1] = action[1]
-
         assert (self.bats_discharge_costs >= self.bats_charge_costs).all()
 
         time_step = self.TIME_STEP_DURATION / 60  # min -> hr
@@ -496,15 +492,11 @@ class BatteryStorageInGridEnv(Env):
         self.demand_forecast = self._generate_load_forecast_data(self.count)
         self.demand = self._generate_load_data(self.count)
         self.moer_forecast = self._generate_moer_forecast_data(self.count)
-
-        for i in range(self.num_bats):
-            if 0 <= x_bats[i]:
-                self.battery_charge[i] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[i]
-                # ensure non-negative battery charge
-                if self.battery_charge[i] < 0:
-                    self.battery_charge[i] = 0.0
-            else:
-                self.battery_charge[i] -= self.CHARGE_EFFICIENCY * x_bats[i]
+        # update battery charges
+        charging = (x_bats < 0)
+        self.battery_charge[charging] -= self.CHARGE_EFFICIENCY * x_bats[charging]
+        self.battery_charge[~charging] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[~charging]
+        self.battery_charge[:] = self.battery_charge.clip(0, self.battery_capacity)
 
         done = (self.count >= self.MAX_STEPS_PER_EPISODE)
         moer = self._generate_moer_data(self.count)
@@ -558,14 +550,10 @@ class BatteryStorageInGridEnv(Env):
             assert abs(x_bats[-1] - 0) <= 10**-9 and 0 <= price
 
             # update battery charges
-            for i in range(self.num_bats):
-                if 0 <= x_bats[i]:
-                    self.battery_charge[i] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[i]
-                    # ensure non-negative battery charge
-                    if self.battery_charge[i] < 0:
-                        self.battery_charge[i] = 0.0
-                else:
-                    self.battery_charge[i] -= self.CHARGE_EFFICIENCY * x_bats[i]
+            charging = (x_bats < 0)
+            self.battery_charge[charging] -= self.CHARGE_EFFICIENCY * x_bats[charging]
+            self.battery_charge[~charging] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[~charging]
+            self.battery_charge[:] = self.battery_charge.clip(0, self.battery_capacity)
 
             prices[i] = price
 
@@ -576,12 +564,11 @@ class BatteryStorageInGridEnv(Env):
         init_battery_charge = self.battery_capacity / 2.0
 
         constraints = [
-            0 <= init_battery_charge[-1] + cp.cumsum(-1*x),
-            init_battery_charge[-1] + cp.cumsum(-1*x) <= self.battery_capacity[-1],
+            0 <= init_battery_charge[-1] + cp.cumsum(-x),
+            init_battery_charge[-1] + cp.cumsum(-x) <= self.battery_capacity[-1],
         ]
 
-        moers = np.zeros((self.MAX_STEPS_PER_EPISODE,))
-
+        moers = np.zeros(self.MAX_STEPS_PER_EPISODE)
         for i in range(self.MAX_STEPS_PER_EPISODE):
             moers[i] = self._generate_moer_data(i + 1)
 
