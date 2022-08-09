@@ -122,10 +122,10 @@ class MarketOperator:
         self.prob.solve()
         # print("status: ", self.prob.status)
         # print("x value: ", self.x.value)
-        price = -1*self.prob.constraints[0].dual_value # negative because of minimizing objective in LP
+        price = -self.prob.constraints[0].dual_value  # negative because of minimizing objective in LP
         # print("price:", price)
         x_gens = self.x.value[:self.env.num_gens]
-        x_bats = self.x.value[self.env.num_gens:self.env.num_gens + self.env.num_bats]
+        x_bats = self.x.value[self.env.num_gens:]
         return x_gens, x_bats, price
 
 
@@ -208,7 +208,8 @@ class BatteryStorageInGridEnv(Env):
         self.date = date
         self.LOCAL_PATH = LOCAL_FILE_PATH
 
-        rng = np.random.default_rng(seed)
+        self.rng = np.random.default_rng(seed)
+        rng = self.rng
 
         assert len(gen_max_production) == self.num_gens
         self.gen_max_production = np.array(gen_max_production, dtype=np.float32)
@@ -309,7 +310,7 @@ class BatteryStorageInGridEnv(Env):
             return pd.read_csv(StringIO(s))
 
     def _generate_load_data(self, count: int,
-                            rng: np.random._generator.Generator | None = None)-> float:
+                            rng: np.random.Generator | None = None)-> float:
         """Generate net demand for the time step associated with the given count.
 
         Args:
@@ -320,14 +321,13 @@ class BatteryStorageInGridEnv(Env):
         """
         if count == 1:
             # random index for the day in May
-            pos_ids = [idx for idx in np.arange(len(
-                self.df_demand.iloc[:,0])) if not pd.isnull(self.df_demand.iloc[
-                    idx, :-1]).any()]
+            pos_ids = [
+                idx for idx in range(len(self.df_demand))
+                if not pd.isnull(self.df_demand.iloc[idx, :-1]).any()
+            ]
             if rng is None:
                 rng = np.random.default_rng()
-                self.idx = rng.choice(pos_ids)
-            else:
-                self.idx = rng.choice(pos_ids)
+            self.idx = rng.choice(pos_ids)
         if self.LOCAL_PATH is not None:
             return self.df_demand.iloc[self.idx, count-1]
         return self.df_demand.iloc[self.idx, count-1] / 1800.0
@@ -397,8 +397,8 @@ class BatteryStorageInGridEnv(Env):
         Returns:
             tuple containing the initial observation for env's episode
         """
-
-        rng = np.random.default_rng(seed)
+        self.rng = np.random.default_rng(seed)
+        rng = self.rng
 
         # initialize gen costs, battery charge costs, and battery discharge costs for all time steps
         self.all_gen_costs = self.init_gen_costs[:, None] * rng.uniform(0.8, 1.25, size=(self.num_gens, self.MAX_STEPS_PER_EPISODE))
@@ -521,7 +521,7 @@ class BatteryStorageInGridEnv(Env):
         episode.
 
         Returns:
-            Float approximating offline optimal reward for the current episode
+            approximate offline optimal reward for the current episode
         """
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
 
