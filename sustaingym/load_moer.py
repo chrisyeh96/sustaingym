@@ -115,7 +115,7 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) 
     time_column = TIME_COLUMN[req_type]
     moer_column = MOER_COLUMN[req_type]
 
-    df = df.set_index(pd.DatetimeIndex(df[time_column], tz=pytz.UTC))
+    df.set_index(pd.DatetimeIndex(df[time_column], tz=pytz.UTC), inplace=True)
     df.index.name = INDEX_NAME
     return df[[moer_column]].copy()
 
@@ -273,9 +273,9 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     file_or_bytes: str | BytesIO = os.path.join(save_dir, file_name)
     # search default models
     if not os.path.exists(file_or_bytes):
-        bytes_data = pkgutil.get_data(__name__, os.path.join('data', 'moer_data', file_name))
-        assert bytes_data is not None
-        file_or_bytes = BytesIO(bytes_data)
+        data = pkgutil.get_data(__name__, os.path.join('data', 'moer_data', file_name))
+        assert data is not None
+        file_or_bytes = BytesIO(data)
 
     df = pd.read_csv(file_or_bytes, compression=COMPRESSION,
                      index_col=INDEX_NAME)

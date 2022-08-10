@@ -132,15 +132,14 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     Args:
         site: either 'caltech' or 'jpl'
         n_components: number of components of Gaussian mixture model
-        date_range: an even-length sequence of datetime objects. Each
-            consecutive pair describes a date range, and should fall
-            inside the range 2018-11-01 and 2021-08-31.
+        date_range: a range of dates which should fall inside the range
+            2018-11-01 and 2021-08-31.
     """
     SAVE_DIR = os.path.join(DEFAULT_SAVE_DIR, site)
 
     # Get stations
-    acn = site_str_to_site(site)
-    n2i = {station_id: i for i, station_id in enumerate(acn.station_ids)}
+    cn = site_str_to_site(site)
+    n2i = {station_id: i for i, station_id in enumerate(cn.station_ids)}
 
     # check string dates can be converted to datetimes
     date_range_str = tuple(date_range[i].strftime(DATE_FORMAT) for i in range(2))
@@ -181,9 +180,10 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     save_gmm_model(gmm, cnt, sid, save_dir)
 
 
-def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[tuple[str, str]] = DEFAULT_DATE_RANGES) -> None:
-    """
-    Creates multiple gmms and saves them in gmm_folder.
+def create_gmms(site: SiteStr, n_components: int,
+                date_ranges: Sequence[tuple[str, str]] = DEFAULT_DATE_RANGES
+                ) -> None:
+    """Creates multiple gmms and saves them in gmm_folder.
 
     Args:
         site: either 'caltech' or 'jpl'
@@ -200,18 +200,28 @@ def create_gmms(site: SiteStr, n_components: int, date_ranges: Sequence[tuple[st
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="GMM Training Script", formatter_class=RawTextHelpFormatter)
-    parser.add_argument("--site", default="caltech", help="Name of site: 'caltech' or 'jpl'")
-    parser.add_argument("--gmm_n_components", type=int, default=50)
-    date_range_help = ("Date ranges for GMM models to be trained on.\n"
-                       "Number of dates must be divisible by 2, \nwith the second later than the first. "
-                       "\nDates should be formatted as YYYY-MM-DD. "
-                       f"\nSupported ranges in between {START_DATE.strftime(DATE_FORMAT)} and {END_DATE.strftime(DATE_FORMAT)}.")
-    parser.add_argument("--date_ranges", nargs="+", help=date_range_help)
-
+    parser = argparse.ArgumentParser(
+        description="GMM Training Script", formatter_class=RawTextHelpFormatter)
+    parser.add_argument(
+        "--site", default="caltech",
+        help="Name of site: 'caltech' or 'jpl'")
+    parser.add_argument(
+        "--gmm_n_components", type=int, default=50)
+    parser.add_argument(
+        "--date_ranges", nargs="+",
+        help="Date ranges for GMM models to be trained on. Number of dates "
+             "must be a multiple of 2, with the second later than the first. "
+             "Dates should be formatted as YYYY-MM-DD. "
+             f"Supported ranges should be between {START_DATE.strftime(DATE_FORMAT)} and {END_DATE.strftime(DATE_FORMAT)}.")
     args = parser.parse_args()
+
     if args.date_ranges is None:
         create_gmms(args.site, args.gmm_n_components)
     else:
-        date_ranges = [(args.date_ranges[2*i], args.date_ranges[2*i+1]) for i in range(len(args.date_ranges) // 2)]
+        if len(args.date_ranges) % 2 != 0:
+            raise ValueError('Number of dates given must be a multiple of 2.')
+        date_ranges = [
+            (args.date_ranges[i], args.date_ranges[i+1])
+            for i in range(0, len(args.date_ranges), 2)
+        ]
         create_gmms(args.site, args.gmm_n_components, date_ranges)

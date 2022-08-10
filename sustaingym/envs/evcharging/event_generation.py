@@ -38,7 +38,7 @@ class AbstractTraceGenerator:
         site: either 'caltech' or 'jpl'
         period: number of minutes of each simulation timestep
         recompute_freq: number of periods for recurring recompute
-        date_range_str: a 2-tuple of string elements describing date range to
+        date_range_str: a 2-tuple of strings describing date range to
             generate from.
         date_range: a 2-tuple of timezone-aware datetimes.
         requested_energy_cap: largest amount of requested energy allowed (kWh)
@@ -54,8 +54,7 @@ class AbstractTraceGenerator:
                  recompute_freq: int,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42
-                 ):
+                 random_seed: int = 42):
         """
         Args:
             site: garage to get events from, either 'caltech' or 'jpl'
@@ -317,8 +316,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                  period: int = 5,
                  recompute_freq: int = 2,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42
-                 ):
+                 random_seed: int = 42):
         """
         Args:
             n_components: number of components in GMM

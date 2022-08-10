@@ -7,8 +7,7 @@ import warnings
 
 import acnportal.acnsim as acns
 import cvxpy as cp
-import gym
-from gym import spaces
+from gym import Env, spaces
 import numpy as np
 
 from .event_generation import AbstractTraceGenerator
@@ -24,15 +23,15 @@ MAX_ACTION = 4
 # Reward calculation factors
 VOLTAGE = 208  # in volts (V), default value from ACN-Sim
 MARGINAL_REVENUE_PER_KWH = 0.10  # revenue in $ / kWh
-CO2_COST_PER_METRIC_TON = 30.85
-A_MINS_TO_KWH = (1 / 60) * VOLTAGE * (1 / 1000)
+CO2_COST_PER_METRIC_TON = 30.85  # carbon cost in $ / 1000 kg CO2
+A_MINS_TO_KWH = (1 / 60) * (VOLTAGE / 1000)  # kV * (hr / min)
 VIOLATION_WEIGHT = 0.005  # cost in $ / kWh of violation
 REVENUE_FACTOR = A_MINS_TO_KWH * MARGINAL_REVENUE_PER_KWH
 VIOLATION_FACTOR = A_MINS_TO_KWH * VIOLATION_WEIGHT
-CARBON_COST_FACTOR = A_MINS_TO_KWH * (1 / 1000) * CO2_COST_PER_METRIC_TON
+CARBON_COST_FACTOR = A_MINS_TO_KWH * (CO2_COST_PER_METRIC_TON / 1000)  # ($ * kV * hr) / (kg CO2 * min)
 
 
-class EVChargingEnv(gym.Env):
+class EVChargingEnv(Env):
     """Central class for the EV Charging gym.
 
     This class uses the Simulator class in the acnportal package to
@@ -133,13 +132,11 @@ class EVChargingEnv(gym.Env):
 
         # Define action space, which is the charging rate for all EVs
         if action_type == 'discrete':
-            self.action_space = spaces.MultiDiscrete(
-                [MAX_ACTION + 1 for _ in range(len(self.cn.station_ids))]
-            )
+            self.action_space = spaces.MultiDiscrete([MAX_ACTION + 1] * self.num_stations)
         else:
             self.action_space = spaces.Box(
-                low=0, high=MAX_ACTION, shape=(len(self.cn.station_ids),), dtype=np.float32
-            )
+                low=0, high=MAX_ACTION, shape=(self.num_stations,),
+                dtype=np.float32)
 
         if project_action:
             self.set_up_action_projection()
@@ -154,8 +151,8 @@ class EVChargingEnv(gym.Env):
         agg_magnitude = cp.abs(A_tilde @ self.projected_action) * ACTION_SCALING_FACTOR  # convert to A
         magnitude_limit = self.cn.magnitudes
 
-        self.actual_action = cp.Parameter((self.num_stations,))
-        self.demands_cvx = cp.Parameter((self.num_stations,))
+        self.actual_action = cp.Parameter((self.num_stations,), nonneg=True)
+        self.demands_cvx = cp.Parameter((self.num_stations,), nonneg=True)
 
         objective = cp.Minimize(cp.norm(self.projected_action - self.actual_action, p=2))
         constraints = [
@@ -181,10 +178,9 @@ class EVChargingEnv(gym.Env):
         observation, reward, done, info tuple required by OpenAI gym.
 
         Args:
-            action: array of shape (number of stations,) with entries in the
-                set {0, 1, 2, 3, 4} if action_type == 'discrete'; otherwise,
-                entries should fall in the range [0, 4]. See to_schedule()
-                for more information.
+            action: action: shape [num_stations], charging rate for each charging station.
+                If action_type == 'discrete', entries should be in {0, 1, 2, 3, 4}.
+                If action_type == 'continuous', entries should be in range [0, 4].
             return_info: info is always returned, but if return_info is set
                 to False, less information will be present in the dictionary
 
@@ -206,7 +202,7 @@ class EVChargingEnv(gym.Env):
             info: dict with the following key-value pairs
                 'active_evs': list of acns.EV, all EVs currently charging.
                 'active_sessions': list of acns.interface.SessionInfo, active sessions.
-                'charging_rates': pd.DataFrame, History of charging rates as
+                'charging_rates': pd.DataFrame, history of charging rates as
                     provided by the internal simulator. Columns are EVSE id, and
                     the index is the iteration.
                 'actual_departures': np.ndarray of shape [num_stations],
@@ -306,12 +302,13 @@ class EVChargingEnv(gym.Env):
         ..., 32}. Continuous actions have to be appropriately rounded.
 
         Args:
-            action: charging rate to take at each charging station.
-                If action_type is 'discrete', expects actions in {0, 1, 2, 3, 4}.
-                If action_type is 'continuous', expects actions in [0, 4].
+            action: shape [num_stations], charging rate for each charging station.
+                If action_type == 'discrete', entries should be in {0, 1, 2, 3, 4}.
+                If action_type == 'continuous', entries should be in range [0, 4].
 
         Returns:
-            pilot_signals: maps station ids to a single-element list of pilot signals.
+            pilot_signals: maps station ids to a single-element list of pilot signals
+                in Amps
         """
         # project action if flag is set
         # note that if action is already in the feasible action space,
@@ -322,12 +319,13 @@ class EVChargingEnv(gym.Env):
             self.demands_cvx.value = self.demands / ACTION_SCALING_FACTOR / self.recompute_freq
             self.prob.solve(solver='ECOS', warm_start=True)
             action = self.projected_action.value
+
         if self.action_type == 'discrete':
             return {e: [ACTION_SCALING_FACTOR * a] for a, e in zip(np.round(action), self.cn.station_ids)}
         else:
             action = np.round(action * ACTION_SCALING_FACTOR)  # round to nearest integer rate
             pilot_signals = {}
-            for i in range(len(self.cn.station_ids)):
+            for i in range(self.num_stations):
                 station_id = self.cn.station_ids[i]
                 # hacky way to determine allowable rates - allowed rates required to keep simulation running
                 # one type of EVSE accepts values in {0, 8, 16, 24, 32}
@@ -390,8 +388,8 @@ class EVChargingEnv(gym.Env):
         and network constraint violation costs.
 
         Args:
-            schedule: dictionary mapping EVSE charger to a single-element
-                list of the pilot signal to that charger.
+            schedule: maps EVSE charger ID to a single-element
+                list of the pilot signal (in Amps) to that charger.
 
         Returns:
             total_reward: weighted reward awarded to the current timestep

@@ -6,10 +6,10 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import timedelta, datetime
+from io import BytesIO
 import os
 import pickle
 import pkgutil
-import sys
 from typing import Any, Literal
 
 import acnportal.acndata as acnd
@@ -37,12 +37,12 @@ SiteStr = Literal['caltech', 'jpl']
 DefaultPeriodStr = Literal['Summer 2019', 'Fall 2019', 'Spring 2020',
                            'Summer 2021', 'Pre-COVID-19 Summer',
                            'Pre-COVID-19 Fall', 'In-COVID-19', 'Post-COVID-19']
-DEFAULT_DATE_RANGES = [
+DEFAULT_DATE_RANGES = (
     ('2019-05-01', '2019-08-31'),
     ('2019-09-01', '2019-12-31'),
     ('2020-02-01', '2020-05-31'),
     ('2021-05-01', '2021-08-31'),
-]
+)
 DEFAULT_PERIOD_TO_RANGE = {
     'Summer 2019':         DEFAULT_DATE_RANGES[0],
     'Pre-COVID-19 Summer': DEFAULT_DATE_RANGES[0],
@@ -179,10 +179,9 @@ def get_real_events(start_date: datetime, end_date: datetime,
     for date_range in DEFAULT_DATE_RANGES:
         if to_la_dt(date_range[0]) <= start_date and end_date <= to_la_dt(date_range[1]) + timedelta(days=1):
             file_name = f'{date_range[0]} {date_range[1]}.csv.gz'
-            module_path = os.path.dirname(sys.modules['sustaingym'].__file__)  # type: ignore
-            assert module_path is not None
-            file_path = os.path.join(module_path, 'data', 'acn_evcharging_data', site, file_name)
-            df = pd.read_csv(file_path, compression='gzip')
+            data = pkgutil.get_data(__name__, os.path.join('data', 'acn_evcharging_data', site, file_name))
+            assert data is not None
+            df = pd.read_csv(BytesIO(data), compression='gzip')
 
             for time_col in ['arrival', 'departure', 'estimated_departure']:
                 df[time_col] = pd.to_datetime(df[time_col], utc=True).dt.tz_convert(AM_LA)
