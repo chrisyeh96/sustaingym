@@ -173,7 +173,8 @@ class EVChargingEnv(gym.Env):
         project_action = f'action projection {self.project_action}'
         return f'EVChargingGym for the {site}, {action_type}, {project_action}. '
 
-    def step(self, action: np.ndarray, return_info: bool = False) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
+    def step(self, action: np.ndarray, return_info: bool = False
+             ) -> tuple[dict[str, np.ndarray], float, bool, dict[str, Any]]:
         """Steps the environment.
 
         Calls the step function of the internal simulator and generate the
@@ -188,29 +189,33 @@ class EVChargingEnv(gym.Env):
                 to False, less information will be present in the dictionary
 
         Returns:
-            observation: a dictionary with the following key-value pairs
-                'arrivals': arrival timestamp for each EVSE as a numpy array.
+            observation: state
+                'arrivals': shape [num_stations], arrival timestamp for each EVSE.
                     If the EVSE corresponding to the index is empty, the entry
                     is zero.
-                'est_departures': estimated departure timestamp for each EVSE
-                    as a numpy array. If the EVSE corresponding to the index
-                    is empty, the entry is zero.
-                'demands': amount of charge demanded in Amp * periods.
-                'forecasted_moer': next timestep's forecasted emissions rate in
-                    kg CO2 per kWh
-                'timestep': simulation's current iteration.
-            reward: float representing scheduler's performance.
-            done: bool indicating whether episode is finished
-            info: dict with the following key-value pairs TODO
-                'active_evs': List of all EVs currenting charging.
-                'active_sessions': List of active sessions.
-                'charging_rates': pd.DataFrame. History of charging rates as
-                    provided by the internal simulator.
-                'actual_departures': actual departure timestamp for each EVSE
-                    as a numpy array. If the EVSE corresponding to the index
-                    is not currently charging an EV, the entry is zero.
-                'pilot_signals': entire history of pilot signals throughout
-                    simulation.
+                'est_departures': shape [num_stations], estimated departure
+                    timestamp for each EVSE. If the EVSE corresponding to the
+                    index is empty, the entry is zero.
+                'demands': shape [num_stations], amount of charge demanded by
+                    each EVSE in Amp * periods.
+                'forecasted_moer': shape [1], forecasted emissions rate for next
+                    timestep in kg CO2 per kWh
+                'timestep': shape [1], simulation's current iteration
+            reward: float representing scheduler's performance
+            done: whether episode is finished
+            info: dict with the following key-value pairs
+                'active_evs': list of acns.EV, all EVs currently charging.
+                'active_sessions': list of acns.interface.SessionInfo, active sessions.
+                'charging_rates': pd.DataFrame, History of charging rates as
+                    provided by the internal simulator. Columns are EVSE id, and
+                    the index is the iteration.
+                'actual_departures': np.ndarray of shape [num_stations],
+                    actual departure timestamp for each EVSE. If the EVSE
+                    corresponding to the index is not currently charging an EV,
+                    the entry is zero.
+                'pilot_signals': pd.DataFrame, entire history of pilot signals
+                    throughout simulation. Columns are EVSE id, and the index is
+                    the iteration.
                 'reward': dict, str => float
                     'revenue': revenue from charge delivered ($)
                     'carbon_cost': marginal CO2 emissions rate ($)
@@ -252,9 +257,8 @@ class EVChargingEnv(gym.Env):
             obs: observations. See step() for more information.
             info: other information. See step().
         """
-        if seed is not None:
-            self.rng = np.random.default_rng(seed)
-            self.data_generator.set_random_seed(seed)
+        self.rng = np.random.default_rng(seed)
+        self.data_generator.set_random_seed(seed)
 
         if options and 'verbose' in options:
             if 'verbose' in options:
@@ -307,7 +311,7 @@ class EVChargingEnv(gym.Env):
                 If action_type is 'continuous', expects actions in [0, 4].
 
         Returns:
-            pilot_signals: a dictionary mapping station ids to pilot signals.
+            pilot_signals: maps station ids to a single-element list of pilot signals.
         """
         # project action if flag is set
         # note that if action is already in the feasible action space,

@@ -1,4 +1,5 @@
-from collections import defaultdict
+from __future__ import annotations
+
 from collections.abc import Sequence
 from typing import Any
 
@@ -58,12 +59,13 @@ class BaseOnlineAlgorithm:
             obs = env.reset(seed=seed)
             episode_reward = 0.0
             while not done:
-                action = self.get_action(obs, env)  # typing: ignore
+                action = self.get_action(obs, env)  # type: ignore
                 obs, reward, done, info = env.step(action)
                 for comp in info['reward']:
                     reward_components[comp] += info['reward'][comp]
                 episode_reward += reward
             total_rewards.append(episode_reward)
+        return total_rewards, reward_components
 
 
 class GreedyAlgorithm(BaseOnlineAlgorithm):

@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import calendar
 from datetime import datetime, timedelta
+from io import BytesIO
 import os
+import pkgutil
 import requests
-import sys
 from typing import Literal
 
 import numpy as np
@@ -249,7 +250,7 @@ def save_moer_default_ranges() -> None:
     """
     for date_range_str in DEFAULT_DATE_RANGES:
         starttime = datetime.strptime(date_range_str[0], DATE_FORMAT)
-        endtime =   datetime.strptime(date_range_str[1], DATE_FORMAT)
+        endtime = datetime.strptime(date_range_str[1], DATE_FORMAT)
         for ba in BALANCING_AUTHORITIES:
             save_moer(starttime, endtime, ba)
 
@@ -269,16 +270,15 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     """
     # first search through custom models
     file_name = FNAME_FORMAT_STR.format(ba=ba, year=year, month=month)
-    file_path = os.path.join(save_dir, file_name)
+    file_or_bytes: str | BytesIO = os.path.join(save_dir, file_name)
     # search default models
-    if not os.path.exists(file_path):  # TODO having trouble with gzip - work-around
-        module_path = os.path.dirname(sys.modules['sustaingym'].__file__)  # type: ignore
-        file_path = os.path.join(module_path, 'data', 'moer_data', file_name)  # type: ignore
+    if not os.path.exists(file_or_bytes):
+        bytes_data = pkgutil.get_data(__name__, os.path.join('data', 'moer_data', file_name))
+        assert bytes_data is not None
+        file_or_bytes = BytesIO(bytes_data)
 
-    df = pd.read_csv(file_path,
-                     compression=COMPRESSION,
+    df = pd.read_csv(file_or_bytes, compression=COMPRESSION,
                      index_col=INDEX_NAME)
-
     df.index = pd.to_datetime(pd.DatetimeIndex(df.index))  # set datetime index to UTC
     return df
 
