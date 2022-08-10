@@ -273,6 +273,7 @@ class BatteryStorageInGridEnv(Env):
         else:
             csv_path = f'data/CAISO-demand-{self.date}.csv.gz'
             bytes_data = pkgutil.get_data(__name__, csv_path)
+            assert bytes_data is not None
             df_demand = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
             # TODO: assert shape of DataFrame
             return df_demand / 1800.
@@ -290,6 +291,7 @@ class BatteryStorageInGridEnv(Env):
         else:
             csv_path = f'data/CAISO-demand-forecast-{self.date}.csv.gz'
             bytes_data = pkgutil.get_data(__name__, csv_path)
+            assert bytes_data is not None
             df_demand_forecast = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
             # TODO: assert shape of DataFrame
             return df_demand_forecast / 1800.
@@ -306,8 +308,9 @@ class BatteryStorageInGridEnv(Env):
             return pd.read_csv(self.LOCAL_PATH)
         else:
             csv_path = f'data/SGIP_CAISO_SCE_{self.date}.csv'
-            s = pkgutil.get_data(__name__, csv_path).decode('utf-8')
-            return pd.read_csv(StringIO(s))
+            bytes_data = pkgutil.get_data(__name__, csv_path)
+            assert bytes_data is not None
+            return pd.read_csv(StringIO(bytes_data.decode('utf-8')))
 
     def _generate_load_data(self, count: int) -> float:
         """Generate net demand for the time step associated with the given count.
@@ -438,7 +441,10 @@ class BatteryStorageInGridEnv(Env):
                 discharging and charging costs during this time step
 
         Returns:
-            dict representing the resulting state from that action
+            obs: dict representing the resulting state from that action
+            reward: reward from action
+            done: whether the episode is done
+            info: additional info (currently empty)
         """
         assert self.init
         assert self.action_space.contains(action)
@@ -446,10 +452,10 @@ class BatteryStorageInGridEnv(Env):
         self.count += 1
 
         # ensure selling cost (discharging) is at least as large as buying cost (charging)
+        self.action[:] = action
         if action[0] < action[1]:
             # print('Warning: selling cost (discharging) is less than buying cost (charging)')
-            action[0] = action[1]
-        self.action[:] = action
+            self.action[0] = action[1]
 
         self.gen_costs = self.all_gen_costs[:, self.count]
         self.bats_costs = self.all_bats_costs[:, self.count]
@@ -483,8 +489,8 @@ class BatteryStorageInGridEnv(Env):
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1)
         self.moer_forecast[:] = self._generate_moer_forecast_data(self.count + 1)
 
-        reward = (price + self.CARBON_COST * self.moer[0]) * x_agent
-        done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
+        reward = (price + self.CARBON_COST * self.moer) * x_agent
+        done = (self.count >= self.MAX_STEPS_PER_EPISODE)
         info = {}  # TODO: figure what additional info could be helpful here
         return self.obs, reward, done, info
 
@@ -512,7 +518,7 @@ class BatteryStorageInGridEnv(Env):
                 self.bats_max_discharge_range[:, 1],
                 self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
 
-            self.demand = self._generate_load_data(count)
+            self.demand[:] = self._generate_load_data(count)
             _, x_bats, price = self.market_op.get_dispatch_no_agent()
 
             # sanity checks
