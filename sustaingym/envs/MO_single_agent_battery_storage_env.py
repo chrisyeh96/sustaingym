@@ -70,7 +70,7 @@ class MarketOperator:
         self.bats_max_discharge.value = self.env.bats_max_discharge
         self.bats_discharge_costs.value = self.env.bats_costs[:, 0]
         self.bats_charge_costs.value = self.env.bats_costs[:, 1]
-        self.load.value = self.env.demand
+        self.load.value = self.env.demand[0]
         # print("gen_max_production: ", self.env.gen_max_production)
         # print("gen_costs: ", self.env.gen_costs)
         # print("bats_max_charge: ", self.env.bats_max_charge)
@@ -234,8 +234,7 @@ class BatteryStorageInGridEnv(Env):
         assert (self.init_bats_costs >= 0).all()
 
         # determine the maximum possible cost of energy ($ / MWh)
-        max_init_cost = max(self.init_gen_costs.max(), self.init_bats_costs.max())
-        max_cost = max_init_cost * 1.025**self.MAX_STEPS_PER_EPISODE
+        max_cost = 1.25 * max(self.init_gen_costs.max(), self.init_bats_costs.max())
 
         # action space is two values for the charging and discharging costs
         self.action_space = spaces.Box(low=0, high=max_cost, shape=(2,), dtype=np.float32)
@@ -484,8 +483,8 @@ class BatteryStorageInGridEnv(Env):
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1)
         self.moer_forecast[:] = self._generate_moer_forecast_data(self.count + 1)
 
-        reward = (price + self.CARBON_COST * self.moer) * x_agent
-        done = (self.count >= self.MAX_STEPS_PER_EPISODE)
+        reward = (price + self.CARBON_COST * self.moer[0]) * x_agent
+        done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
         info = {}  # TODO: figure what additional info could be helpful here
         return self.obs, reward, done, info
 
