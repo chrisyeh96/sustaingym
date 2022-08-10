@@ -118,7 +118,7 @@ class MarketOperator:
         self.bats_charge_costs.value = bats_charge_costs
         self.bats_discharge_costs.value = bats_discharge_costs
 
-        self.load.value = self.env.demand
+        self.load.value = self.env.demand[0]
         self.prob.solve()
         # print("status: ", self.prob.status)
         # print("x value: ", self.x.value)
@@ -459,7 +459,8 @@ class BatteryStorageInGridEnv(Env):
 
         self.gen_costs = self.all_gen_costs[:, self.count]
         self.bats_costs = self.all_bats_costs[:, self.count]
-        self.bats_costs[-1] = action
+        self.bats_costs[-1] = self.action
+
         assert (self.bats_costs[:, 0] >= self.bats_costs[:, 1]).all()
 
         self.demand[:] = self._generate_load_data(self.count)
@@ -489,8 +490,8 @@ class BatteryStorageInGridEnv(Env):
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1)
         self.moer_forecast[:] = self._generate_moer_forecast_data(self.count + 1)
 
-        reward = (price + self.CARBON_COST * self.moer) * x_agent
-        done = (self.count >= self.MAX_STEPS_PER_EPISODE)
+        reward = (price + self.CARBON_COST * self.moer[0]) * x_agent
+        done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
         info = {}  # TODO: figure what additional info could be helpful here
         return self.obs, reward, done, info
 
