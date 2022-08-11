@@ -10,6 +10,7 @@ from io import BytesIO, StringIO
 
 import cvxpy as cp
 from gym import Env, spaces
+import mosek
 import numpy as np
 import pandas as pd
 
@@ -120,6 +121,17 @@ class MarketOperator:
 
         self.load.value = self.env.demand[0]
         self.prob.solve()
+        try:
+            self.prob.solve(warm_start=True, solver=cp.MOSEK)
+        except cp.SolverError:
+            print(f'default solver failed. Trying cp.ECOS')
+            self.prob.solve(solver=cp.ECOS)
+        if self.prob.status != 'optimal':
+            print(f'prob.status = {self.prob.status}')
+            if 'infeasible' in self.prob.status:
+                # your problem should never be infeasible. So now go debug
+                import pdb
+                pdb.set_trace()
         # print("status: ", self.prob.status)
         # print("x value: ", self.x.value)
         price = -self.prob.constraints[0].dual_value  # negative because of minimizing objective in LP
@@ -548,7 +560,18 @@ class BatteryStorageInGridEnv(Env):
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
 
-        prob.solve()
+        try:
+            prob.solve(warm_start=True, solver=cp.MOSEK)
+        except cp.SolverError:
+            print(f'default solver failed. Trying cp.ECOS')
+            prob.solve(solver=cp.ECOS)
+        if prob.status != 'optimal':
+            print(f'prob.status = {prob.status}')
+            if 'infeasible' in prob.status:
+                # your problem should never be infeasible. So now go debug
+                import pdb
+                pdb.set_trace()
+        
         return prob.value
 
     def render(self):
