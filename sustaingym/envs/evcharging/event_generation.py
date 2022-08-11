@@ -52,8 +52,7 @@ class AbstractTraceGenerator:
                  period: int,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42
-                 ):
+                 random_seed: int = 42):
         """
         Args:
             site: garage to get events from, either 'caltech' or 'jpl'
@@ -309,8 +308,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                  n_components: int = 30,
                  period: int = 5,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42
-                 ):
+                 random_seed: int = 42):
         """
         Args:
             n_components: number of components in GMM

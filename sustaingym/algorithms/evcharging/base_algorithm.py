@@ -119,9 +119,86 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
         self.demands.value = observation['demands'] / ACTION_SCALING_FACTOR / env.recompute_freq
         # Set up problem and solve
         self.prob.solve(solver='ECOS')
-        action_suggested = np.maximum(self.r.value, 0.)
+        action_suggested = np.maximum(0., self.r.value)
 
         # # Post-process action to round up only when decimal part of scaled action is above a threshold
+        # For continuous actions, scale up, round, and scale down
+        # For discrete actions, round
+        if env.action_type == 'continuous':
+            action_suggested *= ACTION_SCALING_FACTOR
+            action_suggested = np.where(np.modf(action_suggested)[0] > ROUND_UP_THRESH, np.round(action_suggested), np.floor(action_suggested))
+            action_suggested /= ACTION_SCALING_FACTOR
+        else:
+            action_suggested = np.where(np.modf(action_suggested)[0] > ROUND_UP_THRESH, np.round(action_suggested), np.floor(action_suggested))
+
+        return action_suggested
+
+
+class MPC(BaseOnlineAlgorithm):
+    """MPC
+
+    Attributes:
+        name: name of the algorithm
+        phases: phases of current
+        first_run: flag for when the optimization problem should be set up
+        r: schedule to optimize
+        demands: a parameter for the amount of energy requested
+        prob: optimization problem to solve
+    """
+    name = 'timestep greedy'
+
+    def __init__(self, lookahead: int = 12):
+        self.first_run = True
+        self.lookahead = lookahead
+
+    def get_action(self, observation: dict[str, Any], env: EVChargingEnv) -> np.ndarray:
+        """Returns greedy charging action.
+
+        Args:
+            *See get_action() in BaseOnlineAlgorithm.
+
+        Returns:
+            *See get_action() in BaseOnlineAlgorithm.
+        """
+        if self.first_run:
+            num_stations = len(env.cn.station_ids)
+            self.r = cp.Variable((num_stations, self.lookahead), nonneg=True)  # possibly try: integer=True
+
+            # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
+            phase_factor = np.exp(1j * np.deg2rad(env.cn._phase_angles))
+            A_tilde = env.cn.constraint_matrix * phase_factor[None, :]
+            agg_magnitude = cp.abs(A_tilde @ (self.r * ACTION_SCALING_FACTOR))
+
+            # Close gap between r (ACTION_SCALING_FACTOR*A) and demands (A*periods)
+            # Units of outputted action is (ACTION_SCALING_FACTOR*A), demands is in A*periods
+            # convert energy to current signal by assuming outputted current will be used
+            # for recompute_freq periods
+            self.demands = cp.Parameter(num_stations, nonneg=True)
+            self.moers = cp.Parameter(self.lookahead, nonneg=True)
+            self.mask = cp.Parameter((num_stations, self.lookahead), nonneg=True)
+
+            profit = env.MARGINAL_PROFIT_PER_KWH * cp.sum(self.r) * A_FACTOR  # something like this
+            carbon_cost = cp.sum(self.r @ self.moers) * CARBON_COST_FACTOR
+            objective = cp.Maximize(profit - carbon_cost)
+
+            constraints = [
+                self.r <= self.mask,
+                cp.sum(self.r, axis=1) <= self.demands,
+                agg_magnitude <= env.cn.magnitudes
+            ]
+            self.prob = cp.Problem(objective, constraints)
+
+            assert self.prob.is_dpp() and self.prob.is_dcp()
+            self.first_run = False
+
+        self.demands.value = observation['demands'] / ACTION_SCALING_FACTOR / env.recompute_freq
+        self.moers.value = observation['moer_forecast']  # TODO: but limit to "lookahead" values
+        self.mask.value = TODO  # this will be a bit trickier to do, based on estimated departures
+        # Set up problem and solve
+        self.prob.solve(solver='ECOS')
+        action_suggested = np.maximum(0., self.r.value)
+
+        # Post-process action to round up only when decimal part of scaled action is above a threshold
         # For continuous actions, scale up, round, and scale down
         # For discrete actions, round
         if env.action_type == 'continuous':
