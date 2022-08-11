@@ -44,14 +44,8 @@ class EVChargingEnv(gym.Env):
     Attributes:
         data_generator: (AbstractTraceGenerator) a class whose instances can
             sample events that populate the event queue.
-
         site: either 'caltech' or 'jpl' garage to get events from
-        recompute_freq: number of periods for recurring recompute
         period: number of minutes of each time interval in simulation
-        requested_energy_cap: largest amount of requested energy allowed (kWh)
-        site: either 'caltech' or 'jpl'
-        recompute_freq: number of periods for recurring recompute
-        period: number of minutes of each simulation timestep
         requested_energy_cap: largest amount of requested energy allowed (kWh)
         max_timestamp: maximum timestamp in a day's simulation
         action_type: either 'continuous' or 'discrete'
@@ -360,7 +354,7 @@ class EVChargingEnv(gym.Env):
             station_idx = self.evse_name_to_idx[station_id]
             self.arrivals[station_idx] = session_info.arrival
             self.est_departures[station_idx] = session_info.estimated_departure
-            self.demands[station_idx] = self.interface.remaining_amp_periods(session_info)
+            self.demands[station_idx] = self.interface.remaining_amp_periods(session_info) # TODO kWh
         self.forecasted_moer[0] = self.moer[len(self.moer)-1-self.timestamp, 1]  # array goes back in time, choose 2nd col
         self.timestep_obs[0] = self.timestamp
 

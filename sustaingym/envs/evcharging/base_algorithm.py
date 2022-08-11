@@ -6,6 +6,7 @@ from typing import Any
 import cvxpy as cp
 import numpy as np
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
+from tqdm import tqdm
 
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 
@@ -54,7 +55,7 @@ class BaseOnlineAlgorithm:
         """
         total_rewards = []
         reward_components = {'revenue': 0., 'carbon_cost': 0., 'excess_charge': 0.}
-        for seed in seeds:
+        for seed in tqdm(seeds):
             done = False
             obs = env.reset(seed=seed)
             episode_reward = 0.0
@@ -160,3 +161,32 @@ class RLAlgorithm(BaseOnlineAlgorithm):
             *See get_action() in BaseOnlineAlgorithm.
         """
         return self.rl_model.predict(observation, deterministic=True)[0]
+
+
+class RandomAlgorithm(BaseOnlineAlgorithm):
+    """
+    Uses random output as action.
+
+    Attributes:
+        rl_model: stable baselines RL model
+        name: algorithm identifier
+    """
+    def __init__(self):
+        """
+        Args:
+            rl_model: stable baselines RL model
+            name: algorithm identifier
+        """
+        self.name = 'random'
+
+    def get_action(self, observation: dict[str, Any], env: EVChargingEnv) -> np.ndarray:
+        """Returns output of RL model.
+
+        Args:
+            *See get_action() in BaseOnlineAlgorithm.
+
+        Returns:
+            *See get_action() in BaseOnlineAlgorithm.
+        """
+        num_stations = len(env.cn.station_ids)
+        return np.random.randint(0, 5, size=num_stations)

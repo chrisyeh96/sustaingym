@@ -37,7 +37,6 @@ class AbstractTraceGenerator:
     Attributes:
         site: either 'caltech' or 'jpl'
         period: number of minutes of each simulation timestep
-        recompute_freq: number of periods for recurring recompute
         date_range_str: a 2-tuple of string elements describing date range to
             generate from.
         date_range: a 2-tuple of timezone-aware datetimes.
@@ -51,7 +50,6 @@ class AbstractTraceGenerator:
     def __init__(self,
                  site: SiteStr,
                  period: int,
-                 recompute_freq: int,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
                  random_seed: int = 42
@@ -60,7 +58,6 @@ class AbstractTraceGenerator:
         Args:
             site: garage to get events from, either 'caltech' or 'jpl'
             period: number of minutes of each simulation timestep
-            recompute_freq: number of periods for recurring recompute
             date_period: either a pre-defined date period or a
                 custom date period. If custom, the input must be a 2-tuple
                 of strings with both strings in the format YYYY-MM-DD.
@@ -77,7 +74,6 @@ class AbstractTraceGenerator:
 
         self.site = site
         self.period = period
-        self.recompute_freq = recompute_freq
         self.date_range = tuple(datetime.strptime(x, DATE_FORMAT).replace(tzinfo=AM_LA) for x in self.date_range_str)  # convert strings to datetime objects
         self.requested_energy_cap = requested_energy_cap
         self.station_ids = site_str_to_site(site).station_ids
@@ -126,9 +122,9 @@ class AbstractTraceGenerator:
         """Creates an EventQueue from a DataFrame of charging information.
 
         Sessions are added as Plugin events, and Recompute events are added
-        every ``recompute_freq`` periods so that the algorithm can be
-        continually called. Unplug events are generated internally by the
-        simulator and do not need to be explicitly added.
+        every period so that the algorithm can be continually called. Unplug
+        events are generated internally by the simulator and do not need to
+        be explicitly added.
 
         Returns:
             (EventQueue) event queue of EV charging sessions
@@ -159,15 +155,13 @@ class AbstractTraceGenerator:
             evs.append(ev)
 
             non_recompute_timestamps.add(samples['arrival'].iloc[i])
-            non_recompute_timestamps.add(samples['departure'].iloc[i])
 
         num_plugin = len(events)
 
-        # add recompute event every `recompute_freq` periods
-        for i in range(MINS_IN_DAY // (self.period * self.recompute_freq) + 1):
-            recompute_timestamp = i * self.recompute_freq
-            if recompute_timestamp not in non_recompute_timestamps:  # add recompute only if a timestamp has no events
-                event = acns.RecomputeEvent(recompute_timestamp)
+        # every timestamp has an event - recompute if no EV events
+        for timestamp in range(MINS_IN_DAY // self.period + 1):
+            if timestamp not in non_recompute_timestamps:  # add recompute only if a timestamp has no events
+                event = acns.RecomputeEvent(timestamp)
                 events.append(event)
         events = acns.EventQueue(events)
         return events, evs, num_plugin
@@ -202,7 +196,6 @@ class RealTraceGenerator(AbstractTraceGenerator):
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  sequential: bool = True,
                  period: int = 5,
-                 recompute_freq: int = 2,
                  use_unclaimed: bool = False,
                  requested_energy_cap: float = 100,
                  random_seed: int = 42):
@@ -216,7 +209,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
                 range or randomly
             *See AbstractTraceGenerator for more arguments
         """
-        super().__init__(site, period, recompute_freq, date_period, requested_energy_cap, random_seed)
+        super().__init__(site, period, date_period, requested_energy_cap, random_seed)
         self.use_unclaimed = use_unclaimed
         self.sequential = sequential
         if sequential:  # seed day before first update
@@ -315,7 +308,6 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  n_components: int = 30,
                  period: int = 5,
-                 recompute_freq: int = 2,
                  requested_energy_cap: float = 100,
                  random_seed: int = 42
                  ):
@@ -328,7 +320,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             The generator first searches for a matching GMM directory. If
             unfound, it creates one.
         """
-        super().__init__(site, period, recompute_freq, date_period, requested_energy_cap, random_seed)
+        super().__init__(site, period, date_period, requested_energy_cap, random_seed)
         self.n_components = n_components
 
         # use existing gmm if exists; otherwise, create gmm
