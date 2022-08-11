@@ -8,7 +8,6 @@ data model, respectively.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-import os
 import uuid
 
 import acnportal.acnsim as acns
@@ -18,10 +17,10 @@ import sklearn.mixture as mixture
 
 from .train_gmm_model import create_gmms
 from .utils import (COUNT_KEY, DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, GMM_KEY,
-                    MINS_IN_DAY, REQ_ENERGY_SCALE, DEFAULT_SAVE_DIR, STATION_USAGE_KEY, AM_LA,
-                    DefaultPeriodStr, SiteStr, get_folder_name, load_gmm_model,
+                    MINS_IN_DAY, REQ_ENERGY_SCALE, STATION_USAGE_KEY, AM_LA,
+                    DefaultPeriodStr, SiteStr, load_gmm_model,
                     site_str_to_site, get_real_events)
-from ...load_moer import MOERLoader
+from sustaingym.data.load_moer import MOERLoader
 
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 MIN_BATTERY_CAPACITY, BATTERY_CAPACITY, MAX_POWER = 0, 100, 100
@@ -74,6 +73,7 @@ class AbstractTraceGenerator:
         self.site = site
         self.period = period
         self.date_range = tuple(datetime.strptime(x, DATE_FORMAT).replace(tzinfo=AM_LA) for x in self.date_range_str)  # convert strings to datetime objects
+        self.interval_length = (self.date_range[1] - self.date_range[0]).days + 1  # make inclusive
         self.requested_energy_cap = requested_energy_cap
         self.station_ids = site_str_to_site(site).station_ids
         self.num_stations = len(self.station_ids)
@@ -88,8 +88,7 @@ class AbstractTraceGenerator:
 
     def _update_day(self) -> None:
         """Randomly sets ``self.day`` to a day in the date range."""
-        interval_length = (self.date_range[1] - self.date_range[0]).days + 1  # make inclusive
-        self.day = self.date_range[0] + timedelta(days=self.rng.choice(interval_length))
+        self.day = self.date_range[0] + timedelta(days=self.rng.choice(self.interval_length))
 
     def set_random_seed(self, seed: int | None) -> None:
         """Sets random seed to make sampling reproducible."""
@@ -224,6 +223,11 @@ class RealTraceGenerator(AbstractTraceGenerator):
         day = f'{self.day.strftime(DATE_FORMAT)}'
         return f'RealTracesGenerator from the {site} {dr}. Current day {day}. '
 
+    def set_random_seed(self, seed: int | None) -> None:
+        """Override parent method, instead set day."""
+        if seed is not None:
+            self.day = self.date_range[0] + timedelta(days=seed % self.interval_length)
+
     def _update_day(self) -> None:
         """Either increments day or randomly samples from date range."""
         if self.sequential:
@@ -321,14 +325,12 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         super().__init__(site, period, date_period, requested_energy_cap, random_seed)
         self.n_components = n_components
 
-        # use existing gmm if exists; otherwise, create gmm
-        gmm_folder = get_folder_name(self.date_range_str[0], self.date_range_str[1], n_components=n_components)
-        model_path = os.path.join(DEFAULT_SAVE_DIR, site, gmm_folder)
         try:
-            data = load_gmm_model(model_path)
+            data = load_gmm_model(site, self.date_range[0], self.date_range[1], n_components)
         except FileNotFoundError:
-            create_gmms(site, n_components, [self.date_range_str])
-            data = load_gmm_model(model_path)
+            create_gmms(site, n_components, date_ranges=[self.date_range_str])
+            data = load_gmm_model(site, self.date_range[0], self.date_range[1], n_components)
+
         self.gmm: mixture.GaussianMixture = data[GMM_KEY]
         self.cnt: np.ndarray = data[COUNT_KEY]
         self.station_usage: np.ndarray = data[STATION_USAGE_KEY]

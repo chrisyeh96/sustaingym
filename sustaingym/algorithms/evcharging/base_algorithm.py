@@ -191,7 +191,7 @@ class MPC(BaseOnlineAlgorithm):
             assert self.prob.is_dpp() and self.prob.is_dcp()
             self.first_run = False
 
-        self.demands.value = observation['demands'] / ACTION_SCALING_FACTOR / env.recompute_freq
+        self.demands.value = observation['demands'] / ACTION_SCALING_FACTOR
         self.moers.value = observation['moer_forecast']  # TODO: but limit to "lookahead" values
         self.mask.value = TODO  # this will be a bit trickier to do, based on estimated departures
         # Set up problem and solve

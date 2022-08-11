@@ -21,7 +21,7 @@ import sklearn.mixture as mixture
 
 
 API_TOKEN = 'DEMO_TOKEN'
-DEFAULT_SAVE_DIR = 'gmms_ev_charging'
+GMM_DEFAULT_DIR = 'gmms_ev_charging'
 
 AM_LA = pytz.timezone('America/Los_Angeles')
 GMT = pytz.timezone('GMT')
@@ -121,7 +121,7 @@ def fetch_real_events(start_date: datetime, end_date: datetime, site: SiteStr
             estimated_departure       datetime64[ns, America/Los_Angeles]
             claimed                   bool
     """
-    print("Fetching from API")
+    print(f"Fetching {site} sessions from {start_date.strftime(DATE_FORMAT)} to {end_date.strftime(DATE_FORMAT)} from ACNData")
     # add timedelta to make start and end date inclusive
     sessions = get_sessions(start_date, end_date, site=site)
 
@@ -179,7 +179,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
     for date_range in DEFAULT_DATE_RANGES:
         if to_la_dt(date_range[0]) <= start_date and end_date <= to_la_dt(date_range[1]) + timedelta(days=1):
             file_name = f'{date_range[0]} {date_range[1]}.csv.gz'
-            data = pkgutil.get_data(__name__, os.path.join('data', 'acn_evcharging_data', site, file_name))
+            data = pkgutil.get_data('sustaingym', os.path.join('data', 'evcharging', 'acn_data', site, file_name))
             assert data is not None
             df = pd.read_csv(BytesIO(data), compression='gzip')
 
@@ -192,15 +192,20 @@ def get_real_events(start_date: datetime, end_date: datetime,
     return fetch_real_events(start_date, end_date, site)
 
 
-def get_folder_name(begin: str, end: str, n_components: int) -> str:
+def get_folder_name(begin: datetime, end: datetime, n_components: int) -> str:
     """Returns folder name for a trained GMM."""
-    return begin + ' ' + end + ' ' + str(n_components)
+    return (begin.strftime(DATE_FORMAT) + ' ' + 
+            end.strftime(DATE_FORMAT) + ' ' + 
+            str(n_components))
 
 
-def save_gmm_model(gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarray, save_dir: str) -> None:
+def save_gmm_model(site: SiteStr, gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarray,
+                   begin: datetime, end: datetime, n_components: int
+                  ) -> None:
     """Saves GMM (presumably trained) and other information to directory.
 
     Args:
+        site: either 'caltech' or 'jpl'
         gmm: trained Gaussian Mixture Model
         cnt: a 1-D np.ndarray
             session counts per day during date period, expected to have
@@ -209,28 +214,34 @@ def save_gmm_model(gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarra
         station_usage: a 1-D np.ndarray
             stations' usage counts for entire date period, expected to
             have the same length as the number of stations in the network
-        save_dir: save directory of gmm
+        begin: beginning of training period, for folder name
+        end: ending of training period, for folder name
+        n_components: number of GMM components
     """
-    os.makedirs(save_dir, exist_ok=True)
-    with open(os.path.join(save_dir, MODEL_NAME), 'wb') as f:
-        # save gmm, session counts and station id usage
-        model = {
-            GMM_KEY: gmm,
-            COUNT_KEY: cnt,
-            STATION_USAGE_KEY: sid
-        }
+    # create directory as needed
+    dname = get_folder_name(begin, end, n_components)
+    save_path = os.path.join(GMM_DEFAULT_DIR, site, dname)
+    if not os.path.exists(save_path):
+        print('Creating directory: ', save_path)
+        os.makedirs(save_path, exist_ok=True)
+    # save gmm, session counts and station id usage
+    print(f'Saving in: {save_path}\n')
+    with open(os.path.join(save_path, MODEL_NAME), 'wb') as f:
+        model = {GMM_KEY: gmm, COUNT_KEY: cnt, STATION_USAGE_KEY: sid}
         pickle.dump(model, f)
 
 
-def load_gmm_model(save_dir: str) -> dict[str, np.ndarray | mixture.GaussianMixture]:
+def load_gmm_model(site: SiteStr,
+                   begin: datetime,
+                   end: datetime,
+                   n_components: int) -> dict[str, np.ndarray | mixture.GaussianMixture]:
     """Load pickled GMM and other data from folder.
 
     Args:
-        save_dir: save directory of gmm. If searching for a custom model,
-            searches relative to the current working directory. If searching
-            for a default model, searches inside the evcharging module. The
-            argument should start with 'gmms' to denote the default folder
-            to save in.
+        site: either 'caltech' or 'jpl'
+        begin: start date of date range GMM is trained in
+        end: end date of date range GMM is trained in
+        n_components: number of GMM components
 
     Returns:
         A dictionary containing the following key-value pairs:
@@ -238,13 +249,37 @@ def load_gmm_model(save_dir: str) -> dict[str, np.ndarray | mixture.GaussianMixt
                 components are specified on folder
             'count' (np.ndarray): session counts per day
             'station_usage' (np.ndarray): stations' usage counts for date range
+        If searching for a custom model, searches relative to the current
+            working directory in ``GMM_DEFAULT_DIR``. If searching for a
+            default model, searches inside the data folder.
     """
+    folder_name = get_folder_name(begin, end, n_components)
+    folder_path = os.path.join(GMM_DEFAULT_DIR, site, folder_name)
     # search through custom folders
-    if os.path.exists(save_dir):
-        with open(os.path.join(save_dir, MODEL_NAME), 'rb') as f:
+    if os.path.exists(folder_path):
+        with open(os.path.join(folder_path, MODEL_NAME), 'rb') as f:
             return pickle.load(f)
     # search through default models
     else:
-        data = pkgutil.get_data(EV_CHARGING_MODULE, os.path.join(save_dir, MODEL_NAME))
+        mpath = os.path.join('data', 'evcharging', GMM_DEFAULT_DIR, site, folder_name, MODEL_NAME)
+        data = pkgutil.get_data('sustaingym', mpath)
         assert data is not None
         return pickle.loads(data)
+
+
+def round(arr: np.ndarray, thresh: float = 0.75) -> np.ndarray:
+    """Round array values when decimal is above threshold.
+    
+    Same as np.round if thresh = 0.5
+
+    Args:
+        arr: input array
+        thresh: decimal between 0 and 1
+
+    Returns:
+        rounded array
+    """
+    # extract decimal component
+    dec = np.modf(arr)[0]
+    roundup = dec > thresh
+    return np.where(roundup, np.ceil(arr), np.floor(arr))

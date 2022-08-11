@@ -2,6 +2,7 @@
 GMM training script.
 
 Example command line usage
+python -m sustaingym.envs.evcharging.train_gmm_model --site caltech --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
 python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
 
 usage: train_gmm_model.py [-h] [--site SITE] [--gmm_n_components GMM_N_COMPONENTS]
@@ -30,10 +31,9 @@ import numpy as np
 import pandas as pd
 from sklearn.mixture import GaussianMixture
 
-from .utils import (AM_LA, DEFAULT_SAVE_DIR, DEFAULT_DATE_RANGES, DATE_FORMAT,
-                    MINS_IN_DAY, REQ_ENERGY_SCALE, START_DATE, END_DATE,
-                    get_real_events, get_folder_name, save_gmm_model,
-                    site_str_to_site, SiteStr)
+from .utils import (AM_LA, DEFAULT_DATE_RANGES, DATE_FORMAT, MINS_IN_DAY,
+                    REQ_ENERGY_SCALE, START_DATE, END_DATE, get_real_events,
+                    save_gmm_model, site_str_to_site, SiteStr)
 
 
 def preprocess(df: pd.DataFrame, filter: bool = True) -> pd.DataFrame:
@@ -58,7 +58,7 @@ def preprocess(df: pd.DataFrame, filter: bool = True) -> pd.DataFrame:
         mask = (df['arrival'].dt.day == max_depart.dt.day)
         df = df[mask].copy()
 
-    # Get arrival time, departure time, estimated departure time from datetimes and normalize between [0, 1]
+    # Normalize arrival time, departure time, estimated departure time from datetimes
     for col in ['arrival', 'departure', 'estimated_departure']:
         df[col + '_time'] = (df[col].dt.hour * 60 + df[col].dt.minute) / MINS_IN_DAY
 
@@ -132,52 +132,32 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     Args:
         site: either 'caltech' or 'jpl'
         n_components: number of components of Gaussian mixture model
-        date_range: a range of dates which should fall inside the range
-            2018-11-01 and 2021-08-31.
+        date_range: a range of dates that falls inside 2018-11-01 and 2021-08-31.
     """
-    SAVE_DIR = os.path.join(DEFAULT_SAVE_DIR, site)
-
     # Get stations
     cn = site_str_to_site(site)
     n2i = {station_id: i for i, station_id in enumerate(cn.station_ids)}
-
-    # check string dates can be converted to datetimes
-    date_range_str = tuple(date_range[i].strftime(DATE_FORMAT) for i in range(2))
-    range_str = date_range_str[0] + ' ' + date_range_str[1]
-    print(f'Getting data from site {site.capitalize()} for date range {range_str}... ')
-
     # Retrieve events and filter only claimed sessions
     df = get_real_events(date_range[0], date_range[1], site=site)
     df = df[df['claimed']]
     if len(df) == 0:
         print('Empty dataframe, abort GMM training. ')
         return
-
+    # Get counts and station ids data
     num_days_total = (date_range[1] - date_range[0]).days + 1
-
-    # get counts and station ids data
     cnt = df.arrival.dt.date.value_counts().to_numpy()
     num_unseen_days = num_days_total - len(cnt)  # account for days when there are no EVs
     cnt = np.concatenate((cnt, np.zeros(num_unseen_days)))
-
     sid = station_id_cnts(df, n2i)
-
     # Preprocess DataFrame for GMM training
     df = preprocess(df)
-
-    print(f'Fitting GMM ({n_components} components, {len(df.columns)} dimensions)... ')
+    # Train and save
+    print(f'Fitting GMM ({n_components} components, {len(df.columns)} dimensions) on '
+          f'data from {site} site from {date_range[0].strftime(DATE_FORMAT)} to '
+          f'{date_range[1].strftime(DATE_FORMAT)}... ')
     gmm = GaussianMixture(n_components=n_components)
     gmm.fit(df)
-
-    # Save
-    folder_name = get_folder_name(date_range_str[0], date_range_str[1], n_components)
-    save_dir = os.path.join(SAVE_DIR, folder_name)
-    if not os.path.exists(save_dir):
-        print('Creating directory: ', save_dir)
-        os.makedirs(save_dir)
-
-    print(f'Saving in: {save_dir}\n')
-    save_gmm_model(gmm, cnt, sid, save_dir)
+    save_gmm_model(site, gmm, cnt, sid, *date_range, n_components)
 
 
 def create_gmms(site: SiteStr, n_components: int,

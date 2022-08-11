@@ -42,10 +42,6 @@ TIME_COLUMN = {
     'historical': 'point_time',
     'forecasted': 'generated_at',
 }
-MOER_COLUMN = {
-    'historical': 'moer',
-    'forecasted': 'forecast',
-}
 
 SGIP_DT_FORMAT = '%Y-%m-%dT%H:%M:%S'  # ISO 8601 timestamp
 
@@ -60,7 +56,7 @@ FIVEMINS = timedelta(seconds=300)
 ONEDAY = timedelta(days=1)
 
 
-def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) -> pd.DataFrame:
+def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr, forecast_timesteps: int = 36) -> pd.DataFrame:
     """Retrieves data from the SGIP Signal API.
 
     Authenticates user, performs API request, and returns data as a DataFrame.
@@ -74,13 +70,17 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) 
         endtime: end time for data. See starttime.
         ba: balancing authority, responsible for region grid operation.
         req_type: either 'historical' or 'forecast'
+        forecast_timesteps: number of forecast timesteps to grab, default next 3 hours
 
     Returns:
-        A single-column DataFrame containing either historical or forecasted
+        A DataFrame containing either historical or forecasted
             rates with a DateTimeIndex named as "time". The time index type
             is datetime64[ns, UTC] (in UTC time).
         If forecast:
-            forecast                  float64
+            f1                        float64
+            f2                        float64
+            ...
+            f{forecast_timesteps}     float64
         If historical:
             moer                      float64
 
@@ -109,15 +109,17 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) 
     r = requests.get(DATA_URLS[req_type], params=params, headers=headers)
     df = pd.DataFrame(r.json())
 
-    if req_type == 'forecasted':
-        df['forecast'] = df['forecast'].map(lambda x: x[0]['value'])  # take next 5-min prediction
-
     time_column = TIME_COLUMN[req_type]
-    moer_column = MOER_COLUMN[req_type]
-
     df.set_index(pd.DatetimeIndex(df[time_column], tz=pytz.UTC), inplace=True)
     df.index.name = INDEX_NAME
-    return df[[moer_column]].copy()
+
+    if req_type == 'forecasted':
+        for i in range(forecast_timesteps):  # grab forecast window
+            df[f'f{i+1}'] = df['forecast'].map(lambda x: x[i]['value'])
+        df.drop(['forecast', 'generated_at'], axis=1, inplace=True)
+    else:
+        df = df[['moer']]
+    return df
 
 
 def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str) -> pd.DataFrame:
@@ -273,7 +275,7 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     file_or_bytes: str | BytesIO = os.path.join(save_dir, file_name)
     # search default models
     if not os.path.exists(file_or_bytes):
-        data = pkgutil.get_data(__name__, os.path.join('data', 'moer_data', file_name))
+        data = pkgutil.get_data('sustaingym', os.path.join('data', 'moer_data', file_name))
         assert data is not None
         file_or_bytes = BytesIO(data)
 
