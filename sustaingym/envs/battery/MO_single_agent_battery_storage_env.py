@@ -4,16 +4,17 @@ The module implements the BatteryStorageInGridEnv class.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any
-import pkgutil
 from io import BytesIO, StringIO
+import os
+import pkgutil
+from typing import Any
 
 import cvxpy as cp
 from gym import Env, spaces
-import mosek
 import numpy as np
 import pandas as pd
 
+BATTERY_STORAGE_MODULE = 'sustaingym.envs.battery'
 
 class MarketOperator:
     """MarketOperator class."""
@@ -181,7 +182,7 @@ class BatteryStorageInGridEnv(Env):
     # default range for max charging and discharging rates for batteries (MW)
     # assuming symmetric range
     DEFAULT_BAT_MAX_RATES = tuple((-val, val) for val in DEFAULT_BAT_MAX_DISCHARGE)
-    # cost of carbon ($ / mT of CO2)
+    # cost of carbon ($ / mT of CO2), 1 mT = 1000 kg
     CARBON_COST = 30.85
 
     def __init__(self, num_gens: int = 10,
@@ -283,8 +284,9 @@ class BatteryStorageInGridEnv(Env):
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
-            csv_path = f'data/CAISO-demand-{self.date}.csv.gz'
-            bytes_data = pkgutil.get_data(__name__, csv_path)
+            # csv_path = f'data/CAISO-demand-{self.date}.csv.gz'
+            csv_path = os.path.join('data', 'demand_data', f'CAISO-demand-{self.date}.csv.gz')
+            bytes_data = pkgutil.get_data('sustaingym', csv_path)
             assert bytes_data is not None
             df_demand = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
             # TODO: assert shape of DataFrame
@@ -301,8 +303,10 @@ class BatteryStorageInGridEnv(Env):
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
-            csv_path = f'data/CAISO-demand-forecast-{self.date}.csv.gz'
-            bytes_data = pkgutil.get_data(__name__, csv_path)
+            # csv_path = f'data/CAISO-demand-forecast-{self.date}.csv.gz'
+            csv_path = f'data/demand_forecast_data/CAISO-demand-forecast-{self.date}.csv.gz'
+            bytes_data = pkgutil.get_data('sustaingym', csv_path)
+            # bytes_data = pkgutil.get_data(__name__, csv_path)
             assert bytes_data is not None
             df_demand_forecast = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
             # TODO: assert shape of DataFrame
@@ -319,10 +323,12 @@ class BatteryStorageInGridEnv(Env):
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
-            csv_path = f'data/SGIP_CAISO_SCE_{self.date}.csv'
-            bytes_data = pkgutil.get_data(__name__, csv_path)
+            # csv_path = f'data/SGIP_CAISO_SCE_{self.date}.csv'
+            csv_path = f'data/moer_data/SGIP_CAISO_SCE_{self.date}.csv.gz'
+            # bytes_data = pkgutil.get_data(__name__, csv_path)
+            bytes_data = pkgutil.get_data('sustaingym', csv_path)
             assert bytes_data is not None
-            return pd.read_csv(StringIO(bytes_data.decode('utf-8')))
+            return pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
 
     def _generate_load_data(self, count: int) -> float:
         """Generate net demand for the time step associated with the given count.
@@ -331,7 +337,7 @@ class BatteryStorageInGridEnv(Env):
             count: integer representing a given time step
 
         Returns:
-            net demand for the given time step (TODO: units)
+            net demand for the given time step (MWh) *currently demand*
         """
         return self.df_demand.iloc[self.idx, count]
 
@@ -343,7 +349,7 @@ class BatteryStorageInGridEnv(Env):
             count: integer representing a given time step
 
         Returns:
-            net demand for the given time step (TODO: units)
+            net demand for the given time step (MWh) *currently demand*
         """
         if count > self.df_demand_forecast.shape[1]:
             return np.nan
@@ -356,9 +362,9 @@ class BatteryStorageInGridEnv(Env):
             count: integer representing a given time step
 
         Returns:
-            MOER value for the given time step (TODO: units)
+            MOER value for the given time step (mT / MWh)
         """
-        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + count, 1]
+        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + count, 0]
 
     def _generate_moer_forecast_data(self, count: int) -> float:
         """Generate fifteen minute ahead forecast of MOER data for the time step
@@ -370,11 +376,11 @@ class BatteryStorageInGridEnv(Env):
             count: integer representing a given time step
 
         Returns:
-            forecasted MOER value for the given time step (TODO: units)
+            forecasted MOER value for the given time step (mT / MWh)
         """
         if self.MAX_STEPS_PER_EPISODE * (self.idx + 1) + count > len(self.df_moer):
             return np.nan
-        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + count, 2]
+        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + count, 1]
 
     def _get_time(self) -> float:
         """Determine the fraction of the day that has elapsed based on the current
@@ -502,9 +508,14 @@ class BatteryStorageInGridEnv(Env):
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1)
         self.moer_forecast[:] = self._generate_moer_forecast_data(self.count + 1)
 
-        reward = (price + self.CARBON_COST * self.moer[0]) * x_agent
+        energy_reward = price * x_agent
+        carbon_reward = self.CARBON_COST * self.moer[0] * x_agent
+        reward = energy_reward + carbon_reward
         done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
-        info = {}  # TODO: figure what additional info could be helpful here
+        info = {
+            "energy reward": energy_reward,
+            "carbon reward": carbon_reward,
+        }
         return self.obs, reward, done, info
 
     def _calculate_off_optimal_total_episode_reward(self) -> float:
