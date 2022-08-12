@@ -46,7 +46,7 @@ TIME_COLUMN = {
 SGIP_DT_FORMAT = '%Y-%m-%dT%H:%M:%S'  # ISO 8601 timestamp
 
 FNAME_FORMAT_STR = '{ba}_{year}-{month:02}.csv.gz'
-DEFAULT_SAVE_DIR = 'moer_data2'
+DEFAULT_SAVE_DIR = 'moer_data'
 COMPRESSION = 'gzip'
 INDEX_NAME = 'time'
 
