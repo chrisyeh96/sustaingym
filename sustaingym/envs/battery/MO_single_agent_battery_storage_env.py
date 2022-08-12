@@ -508,14 +508,9 @@ class BatteryStorageInGridEnv(Env):
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1)
         self.moer_forecast[:] = self._generate_moer_forecast_data(self.count + 1)
 
-        energy_reward = price * x_agent
-        carbon_reward = self.CARBON_COST * self.moer[0] * x_agent
-        reward = energy_reward + carbon_reward
+        reward = (price + self.CARBON_COST * self.moer[0]) * x_agent
         done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
-        info = {
-            "energy reward": energy_reward,
-            "carbon reward": carbon_reward,
-        }
+        info = {}  # TODO: figure what additional info could be helpful here
         return self.obs, reward, done, info
 
     def _calculate_off_optimal_total_episode_reward(self) -> float:
