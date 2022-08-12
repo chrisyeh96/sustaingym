@@ -7,32 +7,14 @@ import warnings
 
 import acnportal.acnsim as acns
 import cvxpy as cp
-import gym
-from gym import spaces
+from gym import Env, spaces
 import numpy as np
 
 from .event_generation import AbstractTraceGenerator
-from .utils import MINS_IN_DAY, ActionType, site_str_to_site
+from .utils import MINS_IN_DAY, ActionType, site_str_to_site, round
 
 
-# Action constants
-ACTION_SCALING_FACTOR = 8
-DISCRETE_MULTIPLE = 8
-EPS = 1e-3
-MAX_ACTION = 4
-
-# Reward calculation factors
-VOLTAGE = 208  # in volts (V), default value from ACN-Sim
-MARGINAL_REVENUE_PER_KWH = 0.10  # revenue in $ / kWh
-CO2_COST_PER_METRIC_TON = 30.85
-A_MINS_TO_KWH = (1 / 60) * VOLTAGE * (1 / 1000)
-VIOLATION_WEIGHT = 0.005  # cost in $ / kWh of violation
-REVENUE_FACTOR = A_MINS_TO_KWH * MARGINAL_REVENUE_PER_KWH
-VIOLATION_FACTOR = A_MINS_TO_KWH * VIOLATION_WEIGHT
-CARBON_COST_FACTOR = A_MINS_TO_KWH * (1 / 1000) * CO2_COST_PER_METRIC_TON
-
-
-class EVChargingEnv(gym.Env):
+class EVChargingEnv(Env):
     """Central class for the EV Charging gym.
 
     This class uses the Simulator class in the acnportal package to
@@ -44,14 +26,8 @@ class EVChargingEnv(gym.Env):
     Attributes:
         data_generator: (AbstractTraceGenerator) a class whose instances can
             sample events that populate the event queue.
-
         site: either 'caltech' or 'jpl' garage to get events from
-        recompute_freq: number of periods for recurring recompute
         period: number of minutes of each time interval in simulation
-        requested_energy_cap: largest amount of requested energy allowed (kWh)
-        site: either 'caltech' or 'jpl'
-        recompute_freq: number of periods for recurring recompute
-        period: number of minutes of each simulation timestep
         requested_energy_cap: largest amount of requested energy allowed (kWh)
         max_timestamp: maximum timestamp in a day's simulation
         action_type: either 'continuous' or 'discrete'
@@ -66,9 +42,26 @@ class EVChargingEnv(gym.Env):
     """
     metadata: dict = {"render_modes": []}
 
+    # Action constants
+    ACTION_SCALING_FACTOR = 8
+    DISCRETE_MULTIPLE = 8
+    EPS = 1e-3
+    MAX_ACTION = 4
+
+    # Reward calculation factors
+    VOLTAGE = 208  # in volts (V), default value from ACN-Sim
+    MARGINAL_REVENUE_PER_KWH = 0.15  # revenue in $ / kWh
+    OPERATING_MARGIN = 0.20
+    MARGINAL_PROFIT_PER_KWH = MARGINAL_REVENUE_PER_KWH * OPERATING_MARGIN
+    CO2_COST_PER_METRIC_TON = 30.85  # carbon cost in $ / 1000 kg CO2
+    A_MINS_TO_KWH = (1 / 60) * (VOLTAGE / 1000)  # (kWH / A * mins)
+    VIOLATION_WEIGHT = 0.005  # cost in $ / kWh of violation
+
     def __init__(self, data_generator: AbstractTraceGenerator,
                  action_type: ActionType = 'discrete',
-                 project_action: bool = False,
+                 project_action: bool = True,
+                 normalize_observation: bool = True,
+                 moer_forecast_steps: int = 36,
                  verbose: int = 0):
         """
         Args:
@@ -81,20 +74,32 @@ class EVChargingEnv(gym.Env):
                 constraints are obeyed and no more charge is provided than is
                 demanded. Action projection uses convex optimization to
                 minimize the L2 norm between the suggested action and action taken.
-                Action projection leas to ~2x slowdown.
+                Action projection leads to ~2x slowdown.
+            normalize_observation: flag for whether observation should be
+                normalized between 0 and 1
+            moer_forecast_steps: number of steps of MOER forecast to include,
+                maximum of 36. Each step is 5 min, for a maximum of 3 hrs.
             verbose: level of verbosity for print out.
                 0: nothing
                 1: print description of current simulation day
                 2: print current constraint warnings for network constraint
                     violations
         """
+        assert 1 <= moer_forecast_steps <= 36
+
         self.data_generator = data_generator
         self.site = data_generator.site
-        self.recompute_freq = data_generator.recompute_freq
         self.period = data_generator.period
+        self.A_PERS_TO_KWH = self.A_MINS_TO_KWH * self.period  # (kWH / A * periods)
+        self.PROFIT_FACTOR = self.A_PERS_TO_KWH * self.MARGINAL_PROFIT_PER_KWH
+        self.VIOLATION_FACTOR = self.A_PERS_TO_KWH * self.VIOLATION_WEIGHT
+        self.CARBON_COST_FACTOR = self.A_PERS_TO_KWH * (self.CO2_COST_PER_METRIC_TON / 1000)  # ($ * kV * hr) / (kg CO2 * min)
+
         self.max_timestamp = MINS_IN_DAY // self.period
         self.action_type = action_type
         self.project_action = project_action
+        self.normalize_observation = normalize_observation
+        self.moer_forecast_steps = moer_forecast_steps
         self.verbose = verbose
         if verbose < 2:
             warnings.filterwarnings("ignore")
@@ -107,21 +112,31 @@ class EVChargingEnv(gym.Env):
         # Define observation space and action space
 
         # Observations are dictionaries describing the current demand for charge
-        self.observation_space = spaces.Dict({
-            'arrivals':        spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.int32),
-            'est_departures':  spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.int32),
+        self.observation_range = spaces.Dict({  # not actual observation space if normalizing
+            'arrivals':        spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.float32),
+            'est_departures':  spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.float32),
             'demands':         spaces.Box(0, data_generator.requested_energy_cap, shape=(self.num_stations,), dtype=np.float32),
-            'forecasted_moer': spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-            'timestep':        spaces.Box(0, self.max_timestamp, shape=(1,), dtype=np.int32),
+            'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
+            'timestep':        spaces.Box(0, self.max_timestamp, shape=(1,), dtype=np.float32),
         })
+        if normalize_observation:
+            self.observation_space = spaces.Dict({
+                'arrivals':        spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
+                'est_departures':  spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
+                'demands':         spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
+                'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
+                'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+            })
+        else:
+            self.observation_space = self.observation_range
+
         # Initialize information-tracking arrays once, always gets zeroed out at each step
-        self.arrivals = np.zeros(self.num_stations, dtype=np.int32)
-        self.est_departures = np.zeros(self.num_stations, dtype=np.int32)
+        self.arrivals = np.zeros(self.num_stations, dtype=np.float32)
+        self.est_departures = np.zeros(self.num_stations, dtype=np.float32)
         self.demands = np.zeros(self.num_stations, dtype=np.float32)
         self.forecasted_moer = np.zeros(1, dtype=np.float32)
-        self.timestep_obs = np.zeros(1, dtype=np.int32)
+        self.timestep_obs = np.zeros(1, dtype=np.float32)
         self.phases = np.zeros(self.num_stations, dtype=np.float32)
-        self.actual_departures = np.zeros(self.num_stations, dtype=np.int32)
 
         self.obs = {
             'arrivals': self.arrivals,
@@ -133,13 +148,11 @@ class EVChargingEnv(gym.Env):
 
         # Define action space, which is the charging rate for all EVs
         if action_type == 'discrete':
-            self.action_space = spaces.MultiDiscrete(
-                [MAX_ACTION + 1 for _ in range(len(self.cn.station_ids))]
-            )
+            self.action_space = spaces.MultiDiscrete([self.MAX_ACTION + 1] * self.num_stations)
         else:
             self.action_space = spaces.Box(
-                low=0, high=MAX_ACTION, shape=(len(self.cn.station_ids),), dtype=np.float32
-            )
+                low=0, high=self.MAX_ACTION, shape=(self.num_stations,),
+                dtype=np.float32)
 
         if project_action:
             self.set_up_action_projection()
@@ -151,16 +164,19 @@ class EVChargingEnv(gym.Env):
         # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
         phase_factor = np.exp(1j * np.deg2rad(self.cn._phase_angles))
         A_tilde = self.cn.constraint_matrix * phase_factor[None, :]
-        agg_magnitude = cp.abs(A_tilde @ self.projected_action) * ACTION_SCALING_FACTOR  # convert to A
+        agg_magnitude = cp.abs(A_tilde @ self.projected_action) * self.ACTION_SCALING_FACTOR  # convert to A
         magnitude_limit = self.cn.magnitudes
 
-        self.actual_action = cp.Parameter((self.num_stations,))
-        self.demands_cvx = cp.Parameter((self.num_stations,))
+        self.actual_action = cp.Parameter((self.num_stations,), nonneg=True)
+        self.demands_cvx = cp.Parameter((self.num_stations,), nonneg=True)
+
+        max_action = cp.minimum(self.MAX_ACTION + self.EPS,
+                                self.demands_cvx / self.ACTION_SCALING_FACTOR / self.A_PERS_TO_KWH)
 
         objective = cp.Minimize(cp.norm(self.projected_action - self.actual_action, p=2))
         constraints = [
-            self.projected_action <= cp.minimum(MAX_ACTION + EPS, self.demands_cvx),
-            agg_magnitude <= magnitude_limit
+            self.projected_action <= max_action,
+            agg_magnitude <= magnitude_limit,
         ]
         self.prob = cp.Problem(objective, constraints)
 
@@ -181,10 +197,9 @@ class EVChargingEnv(gym.Env):
         observation, reward, done, info tuple required by OpenAI gym.
 
         Args:
-            action: array of shape (number of stations,) with entries in the
-                set {0, 1, 2, 3, 4} if action_type == 'discrete'; otherwise,
-                entries should fall in the range [0, 4]. See to_schedule()
-                for more information.
+            action: action: shape [num_stations], charging rate for each charging station.
+                If action_type == 'discrete', entries should be in {0, 1, 2, 3, 4}.
+                If action_type == 'continuous', entries should be in range [0, 4].
             return_info: info is always returned, but if return_info is set
                 to False, less information will be present in the dictionary
 
@@ -203,10 +218,10 @@ class EVChargingEnv(gym.Env):
                 'timestep': shape [1], simulation's current iteration
             reward: float representing scheduler's performance
             done: whether episode is finished
-            info: dict with the following key-value pairs
+            info: dict with the following key-value pairs TODO I really don't want to change comments every time I make a change so I'll just put this TODO here
                 'active_evs': list of acns.EV, all EVs currently charging.
                 'active_sessions': list of acns.interface.SessionInfo, active sessions.
-                'charging_rates': pd.DataFrame, History of charging rates as
+                'charging_rates': pd.DataFrame, history of charging rates as
                     provided by the internal simulator. Columns are EVSE id, and
                     the index is the iteration.
                 'actual_departures': np.ndarray of shape [num_stations],
@@ -221,17 +236,15 @@ class EVChargingEnv(gym.Env):
                     'carbon_cost': marginal CO2 emissions rate ($)
                     'excess_charge': costs for violating network constraints ($)
         """
-        self.prev_timestamp = self.simulator._iteration
         # Step internal simulator
         schedule = self.to_schedule(action)  # transform action to pilot signals
         done = self.simulator.step(schedule)
         self.simulator._resolve = False  # work-around to keep iterating
-        self.timestamp = self.simulator._iteration
 
         # Retrieve environment information
         observation, info = self.get_observation(return_info=return_info)
         reward, reward_info = self.get_rewards(schedule)
-
+        self.iteration += 1
         info['reward'] = reward_info
         return observation, reward, done, info
 
@@ -260,7 +273,7 @@ class EVChargingEnv(gym.Env):
         self.rng = np.random.default_rng(seed)
         self.data_generator.set_random_seed(seed)
 
-        if options and 'verbose' in options:
+        if options:
             if 'verbose' in options:
                 self.verbose = options['verbose']
 
@@ -282,7 +295,7 @@ class EVChargingEnv(gym.Env):
         self.simulator = acns.Simulator(network=self.cn, scheduler=None, events=self.events, start=day, period=self.period, verbose=False)
         self.interface = acns.Interface(self.simulator)
         # Initialize time steps
-        self.prev_timestamp, self.timestamp = self.simulator._iteration, self.simulator._iteration
+        self.iteration = 0
         # Retrieve environment information
         if return_info:
             return self.get_observation(True)
@@ -306,12 +319,13 @@ class EVChargingEnv(gym.Env):
         ..., 32}. Continuous actions have to be appropriately rounded.
 
         Args:
-            action: charging rate to take at each charging station.
-                If action_type is 'discrete', expects actions in {0, 1, 2, 3, 4}.
-                If action_type is 'continuous', expects actions in [0, 4].
+            action: shape [num_stations], charging rate for each charging station.
+                If action_type == 'discrete', entries should be in {0, 1, 2, 3, 4}.
+                If action_type == 'continuous', entries should be in range [0, 4].
 
         Returns:
-            pilot_signals: maps station ids to a single-element list of pilot signals.
+            pilot_signals: maps station ids to a single-element list of pilot signals
+                in Amps
         """
         # project action if flag is set
         # note that if action is already in the feasible action space,
@@ -319,15 +333,19 @@ class EVChargingEnv(gym.Env):
         if self.project_action:
             # TODO(chris): switch to MOSEK
             self.actual_action.value = action
-            self.demands_cvx.value = self.demands / ACTION_SCALING_FACTOR / self.recompute_freq
-            self.prob.solve(solver='ECOS', warm_start=True)
+            if self.normalize_observation:
+                self.demands_cvx.value = self.demands * self.observation_range['demands'].high
+            else:
+                self.demands_cvx.value = self.demands
+            self.prob.solve(warm_start=True, solver=cp.MOSEK)
             action = self.projected_action.value
+
         if self.action_type == 'discrete':
-            return {e: [ACTION_SCALING_FACTOR * a] for a, e in zip(np.round(action), self.cn.station_ids)}
+            return {e: [self.ACTION_SCALING_FACTOR * a] for a, e in zip(round(action), self.cn.station_ids)}
         else:
-            action = np.round(action * ACTION_SCALING_FACTOR)  # round to nearest integer rate
+            action = np.round(action * self.ACTION_SCALING_FACTOR)  # round to nearest integer rate
             pilot_signals = {}
-            for i in range(len(self.cn.station_ids)):
+            for i in range(self.num_stations):
                 station_id = self.cn.station_ids[i]
                 # hacky way to determine allowable rates - allowed rates required to keep simulation running
                 # one type of EVSE accepts values in {0, 8, 16, 24, 32}
@@ -337,7 +355,7 @@ class EVChargingEnv(gym.Env):
                     pilot_signals[station_id] = [action[i] if action[i] >= 6 else 0]
                 else:
                     # set to {0, 8, 16, 24, 32}
-                    pilot_signals[station_id] = [(np.round(action[i] / DISCRETE_MULTIPLE) * DISCRETE_MULTIPLE)]
+                    pilot_signals[station_id] = [(np.round(action[i] / self.DISCRETE_MULTIPLE) * self.DISCRETE_MULTIPLE)]
             return pilot_signals
 
     def get_observation(self, return_info: bool = True
@@ -360,23 +378,17 @@ class EVChargingEnv(gym.Env):
             station_idx = self.evse_name_to_idx[station_id]
             self.arrivals[station_idx] = session_info.arrival
             self.est_departures[station_idx] = session_info.estimated_departure
-            self.demands[station_idx] = self.interface.remaining_amp_periods(session_info)
-        self.forecasted_moer[0] = self.moer[len(self.moer)-1-self.timestamp, 1]  # array goes back in time, choose 2nd col
-        self.timestep_obs[0] = self.timestamp
+            self.demands[station_idx] = self.interface.remaining_amp_periods(session_info) * self.A_PERS_TO_KWH
+        self.forecasted_moer[:] = self.moer[self.iteration, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
+        self.timestep_obs[0] = self.iteration
+
+        if self.normalize_observation:
+            self.normalize()
 
         if return_info:
-            # Fill other information
-            self.actual_departures.fill(0)
-            for session_info in self.interface.active_sessions():
-                station_id = session_info.station_id
-                station_idx = self.evse_name_to_idx[station_id]
-                self.actual_departures[station_idx] = session_info.departure
-
             info = {
+                'evs': self.evs,
                 'active_evs': self.simulator.get_active_evs(),
-                'active_sessions': self.interface.active_sessions(),
-                'charging_rates': self.simulator.charging_rates_as_df(),
-                'actual_departures': self.actual_departures,
                 'pilot_signals': self.simulator.pilot_signals_as_df(),
             }
             return self.obs, info
@@ -390,40 +402,40 @@ class EVChargingEnv(gym.Env):
         and network constraint violation costs.
 
         Args:
-            schedule: dictionary mapping EVSE charger to a single-element
-                list of the pilot signal to that charger.
+            schedule: maps EVSE charger ID to a single-element
+                list of the pilot signal (in Amps) to that charger.
 
         Returns:
             total_reward: weighted reward awarded to the current timestep
             info: dictionary containing the individual, unweighted
                 components making up total reward. See step().
         """
-        # schedule for the interval between self.prev_timestamp and self.timestamp
         schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
 
-        interval_mins = (self.timestamp - self.prev_timestamp) * self.period
-
-        # revenue calculation (Amp * period) -> (Amp * mins) -> (KWH) -> ($)
-        revenue = np.sum(self.simulator.charging_rates[:, self.prev_timestamp:self.timestamp])
-        revenue *= self.period * REVENUE_FACTOR
+        # profit calculation (Amp * period) -> (Amp * mins) -> (KWH) -> ($)
+        profit = self.PROFIT_FACTOR * np.sum(self.simulator.charging_rates[:, self.iteration:self.iteration + 1])
 
         # Network constraints - amount of charge over maximum allowed rates ($)
         current_sum = np.abs(self.simulator.network.constraint_current(schedule))
         excess_current = np.sum(np.maximum(0, current_sum - self.simulator.network.magnitudes))
-        excess_charge = excess_current * interval_mins * VIOLATION_FACTOR
+        excess_charge = excess_current * self.VIOLATION_FACTOR
 
         # Carbon cost ($)
-        carbon_cost = np.sum(schedule) * interval_mins * self.moer[len(self.moer)-1-self.prev_timestamp, 0]
-        carbon_cost *= CARBON_COST_FACTOR
+        carbon_cost = self.CARBON_COST_FACTOR * np.sum(schedule) * self.moer[self.iteration, 0]
 
-        total_reward = revenue - carbon_cost - excess_charge
+        total_reward = profit - carbon_cost - excess_charge
 
         info = {
-            'revenue': revenue,
+            'profit': profit,
             'carbon_cost': carbon_cost,
             'excess_charge': excess_charge,
         }
         return total_reward, info
+
+    def normalize(self) -> None:
+        """Scales each observation value to lie between 0 and 1."""
+        for s in self.obs:
+            self.obs[s] /= self.observation_range[s].high
 
     def render(self) -> None:
         """Render environment."""
