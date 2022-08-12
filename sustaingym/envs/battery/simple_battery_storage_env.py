@@ -2,7 +2,6 @@
 The module implements the BatteryStorageEnv class.
 """
 from __future__ import annotations
-from typing import Dict, Optional
 
 import pkgutil
 from io import StringIO
@@ -54,7 +53,7 @@ class BatteryStorageEnv(gym.Env):
     # indicates whether local file will be used instead
     LOCAL_FILE = False
 
-    def __init__(self, render_mode: Optional[str] = None, env_config: Dict | None = None):
+    def __init__(self, render_mode: str | None = None, env_config: dict | None = None):
         """
         Constructs instance of BatteryStorageEnv class.
 
@@ -231,7 +230,7 @@ class BatteryStorageEnv(gym.Env):
         state = np.array([self.energy_lvl, self.curr_price, time], dtype=np.float32)
         return (state, float(reward), done, info)
 
-    def _get_info(self, curr_price: float) -> Dict:
+    def _get_info(self, curr_price: float) -> dict[str, float]:
         self.avg_price = (1.0 - self.eta)*self.avg_price + self.eta*curr_price
         return {"running_avg": self.avg_price}
 
