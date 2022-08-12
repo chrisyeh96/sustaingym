@@ -1,7 +1,10 @@
-"""This module contains methods for dealing with MOER data."""
+"""Methods for handling Marginal Operating Emissions Rate (MOER) data from te
+California Self-Generation Incentive Program. See
+    http://sgipsignal.com/api-documentation
+for more information.
+"""
 from __future__ import annotations
 
-import calendar
 from datetime import datetime, timedelta
 from io import BytesIO
 import os
@@ -16,12 +19,12 @@ import pytz
 DataTypeStr = Literal['historical', 'forecasted']
 
 DEFAULT_DATE_RANGES = [
-    ('2019-05-01', '2019-08-31'),
-    ('2019-09-01', '2019-12-31'),
-    ('2020-02-01', '2020-05-31'),
-    ('2021-05-01', '2021-08-31'),
+    ('2019-05', '2019-08'),
+    ('2019-09', '2019-12'),
+    ('2020-02', '2020-05'),
+    ('2021-05', '2021-08'),
 ]
-DATE_FORMAT = '%Y-%m-%d'
+DATE_FORMAT = '%Y-%m'
 
 USERNAME = os.environ.get('SGIPSIGNAL_USER')
 PASSWORD = os.environ.get('SGIPSIGNAL_PASS')
@@ -50,11 +53,11 @@ MOER_COLUMN = {
 SGIP_DT_FORMAT = '%Y-%m-%dT%H:%M:%S'  # ISO 8601 timestamp
 
 FNAME_FORMAT_STR = '{ba}_{year}-{month:02}.csv.gz'
-DEFAULT_SAVE_DIR = 'moer_data2'
+DEFAULT_SAVE_DIR = 'data/moer_data'
 COMPRESSION = 'gzip'
 INDEX_NAME = 'time'
 
-BALANCING_AUTHORITIES = ['SGIP_CAISO_PGE', 'SGIP_CAISO_SCE',]
+BALANCING_AUTHORITIES = ['SGIP_CAISO_PGE', 'SGIP_CAISO_SCE']
 
 FIVEMINS = timedelta(seconds=300)
 ONEDAY = timedelta(days=1)
@@ -64,8 +67,8 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) 
     """Retrieves data from the SGIP Signal API.
 
     Authenticates user, performs API request, and returns data as a DataFrame.
-    If type is 'historical', returns the historical marginal emissions rate.
-    If type is 'forecast', returns the forecast for emissions rate at the next
+    If req_type is 'historical', returns the historical marginal emissions rate.
+    If req_type is 'forecast', returns the forecast for emissions rate at the next
     5 minute mark. See https://sgipsignal.com/api-documentation
 
     Args:
@@ -99,13 +102,12 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr) 
     token = r.json()['token']
 
     # Create API fields
-    headers = {'Authorization': f'Bearer {token}'}
     params = dict(
         ba=ba,
         starttime=starttime,
         endtime=endtime,
         version=DATA_VERSIONS[req_type])
-
+    headers = {'Authorization': f'Bearer {token}'}
     r = requests.get(DATA_URLS[req_type], params=params, headers=headers)
     df = pd.DataFrame(r.json())
 
@@ -139,7 +141,7 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
             forecast                  float64
             moer                      float64
     """
-    # Localize datetimes to UTC.
+    # Localize datetimes to UTC
     starttime = starttime.astimezone(pytz.UTC)
     endtime = endtime.astimezone(pytz.UTC)
 
@@ -152,9 +154,12 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
 
     combined_dfs = []
     for req_type in ['historical', 'forecasted']:
+        # Historical queries are limited to 31 days. Queries on forecasts
+        # are limited to 1 day.
+        span = days30 if req_type == 'historical' else days1
+
         # Go backwards so that there isn't need to sort
         # Set up request range
-        span = days30 if req_type == 'historical' else days1
         req_endtime = endtime
         req_starttime = max(starttime, req_endtime - span + FIVEMINS)
 
@@ -200,13 +205,14 @@ def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
     file_name = FNAME_FORMAT_STR.format(ba=ba, year=year, month=month)
     save_path = os.path.join(save_dir, file_name)
     if os.path.exists(save_path):
+        print(f'Found existing file at {save_path}. Will not overwrite.')
         return
 
     os.makedirs(save_dir, exist_ok=True)  # Create directory as needed
+
     # Find range of dates for month and retrieve data
-    num_days = calendar.monthrange(year, month)[1]
     starttime = datetime(year, month, 1, tzinfo=pytz.UTC)
-    endtime = datetime(year, month, num_days, tzinfo=pytz.UTC) + ONEDAY
+    endtime = datetime(year, month + 1, 1, tzinfo=pytz.UTC)
     df = get_historical_and_forecasts(starttime, endtime, ba)
 
     # data sometimes has NaNs. In these cases, propagate values forward in time.
@@ -224,11 +230,12 @@ def save_moer(starttime: datetime, endtime: datetime, ba: str) -> None:
 
     Args:
         starttime: start time for data. Only year and month are used.
+            Timezone information is ignored.
         endtime: end time for data. See starttime.
         ba: balancing authority, responsible for region grid operation.
     """
     if starttime > endtime:
-        starttime, endtime = endtime, starttime
+        raise ValueError(f'starttime {starttime} must come before endtime {endtime}')
     syear, smonth = starttime.year, starttime.month
     eyear, emonth = endtime.year, endtime.month
 
@@ -248,9 +255,9 @@ def save_moer_default_ranges() -> None:
     ranges. Saves for both balancing authorities: 'SGIP_CAISO_PGE',
     'SGIP_CAISO_SCE'.
     """
-    for date_range_str in DEFAULT_DATE_RANGES:
-        starttime = datetime.strptime(date_range_str[0], DATE_FORMAT)
-        endtime = datetime.strptime(date_range_str[1], DATE_FORMAT)
+    for start_date_str, end_date_str in DEFAULT_DATE_RANGES:
+        starttime = datetime.strptime(start_date_str, DATE_FORMAT)
+        endtime = datetime.strptime(end_date_str, DATE_FORMAT)
         for ba in BALANCING_AUTHORITIES:
             save_moer(starttime, endtime, ba)
 
