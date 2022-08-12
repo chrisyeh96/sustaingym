@@ -447,8 +447,12 @@ class BatteryStorageInGridEnv(Env):
             "moer previous": self.moer,
             "moer forecast": self.moer_forecast
         }
-        # TODO: figure what additional info could be helpful here
-        info = {"curr info": None}
+
+        info = {
+            "energy reward": None,
+            "carbon reward": None,
+            "terminal reward": None,
+        }
         return self.obs if not return_info else (self.obs, info)
 
     def step(self, action: Sequence[float]) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
@@ -508,12 +512,28 @@ class BatteryStorageInGridEnv(Env):
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1)
         self.moer_forecast[:] = self._generate_moer_forecast_data(self.count + 1)
 
-        reward = (price + self.CARBON_COST * self.moer[0]) * x_agent
+        energy_reward = price * x_agent
+        carbon_reward = self.CARBON_COST * self.moer[0] * x_agent
+        reward = energy_reward + carbon_reward
         done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
-        info = {}  # TODO: figure what additional info could be helpful here
+
+        if done:
+            terminal_reward = self._calculate_off_optimal_total_episode_reward(
+                self.battery[-1]) - self._calculate_off_optimal_total_episode_reward(
+                self.battery_capacity[-1] / 2.)
+            reward += terminal_reward
+        else:
+            terminal_reward = None
+
+        info = {
+            'energy reward': energy_reward,
+            'carbon reward': carbon_reward,
+            'terminal reward': terminal_reward,
+        }
         return self.obs, reward, done, info
 
-    def _calculate_off_optimal_total_episode_reward(self) -> float:
+    def _calculate_off_optimal_total_episode_reward(
+        self, agent_battery_charge: float | None = None) -> float:
         """Calculates an approximate total offline optimal reward for the current
         episode.
 
@@ -521,6 +541,9 @@ class BatteryStorageInGridEnv(Env):
             approximate offline optimal reward for the current episode
         """
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
+
+        if agent_battery_charge is not None:
+            self.battery_charge[-1] = agent_battery_charge
 
         # get prices from market for all time steps
         for count in range(1, self.MAX_STEPS_PER_EPISODE):
@@ -555,6 +578,9 @@ class BatteryStorageInGridEnv(Env):
         x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)
 
         init_battery_charge = self.battery_capacity / 2.0
+
+        if agent_battery_charge is not None:
+            init_battery_charge[-1] = agent_battery_charge
 
         constraints = [
             0 <= init_battery_charge[-1] + cp.cumsum(-x),
