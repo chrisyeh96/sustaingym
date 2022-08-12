@@ -194,14 +194,14 @@ def get_real_events(start_date: datetime, end_date: datetime,
 
 def get_folder_name(begin: datetime, end: datetime, n_components: int) -> str:
     """Returns folder name for a trained GMM."""
-    return (begin.strftime(DATE_FORMAT) + ' ' + 
-            end.strftime(DATE_FORMAT) + ' ' + 
+    return (begin.strftime(DATE_FORMAT) + ' ' +
+            end.strftime(DATE_FORMAT) + ' ' +
             str(n_components))
 
 
 def save_gmm_model(site: SiteStr, gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarray,
                    begin: datetime, end: datetime, n_components: int
-                  ) -> None:
+                   ) -> None:
     """Saves GMM (presumably trained) and other information to directory.
 
     Args:
@@ -269,7 +269,7 @@ def load_gmm_model(site: SiteStr,
 
 def round(arr: np.ndarray, thresh: float = 0.75) -> np.ndarray:
     """Round array values when decimal is above threshold.
-    
+
     Same as np.round if thresh = 0.5
 
     Args:

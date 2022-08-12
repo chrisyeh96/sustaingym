@@ -56,7 +56,8 @@ FIVEMINS = timedelta(seconds=300)
 ONEDAY = timedelta(days=1)
 
 
-def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr, forecast_timesteps: int = 36) -> pd.DataFrame:
+def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr,
+                  forecast_timesteps: int = 36) -> pd.DataFrame:
     """Retrieves data from the SGIP Signal API.
 
     Authenticates user, performs API request, and returns data as a DataFrame.
@@ -122,7 +123,8 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr, 
     return df
 
 
-def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str) -> pd.DataFrame:
+def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
+                                 ) -> pd.DataFrame:
     """Retrieves both forecasted and historical data.
 
     May request forecasted data repeatedly due to API constraints.
@@ -135,13 +137,14 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
         ba: balancing authority, responsible for region grid operation.
 
     Returns:
-        A 2-column DataFrame containing both historical and forecasted
-            rates with a DateTimeIndex named as "time". The index type
-            is datetime64[ns, UTC] (in UTC time).
-            forecast                  float64
-            moer                      float64
+        A DataFrame containing both historical and forecasted MOER values
+            time (index)    datetime64[ns, UTC]
+            moer            float64               historical MOER at given time
+            f1              float64               forecast for time+5min, generated at given time
+            ...
+            f36             float64               forecast for time+3h, generated at given time
     """
-    # Localize datetimes to UTC.
+    # Localize datetimes to UTC
     starttime = starttime.astimezone(pytz.UTC)
     endtime = endtime.astimezone(pytz.UTC)
 
@@ -267,8 +270,8 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
         save_dir: directory to save compressed csv to.
 
     Returns:
-        A DataFrame of the emission rates for the month. See
-        ``get_historical_and_forecasts()`` for more info.
+        A DataFrame of the emission rates for the month, with index sorted
+        chronologically. See ``get_historical_and_forecasts()`` for more info.
     """
     # first search through custom models
     file_name = FNAME_FORMAT_STR.format(ba=ba, year=year, month=month)
@@ -282,10 +285,12 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     df = pd.read_csv(file_or_bytes, compression=COMPRESSION,
                      index_col=INDEX_NAME)
     df.index = pd.to_datetime(pd.DatetimeIndex(df.index))  # set datetime index to UTC
+    df.sort_index(inplace=True)
     return df
 
 
-def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str) -> pd.DataFrame:
+def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str
+              ) -> pd.DataFrame:
     """Returns data for all months that overlap with interval.
 
     Args:
@@ -295,8 +300,9 @@ def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str) ->
         save_dir: directory to load compressed csv from.
 
     Returns:
-        A DataFrame of the emission rates for the all months of overlap. See
-        ``get_historical_and_forecasts()`` for more info.
+        A DataFrame of historical emissions and forecasts for all months that
+        overlap the (starttime, endtime) interval. Index is sorted
+        chronologically. See ``get_historical_and_forecasts()`` for more info.
 
     Examples:
         starttime, endtime = datetime(2021, 2, 1), datetime(2021, 5, 31)
@@ -307,19 +313,18 @@ def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str) ->
     eyear, emonth = endtime.year, endtime.month
 
     dfs: list[pd.DataFrame] = []
-    # Go backwards in time so order is descending
     while (syear < eyear) or (syear == eyear and smonth <= emonth):
         df = load_monthly_moer(eyear, emonth, ba, save_dir)
-        if dfs:  # check for overlapping windows
-            earliest_datetime = dfs[-1].tail(1).index[0]  # earliest time in previous window
-            df = df[df.index < earliest_datetime]  # only fetch earlier window
+        if len(dfs) > 0:  # check for overlapping windows
+            latest_datetime = dfs[-1].tail(1).index[0]  # latest time in previous window
+            df = df[df.index > latest_datetime]  # only fetch later window
         dfs.append(df)
 
-        if emonth == 1:
-            eyear -= 1
-            emonth = 12
+        if smonth == 12:
+            syear += 1
+            smonth = 1
         else:
-            emonth -= 1
+            smonth += 1
     return pd.concat(dfs, axis=0)
 
 
@@ -349,10 +354,10 @@ class MOERLoader:
             dt: a timezone-aware datetime object
 
         Returns:
-            array of shape (289, 2). The first column is the historical
-                MOER and the second the forecasted; both are in units
-                kg CO2 per kWh. Note that the "rows" are backwards, in that
-                the most recent rates are at the top, sorted descending.
+            array of shape (289, 37). The first column is the historical
+                MOER. The remaining columns are forecasts for the next 36
+                five-min time steps. Units kg CO2 per kWh. Rows are sorted
+                chronologically.
         """
         dt_one_day_later = dt + ONEDAY + FIVEMINS
         return self.df[(dt <= self.df.index) & (self.df.index < dt_one_day_later)].values
