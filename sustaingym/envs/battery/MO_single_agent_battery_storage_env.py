@@ -181,7 +181,7 @@ class BatteryStorageInGridEnv(Env):
     # default range for max charging and discharging rates for batteries (MW)
     # assuming symmetric range
     DEFAULT_BAT_MAX_RATES = tuple((-val, val) for val in DEFAULT_BAT_MAX_DISCHARGE)
-    # cost of carbon ($ / mT of CO2)
+    # cost of carbon ($ / mT of CO2), 1 mT = 1000 kg
     CARBON_COST = 30.85
 
     def __init__(self, num_gens: int = 10,
@@ -502,9 +502,12 @@ class BatteryStorageInGridEnv(Env):
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1)
         self.moer_forecast[:] = self._generate_moer_forecast_data(self.count + 1)
 
-        reward = (price + self.CARBON_COST * self.moer[0]) * x_agent
+        energy_reward = price * x_agent
+        carbon_reward = self.CARBON_COST * self.moer[0] * x_agent
+        reward = energy_reward + carbon_reward
+
         done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
-        info = {}  # TODO: figure what additional info could be helpful here
+        info = {'energy_reward': energy_reward, 'carbon_cost': carbon_reward}
         return self.obs, reward, done, info
 
     def _calculate_off_optimal_total_episode_reward(self) -> float:
