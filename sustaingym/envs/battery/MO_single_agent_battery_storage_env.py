@@ -16,7 +16,7 @@ from gym import Env, spaces
 import numpy as np
 import pandas as pd
 
-from ...data.load_moer import MOERLoader
+from sustaingym.data.load_moer import MOERLoader
 
 BATTERY_STORAGE_MODULE = 'sustaingym.envs.battery'
 
@@ -77,13 +77,14 @@ class MarketOperator:
         self.bats_discharge_costs.value = self.env.bats_costs[:, 0]
         self.bats_charge_costs.value = self.env.bats_costs[:, 1]
         self.load.value = self.env.demand[0]
-        # print("gen_max_production: ", self.env.gen_max_production)
-        # print("gen_costs: ", self.env.gen_costs)
-        # print("bats_max_charge: ", self.env.bats_max_charge)
-        # print("bats_max_discharge: ", self.env.bats_max_discharge)
-        # print("bats_charge_costs: ", self.env.bats_charge_costs)
-        # print("bats_discharge_costs: ", self.env.bats_discharge_costs)
-        # print("load: ", self.env.demand)
+        # if self.env.count >= 286:
+        #     print("gen_max_production: ", self.env.gen_max_production)
+        #     print("gen_costs: ", self.env.gen_costs)
+        #     print("bats_max_charge: ", self.env.bats_max_charge)
+        #     print("bats_max_discharge: ", self.env.bats_max_discharge)
+        #     print("bats_charge_costs: ", self.env.bats_costs[:, 0])
+        #     print("bats_discharge_costs: ", self.env.bats_costs[:, 1])
+        #     print("load: ", self.env.demand)
         self.prob.solve()
         # print("status: ", self.prob.status)
         # print("x value: ", self.x.value)
@@ -112,7 +113,7 @@ class MarketOperator:
         bats_discharge_costs = self.env.bats_costs[:, 0]
         bats_charge_costs = self.env.bats_costs[:, 1]
         # restrict agent to not charge or discharge
-        bats_charge_costs[-1] = 10**20
+        bats_charge_costs[-1] = 10**3
         bats_discharge_costs[-1] = 0
 
         self.gen_max_production.value = self.env.gen_max_production
@@ -251,6 +252,7 @@ class BatteryStorageInGridEnv(Env):
             self.init_bats_costs[:-1, 1] = 0.75 * self.init_bats_costs[:-1, 0]
         else:
             self.init_bats_costs[:-1] = bats_costs
+
         assert (self.init_bats_costs >= 0).all()
 
         # determine the maximum possible cost of energy ($ / MWh)
@@ -271,8 +273,8 @@ class BatteryStorageInGridEnv(Env):
                                                   shape=(1,), dtype=float),
             "demand previous": spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
             "demand forecast": spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
-            "moer previous":   spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
-            "moer forecast":   spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float)
+            "moer previous":   spaces.Box(low=0, high=1., shape=(1,), dtype=float),
+            "moer forecast":   spaces.Box(low=0., high=1., shape=(moer_forecast_steps,), dtype=float)
         })
         self.init = False
         self.market_op = MarketOperator(self)
@@ -373,8 +375,11 @@ class BatteryStorageInGridEnv(Env):
         rng = self.rng
 
         # initialize gen costs, battery charge costs, and battery discharge costs for all time steps
-        self.all_gen_costs = self.init_gen_costs[:, None] * rng.uniform(0.8, 1.25, size=(self.num_gens, self.MAX_STEPS_PER_EPISODE))
-        self.all_bats_costs = self.init_bats_costs[:, None, :] * rng.uniform(0.8, 1.25, size=(self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
+        # self.all_gen_costs = self.init_gen_costs[:, None] * rng.uniform(0.8, 1.25, size=(self.num_gens, self.MAX_STEPS_PER_EPISODE))
+        # self.all_bats_costs = self.init_bats_costs[:, None, :] * rng.uniform(0.8, 1.25, size=(self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
+
+        self.all_gen_costs = self.init_gen_costs[:, None] * np.ones((self.num_gens, self.MAX_STEPS_PER_EPISODE))
+        self.all_bats_costs = self.init_bats_costs[:, None, :] * np.ones((self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
 
         # enforce convexity of battery bids:
         # discharge costs must be >= charge costs
@@ -485,7 +490,7 @@ class BatteryStorageInGridEnv(Env):
 
         if done:
             terminal_reward = self._calculate_off_optimal_total_episode_reward(
-                self.battery[-1]) - self._calculate_off_optimal_total_episode_reward(
+            ) - self._calculate_off_optimal_total_episode_reward(
                 self.battery_capacity[-1] / 2.)
             reward += terminal_reward
         else:
@@ -503,6 +508,11 @@ class BatteryStorageInGridEnv(Env):
         """Calculates an approximate total offline optimal reward for the current
         episode.
 
+        Args:
+            agent_battery_charge: optional float representing the initial charge in the
+            agent-controlled battery storage system. If None, the initial charge is the
+            remainind battery charge at the current state of the environment.
+
         Returns:
             approximate offline optimal reward for the current episode
         """
@@ -510,6 +520,8 @@ class BatteryStorageInGridEnv(Env):
 
         if agent_battery_charge is not None:
             self.battery_charge[-1] = agent_battery_charge
+        
+        init_battery_charge = self.battery_charge[-1]
 
         # get prices from market for all time steps
         for count in range(1, self.MAX_STEPS_PER_EPISODE):
@@ -543,17 +555,12 @@ class BatteryStorageInGridEnv(Env):
 
         x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)
 
-        init_battery_charge = self.battery_capacity / 2.0
-
-        if agent_battery_charge is not None:
-            init_battery_charge[-1] = agent_battery_charge
-
         constraints = [
-            0 <= init_battery_charge[-1] + cp.cumsum(-x),
-            init_battery_charge[-1] + cp.cumsum(-x) <= self.battery_capacity[-1],
+            0 <= init_battery_charge + cp.cumsum(-x),
+            init_battery_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
         ]
 
-        moers = np.array([self._generate_moer_data(i) for i in range(1, self.MAX_STEPS_PER_EPISODE)])
+        moers = self.moer_arr[1:-1, 0]
         obj = (prices[1:] + self.CARBON_COST * moers) @ x
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
