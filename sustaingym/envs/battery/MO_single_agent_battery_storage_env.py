@@ -4,15 +4,19 @@ The module implements the BatteryStorageInGridEnv class.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from io import BytesIO, StringIO
+from datetime import datetime
+from io import BytesIO
 import os
 import pkgutil
+import pytz
 from typing import Any
 
 import cvxpy as cp
 from gym import Env, spaces
 import numpy as np
 import pandas as pd
+
+from ...data.load_moer import MOERLoader
 
 BATTERY_STORAGE_MODULE = 'sustaingym.envs.battery'
 
@@ -192,7 +196,8 @@ class BatteryStorageInGridEnv(Env):
                  battery_capacity: Sequence[float] = DEFAULT_BAT_CAPACITY,
                  bats_max_discharge_range: Sequence[Sequence[float]] = DEFAULT_BAT_MAX_RATES,
                  bats_costs: np.ndarray | None = None,
-                 date: str = '2019-05',
+                 month: str = '2019-05',
+                 moer_forecast_steps: int = 36,
                  seed: int | None = None,
                  LOCAL_FILE_PATH: str | None = None):
         """
@@ -206,16 +211,18 @@ class BatteryStorageInGridEnv(Env):
                 maximum charge (-) and discharge (+) rates of each battery (MW)
             bats_costs: shape [num_bats - 1, 2], discharging and charging costs
                 for each battery, excluding the agent-controlled battery ($/MWh)
-            date: string representing the year and month to load moer and net demand data
-                from
+            month: year and month to load moer and net demand data from, format YYYY-MM
+            moer_forecast_steps: number of steps of MOER forecast to include,
+                maximum of 36. Each step is 5 min, for a maximum of 3 hrs.
             seed: random seed
         """
         if LOCAL_FILE_PATH is not None:
-            assert date in ['2019-05', '2020-05', '2021-05']  # update for future dates
+            assert month in ['2019-05', '2020-05', '2021-05']  # update for future dates
 
         self.num_gens = num_gens
         self.num_bats = num_bats
-        self.date = date
+        self.month = month
+        self.moer_forecast_steps = moer_forecast_steps
         self.LOCAL_PATH = LOCAL_FILE_PATH
 
         self.rng = np.random.default_rng(seed)
@@ -270,8 +277,12 @@ class BatteryStorageInGridEnv(Env):
         self.init = False
         self.market_op = MarketOperator(self)
         self.df_demand = self._get_demand_data()
-        self.df_moer = self._get_moer_data()
         self.df_demand_forecast = self._get_demand_forecast_data()
+
+        starttime = datetime.strptime(self.month, '%Y-%m').replace(tzinfo=pytz.timezone('America/Los_Angeles'))
+        self.moer_loader = MOERLoader(
+            starttime=starttime, endtime=starttime,
+            ba='SGIP_CAISO_SCE', save_dir='sustaingym/data/moer')
 
     def _get_demand_data(self) -> pd.DataFrame:
         """Get net demand data.
@@ -284,8 +295,7 @@ class BatteryStorageInGridEnv(Env):
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
-            # csv_path = f'data/CAISO-demand-{self.date}.csv.gz'
-            csv_path = os.path.join('data', 'demand_data', f'CAISO-demand-{self.date}.csv.gz')
+            csv_path = os.path.join('data', 'demand_data', f'CAISO-demand-{self.month}.csv.gz')
             bytes_data = pkgutil.get_data('sustaingym', csv_path)
             assert bytes_data is not None
             df_demand = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
@@ -303,32 +313,13 @@ class BatteryStorageInGridEnv(Env):
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
-            # csv_path = f'data/CAISO-demand-forecast-{self.date}.csv.gz'
-            csv_path = f'data/demand_forecast_data/CAISO-demand-forecast-{self.date}.csv.gz'
+            csv_path = f'data/demand_forecast_data/CAISO-demand-forecast-{self.month}.csv.gz'
             bytes_data = pkgutil.get_data('sustaingym', csv_path)
             # bytes_data = pkgutil.get_data(__name__, csv_path)
             assert bytes_data is not None
             df_demand_forecast = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
             # TODO: assert shape of DataFrame
             return df_demand_forecast / 1800.
-
-    def _get_moer_data(self) -> pd.DataFrame:
-        """Get temporal moer data.
-
-        TODO: use gzip compression
-
-        Returns:
-            DataFrame with moer data
-        """
-        if self.LOCAL_PATH is not None:
-            return pd.read_csv(self.LOCAL_PATH)
-        else:
-            # csv_path = f'data/SGIP_CAISO_SCE_{self.date}.csv'
-            csv_path = f'data/moer_data/SGIP_CAISO_SCE_{self.date}.csv.gz'
-            # bytes_data = pkgutil.get_data(__name__, csv_path)
-            bytes_data = pkgutil.get_data('sustaingym', csv_path)
-            assert bytes_data is not None
-            return pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
 
     def _generate_load_data(self, count: int) -> float:
         """Generate net demand for the time step associated with the given count.
@@ -354,33 +345,6 @@ class BatteryStorageInGridEnv(Env):
         if count > self.df_demand_forecast.shape[1]:
             return np.nan
         return self.df_demand_forecast.iloc[self.idx, count]
-
-    def _generate_moer_data(self, count: int) -> float:
-        """Generate moer data for the time step associated with the given count.
-
-        Args:
-            count: integer representing a given time step
-
-        Returns:
-            MOER value for the given time step (mT / MWh)
-        """
-        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + count, 0]
-
-    def _generate_moer_forecast_data(self, count: int) -> float:
-        """Generate fifteen minute ahead forecast of MOER data for the time step
-        associated with the given count.
-
-        TODO: check that forecast and actual MOER values are aligned
-
-        Args:
-            count: integer representing a given time step
-
-        Returns:
-            forecasted MOER value for the given time step (mT / MWh)
-        """
-        if self.MAX_STEPS_PER_EPISODE * (self.idx + 1) + count > len(self.df_moer):
-            return np.nan
-        return self.df_moer.iloc[self.MAX_STEPS_PER_EPISODE*(self.idx+1) + count, 1]
 
     def _get_time(self) -> float:
         """Determine the fraction of the day that has elapsed based on the current
@@ -423,18 +387,20 @@ class BatteryStorageInGridEnv(Env):
             if not pd.isnull(self.df_demand.iloc[idx, :-1]).any()
         ]
         self.idx = rng.choice(pos_ids)
+        date = datetime.strptime(f'{self.month}-{self.idx:02d}', '%Y-%m-%d').replace(tzinfo=pytz.timezone('America/Los_Angeles'))
+        self.moer_arr = self.moer_loader.retrieve(date).astype(np.float32)
 
-        self.action = np.zeros(2)
-        self.dispatch = np.zeros(1)
+        self.action = np.zeros(2, dtype=np.float32)
+        self.dispatch = np.zeros(1, dtype=np.float32)
         self.count = 0  # counter for the step in current episode
         self.battery_charge = self.battery_capacity / 2.
 
         self.init = True
-        self.demand = np.array([self._generate_load_data(self.count)])
-        self.demand_forecast = np.array([self._generate_load_forecast_data(self.count+1)])
-        self.moer = np.array([self._generate_moer_data(self.count)])
-        self.moer_forecast = np.array([self._generate_moer_forecast_data(self.count+1)])
-        self.time = np.array([self._get_time()])
+        self.demand = np.array([self._generate_load_data(self.count)], dtype=np.float32)
+        self.demand_forecast = np.array([self._generate_load_forecast_data(self.count+1)], dtype=np.float32)
+        self.moer = self.moer_arr[0:1, 0]
+        self.moer_forecast = self.moer_arr[0, 1:self.moer_forecast_steps + 1]
+        self.time = np.array([self._get_time()], dtype=np.float32)
 
         # set up observations
         self.obs = {
@@ -486,7 +452,7 @@ class BatteryStorageInGridEnv(Env):
         assert (self.bats_costs[:, 0] >= self.bats_costs[:, 1]).all()
 
         self.demand[:] = self._generate_load_data(self.count)
-        self.moer[:] = self._generate_moer_data(self.count)
+        self.moer[:] = self.moer_arr[self.count:self.count + 1, 0]
 
         time_step = self.TIME_STEP_DURATION / 60  # min -> hr
 
@@ -510,7 +476,7 @@ class BatteryStorageInGridEnv(Env):
         # get forecasts for next time step
         self.time[:] = self._get_time()
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1)
-        self.moer_forecast[:] = self._generate_moer_forecast_data(self.count + 1)
+        self.moer_forecast[:] = self.moer_arr[self.count, 1:self.moer_forecast_steps + 1]
 
         energy_reward = price * x_agent
         carbon_reward = self.CARBON_COST * self.moer[0] * x_agent
