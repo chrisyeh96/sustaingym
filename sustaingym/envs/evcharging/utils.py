@@ -269,7 +269,7 @@ def load_gmm_model(site: SiteStr,
 
 def round(arr: np.ndarray, thresh: float = 0.75) -> np.ndarray:
     """Round array values when decimal is above threshold.
-    
+
     Same as np.round if thresh = 0.5
 
     Args:

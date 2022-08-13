@@ -25,7 +25,7 @@ from sustaingym.data.load_moer import MOERLoader
 ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 MIN_BATTERY_CAPACITY, BATTERY_CAPACITY, MAX_POWER = 0, 100, 100
 BA_CALTECH_JPL = 'SGIP_CAISO_SCE'
-MOER_SAVE_DIR = 'sustaingym/data/moer_data'
+MOER_SAVE_DIR = 'sustaingym/data/moer'
 
 
 class AbstractTraceGenerator:
@@ -168,10 +168,10 @@ class AbstractTraceGenerator:
         """Retrieves MOER data from the MOERLoader().
 
         Returns:
-            array of shape (289, 2). The first column is the historical
-                MOER and the second the forecasted; both are in units
-                kg CO2 per kWh. Note that the "rows" are backwards, in that
-                the most recent rates are at the top, sorted descending.
+            array of shape (289, 37). The first column is the historical
+                MOER. The remaining columns are forecasts for the next 36
+                five-min time steps. Units kg CO2 per kWh. Rows are sorted
+                chronologically.
         """
         dt = self.day.replace(tzinfo=AM_LA)
         return self.moer_loader.retrieve(dt)

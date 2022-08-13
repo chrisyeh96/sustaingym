@@ -61,6 +61,7 @@ class EVChargingEnv(Env):
                  action_type: ActionType = 'discrete',
                  project_action: bool = True,
                  normalize_observation: bool = True,
+                 moer_forecast_steps: int = 36,
                  verbose: int = 0):
         """
         Args:
@@ -76,12 +77,16 @@ class EVChargingEnv(Env):
                 Action projection leads to ~2x slowdown.
             normalize_observation: flag for whether observation should be
                 normalized between 0 and 1
+            moer_forecast_steps: number of steps of MOER forecast to include,
+                maximum of 36. Each step is 5 min, for a maximum of 3 hrs.
             verbose: level of verbosity for print out.
                 0: nothing
                 1: print description of current simulation day
                 2: print current constraint warnings for network constraint
                     violations
         """
+        assert 1 <= moer_forecast_steps <= 36
+
         self.data_generator = data_generator
         self.site = data_generator.site
         self.period = data_generator.period
@@ -94,6 +99,7 @@ class EVChargingEnv(Env):
         self.action_type = action_type
         self.project_action = project_action
         self.normalize_observation = normalize_observation
+        self.moer_forecast_steps = moer_forecast_steps
         self.verbose = verbose
         if verbose < 2:
             warnings.filterwarnings("ignore")
@@ -110,7 +116,7 @@ class EVChargingEnv(Env):
             'arrivals':        spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.float32),
             'est_departures':  spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.float32),
             'demands':         spaces.Box(0, data_generator.requested_energy_cap, shape=(self.num_stations,), dtype=np.float32),
-            'forecasted_moer': spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+            'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
             'timestep':        spaces.Box(0, self.max_timestamp, shape=(1,), dtype=np.float32),
         })
         if normalize_observation:
@@ -118,7 +124,7 @@ class EVChargingEnv(Env):
                 'arrivals':        spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
                 'est_departures':  spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
                 'demands':         spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
-                'forecasted_moer': spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+                'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
                 'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
             })
         else:
@@ -373,7 +379,7 @@ class EVChargingEnv(Env):
             self.arrivals[station_idx] = session_info.arrival
             self.est_departures[station_idx] = session_info.estimated_departure
             self.demands[station_idx] = self.interface.remaining_amp_periods(session_info) * self.A_PERS_TO_KWH
-        self.forecasted_moer[0] = self.moer[len(self.moer)-1-self.iteration, 1]  # array goes back in time, choose 2nd col
+        self.forecasted_moer[:] = self.moer[self.iteration, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
         self.timestep_obs[0] = self.iteration
 
         if self.normalize_observation:
@@ -415,7 +421,7 @@ class EVChargingEnv(Env):
         excess_charge = excess_current * self.VIOLATION_FACTOR
 
         # Carbon cost ($)
-        carbon_cost = self.CARBON_COST_FACTOR * np.sum(schedule) * self.moer[len(self.moer)-1-self.iteration, 0]
+        carbon_cost = self.CARBON_COST_FACTOR * np.sum(schedule) * self.moer[self.iteration, 0]
 
         total_reward = profit - carbon_cost - excess_charge
 
@@ -425,7 +431,7 @@ class EVChargingEnv(Env):
             'excess_charge': excess_charge,
         }
         return total_reward, info
-    
+
     def normalize(self) -> None:
         """Scales each observation value to lie between 0 and 1."""
         for s in self.obs:
