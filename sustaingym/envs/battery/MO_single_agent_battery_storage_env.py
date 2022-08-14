@@ -392,7 +392,8 @@ class BatteryStorageInGridEnv(Env):
             if not pd.isnull(self.df_demand.iloc[idx, :-1]).any()
         ]
         self.idx = rng.choice(pos_ids)
-        date = datetime.strptime(f'{self.month}-{self.idx:02d}', '%Y-%m-%d').replace(tzinfo=pytz.timezone('America/Los_Angeles'))
+        day = self.idx + 1
+        date = datetime.strptime(f'{self.month}-{day:02d}', '%Y-%m-%d').replace(tzinfo=pytz.timezone('America/Los_Angeles'))
         self.moer_arr = self.moer_loader.retrieve(date).astype(np.float32)
 
         self.action = np.zeros(2, dtype=np.float32)
