@@ -62,12 +62,10 @@ ONEDAY = timedelta(days=1)
 def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr,
                   forecast_timesteps: int = 36) -> pd.DataFrame:
     """Retrieves data from the SGIP Signal API.
-
     Authenticates user, performs API request, and returns data as a DataFrame.
     If req_type is 'historical', returns the historical marginal emissions rate.
     If req_type is 'forecast', returns the forecast for emissions rate at the next
     5 minute mark. See https://sgipsignal.com/api-documentation
-
     Args:
         starttime: start time for data. Format ISO 8601 timestamp.
             See https://en.wikipedia.org/wiki/ISO_8601#Combined_date_and_time_representations
@@ -75,7 +73,6 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr,
         ba: balancing authority, responsible for region grid operation.
         req_type: either 'historical' or 'forecast'
         forecast_timesteps: number of forecast timesteps to grab, default next 3 hours
-
     Returns:
         A DataFrame containing either historical or forecasted
             rates with a DateTimeIndex named as "time". The time index type
@@ -87,11 +84,9 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr,
             f{forecast_timesteps}     float64
         If historical:
             moer                      float64
-
     Notes:
         Historical queries are limited to 31 days. Queries on forecasts
         are limited to 1 day.
-
     Examples:
         starttimestr = '2021-02-20T00:00:00'
         endtimestr = '2021-02-20T23:10:00'
@@ -128,16 +123,13 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr,
 def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
                                  ) -> pd.DataFrame:
     """Retrieves both forecasted and historical data.
-
     May request forecasted data repeatedly due to API constraints.
     See notes section in get_data_sgip() for more info.
-
     Args:
         starttime: start time. A timezone-aware datetime object. If not
             timezone-aware, assumes UTC time.
         endtime: timezone-aware datetime object. See starttime.
         ba: balancing authority, responsible for region grid operation.
-
     Returns:
         A DataFrame containing both historical and forecasted MOER values
             time (index)    datetime64[ns, UTC]
@@ -195,11 +187,9 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
 
 def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
     """Saves month data.
-
     Saves month of forecasted and historical data from the balancing
     authority to a compressed csv file. May request forecasted data repeatedly
     due to API constraints. See notes section in get_data_sgip() for more info.
-
     Args:
         year: year of requested month
         month: requested month
@@ -228,11 +218,9 @@ def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
 
 def save_moer(starttime: datetime, endtime: datetime, ba: str) -> None:
     """Saves all full-months data between a date range.
-
     Saves data separated by months as separate compressed csv files, which
     contain historical and forecasted marginal emission rates for the days
     spanning the month.
-
     Args:
         starttime: start time for data. Only year and month are used.
             Timezone information is ignored.
@@ -255,7 +243,6 @@ def save_moer(starttime: datetime, endtime: datetime, ba: str) -> None:
 
 def save_moer_default_ranges() -> None:
     """Saves all monthly data for default date ranges.
-
     Repeatedly calls ``save_moer()`` for all months spanned by the default
     ranges. Saves for both balancing authorities: 'SGIP_CAISO_PGE',
     'SGIP_CAISO_SCE'.
@@ -269,13 +256,11 @@ def save_moer_default_ranges() -> None:
 
 def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataFrame:
     """Loads pandas DataFrame from file.
-
     Args:
         year: year of requested month
         month: requested month
         ba: balancing authority, responsible for region grid operation.
         save_dir: directory to save compressed csv to.
-
     Returns:
         A DataFrame of the emission rates for the month, with index sorted
         chronologically. See ``get_historical_and_forecasts()`` for more info.
@@ -299,29 +284,26 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
 def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str
               ) -> pd.DataFrame:
     """Returns data for all months that overlap with interval.
-
     Args:
         starttime: start time for data. Only year and month are used.
         endtime: end time for data. See starttime.
         ba: balancing authority, responsible for region grid operation.
         save_dir: directory to load compressed csv from.
-
     Returns:
         A DataFrame of historical emissions and forecasts for all months that
         overlap the (starttime, endtime) interval. Index is sorted
         chronologically. See ``get_historical_and_forecasts()`` for more info.
-
     Examples:
         starttime, endtime = datetime(2021, 2, 1), datetime(2021, 5, 31)
         ba = 'SGIP_CAISO_PGE'
-        df = load_moer(starttime, endtime, ba, 'sustaingym/data/moer_data')
+        df = load_moer(starttime, endtime, ba, 'sustaingym/data/moer')
     """
     syear, smonth = starttime.year, starttime.month
     eyear, emonth = endtime.year, endtime.month
 
     dfs: list[pd.DataFrame] = []
     while (syear < eyear) or (syear == eyear and smonth <= emonth):
-        df = load_monthly_moer(eyear, emonth, ba, save_dir)
+        df = load_monthly_moer(syear, smonth, ba, save_dir)
         if len(dfs) > 0:  # check for overlapping windows
             latest_datetime = dfs[-1].tail(1).index[0]  # latest time in previous window
             df = df[df.index > latest_datetime]  # only fetch later window
@@ -337,7 +319,6 @@ def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str
 
 class MOERLoader:
     """Class for loading emission rates data for gyms.
-
     Attributes:
         df: DataFrame of forecasted and historical data for date time range
     """
@@ -353,13 +334,10 @@ class MOERLoader:
 
     def retrieve(self, dt: datetime) -> np.ndarray:
         """Retrieves MOER data from attribute.
-
         Returns data starting at datetime for the next 24 hours. Assumes that
         dt is a timezone-aware datetime object.
-
         Args:
             dt: a timezone-aware datetime object
-
         Returns:
             array of shape (289, 37). The first column is the historical
                 MOER. The remaining columns are forecasts for the next 36
