@@ -14,7 +14,7 @@ def validate_trace_generation() -> None:
     pre_covid_str = 'Summer 2019'
 
     atg1 = GMMsTraceGenerator('caltech', date_period='Summer 2019', n_components=30, period=5)
-    atg2= GMMsTraceGenerator('caltech', date_period='Summer 2019', n_components=30, period=10)
+    atg2 = GMMsTraceGenerator('caltech', date_period='Summer 2019', n_components=30, period=10)
     rtg3 = RealTraceGenerator('jpl', date_period='Spring 2020', period=5)
     rtg4 = RealTraceGenerator('jpl', date_period='Spring 2020', period=10)
 

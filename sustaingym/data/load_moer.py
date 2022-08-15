@@ -59,7 +59,8 @@ FIVEMINS = timedelta(seconds=300)
 ONEDAY = timedelta(days=1)
 
 
-def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr, forecast_timesteps: int = 36) -> pd.DataFrame:
+def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr,
+                  forecast_timesteps: int = 36) -> pd.DataFrame:
     """Retrieves data from the SGIP Signal API.
 
     Authenticates user, performs API request, and returns data as a DataFrame.
