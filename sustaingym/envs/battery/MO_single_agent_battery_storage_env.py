@@ -579,6 +579,74 @@ class BatteryStorageInGridEnv(Env):
                 pdb.set_trace()
         
         return prob.value
+    
+    def _calculate_realistic_off_optimal_total_episode_reward(
+        self) -> float:
+        """Calculates an approximate total offline optimal reward for the current
+        episode.
+
+        Returns:
+            a more realistic approximate offline optimal reward for the current episode
+        """
+        prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
+        
+        init_battery_charge = self.battery_capacity[-1] / 2.
+
+        # get prices from market for all time steps
+        for count in range(1, self.MAX_STEPS_PER_EPISODE):
+            time_step = self.TIME_STEP_DURATION / 60  # min -> hr
+
+            self.gen_costs = self.all_gen_costs[:, count]
+            self.bats_costs = self.all_bats_costs[:, count]
+
+            # update charging range for each battery
+            self.bats_max_charge = np.maximum(
+                self.bats_max_discharge_range[:, 0],
+                -(self.battery_capacity - self.battery_charge) / (time_step * self.CHARGE_EFFICIENCY))
+            self.bats_max_discharge = np.minimum(
+                self.bats_max_discharge_range[:, 1],
+                self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
+
+            self.demand[:] = self._generate_load_data(count)
+            _, x_bats, price = self.market_op.get_dispatch_no_agent()
+
+            # sanity checks
+            assert abs(x_bats[-1] - 0) <= 10**-9 and 0 <= price
+            prices[count] = price
+
+            # update battery charges
+            charging = (x_bats < 0)
+            self.battery_charge[charging] -= self.CHARGE_EFFICIENCY * x_bats[charging]
+            self.battery_charge[~charging] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[~charging]
+            self.battery_charge[:] = self.battery_charge.clip(0, self.battery_capacity)
+
+        # find optimal total reward for episode based on prices (price taking assumption)
+
+        x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)
+
+        constraints = [
+            init_battery_charge <= init_battery_charge + cp.cumsum(-x),
+            init_battery_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
+        ]
+
+        moers = self.moer_arr[1:-1, 0]
+        obj = (prices[1:] + self.CARBON_COST * moers) @ x
+        prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
+        assert prob.is_dcp() and prob.is_dpp()
+
+        try:
+            prob.solve(warm_start=True, solver=cp.MOSEK)
+        except cp.SolverError:
+            print(f'default solver failed. Trying cp.ECOS')
+            prob.solve(solver=cp.ECOS)
+        if prob.status != 'optimal':
+            print(f'prob.status = {prob.status}')
+            if 'infeasible' in prob.status:
+                # your problem should never be infeasible. So now go debug
+                import pdb
+                pdb.set_trace()
+        
+        return prob.value
 
     def render(self):
         raise NotImplementedError

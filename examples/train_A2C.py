@@ -28,10 +28,13 @@ if __name__ == '__main__':
     env_2019 = BatteryStorageInGridEnv(month='2019-05', seed=195)
     env_2021 = BatteryStorageInGridEnv(month='2021-05', seed=215)
 
+    save_path_in_dist = os.path.join(save_path, 'in_dist/')
+    save_path_out_dist = os.path.join(save_path, 'out_dist/')
+
     stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=3, min_evals=5, verbose=1)
-    eval_callback_in_dist = EvalCallback(env_2019, best_model_save_path=save_path, log_path=save_path,
+    eval_callback_in_dist = EvalCallback(env_2019, best_model_save_path=save_path_in_dist, log_path=save_path_in_dist,
     eval_freq=2500, callback_after_eval=stop_train_callback)
-    eval_callback_out_dist = EvalCallback(env_2021, best_model_save_path=save_path, log_path=save_path, eval_freq=2500)
+    eval_callback_out_dist = EvalCallback(env_2021, best_model_save_path=save_path_out_dist, log_path=save_path_out_dist, eval_freq=2500)
     callback_list = CallbackList([eval_callback_in_dist, eval_callback_out_dist])
 
     model = A2C("MultiInputPolicy", env_2019, verbose=1)
