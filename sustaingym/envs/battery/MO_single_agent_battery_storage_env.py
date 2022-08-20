@@ -424,6 +424,7 @@ class BatteryStorageInGridEnv(Env):
             "energy reward": None,
             "carbon reward": None,
             "terminal reward": None,
+            "price": None,
         }
         return self.obs if not return_info else (self.obs, info)
 
@@ -501,6 +502,7 @@ class BatteryStorageInGridEnv(Env):
             'energy reward': energy_reward,
             'carbon reward': carbon_reward,
             'terminal reward': terminal_reward,
+            'price': price,
         }
         return self.obs, reward, done, info
 
