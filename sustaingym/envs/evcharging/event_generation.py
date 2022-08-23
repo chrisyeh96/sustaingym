@@ -51,7 +51,7 @@ class AbstractTraceGenerator:
                  period: int,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42):
+                 random_seed: int = None):
         """
         Args:
             site: garage to get events from, either 'caltech' or 'jpl'
@@ -196,7 +196,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
                  period: int = 5,
                  use_unclaimed: bool = False,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42):
+                 random_seed: int = None):
         """
         Args:
             use_unclaimed: whether to use unclaimed sessions, which do not have
@@ -312,7 +312,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                  n_components: int = 30,
                  period: int = 5,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42):
+                 random_seed: int = None):
         """
         Args:
             n_components: number of components in GMM
@@ -336,10 +336,10 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         self.station_usage: np.ndarray = data[STATION_USAGE_KEY]
 
     def __repr__(self) -> str:
-        """Returns string representation of GMMsTracesGenerator."""
+        """Returns string representation of GMMsTraceGenerator."""
         site = f'{self.site.capitalize()} site'
         dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
-        return f'GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
+        return f'GMMsTraceGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
 
     def set_random_seed(self, seed: int | None) -> None:
         """Sets random seed to make GMM sampling reproducible."""
@@ -406,7 +406,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             DataFrame of artificial sessions.
         """
         self._update_day()
-        # generate samples from empirical pdf
+        # number of events from empirical pdf
         n = int(self.rng.choice(self.cnt))
         samples = self._sample(n)
 

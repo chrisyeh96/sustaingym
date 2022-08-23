@@ -186,10 +186,9 @@ def get_real_events(start_date: datetime, end_date: datetime,
             for time_col in ['arrival', 'departure', 'estimated_departure']:
                 df[time_col] = pd.to_datetime(df[time_col], utc=True).dt.tz_convert(AM_LA)
 
-            return df[(start_date <= df.arrival) & (df.arrival <= end_date)].copy()
+            return df[(start_date <= df.arrival) & (df.arrival <= end_date + timedelta(days=1))].copy()
     # data not found in package, use API
-    end_date += timedelta(days=1)
-    return fetch_real_events(start_date, end_date, site)
+    return fetch_real_events(start_date, end_date + timedelta(days=1), site)
 
 
 def get_folder_name(begin: datetime, end: datetime, n_components: int) -> str:

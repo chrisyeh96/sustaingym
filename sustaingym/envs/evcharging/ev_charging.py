@@ -55,12 +55,11 @@ class EVChargingEnv(Env):
     MARGINAL_PROFIT_PER_KWH = MARGINAL_REVENUE_PER_KWH * OPERATING_MARGIN
     CO2_COST_PER_METRIC_TON = 30.85  # carbon cost in $ / 1000 kg CO2
     A_MINS_TO_KWH = (1 / 60) * (VOLTAGE / 1000)  # (kWH / A * mins)
-    VIOLATION_WEIGHT = 0.005  # cost in $ / kWh of violation
+    VIOLATION_WEIGHT = 0.001  # cost in $ / kWh of violation
 
     def __init__(self, data_generator: AbstractTraceGenerator,
                  action_type: ActionType = 'discrete',
-                 project_action: bool = True,
-                 normalize_observation: bool = True,
+                 project_action: bool = False,  # TODO move into RL algorithm
                  moer_forecast_steps: int = 36,
                  verbose: int = 0):
         """
@@ -75,8 +74,6 @@ class EVChargingEnv(Env):
                 demanded. Action projection uses convex optimization to
                 minimize the L2 norm between the suggested action and action taken.
                 Action projection leads to ~2x slowdown.
-            normalize_observation: flag for whether observation should be
-                normalized between 0 and 1
             moer_forecast_steps: number of steps of MOER forecast to include,
                 maximum of 36. Each step is 5 min, for a maximum of 3 hrs.
             verbose: level of verbosity for print out.
@@ -98,7 +95,6 @@ class EVChargingEnv(Env):
         self.max_timestamp = MINS_IN_DAY // self.period
         self.action_type = action_type
         self.project_action = project_action
-        self.normalize_observation = normalize_observation
         self.moer_forecast_steps = moer_forecast_steps
         self.verbose = verbose
         if verbose < 2:
@@ -110,36 +106,27 @@ class EVChargingEnv(Env):
         self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
 
         # Define observation space and action space
-
-        # Observations are dictionaries describing the current demand for charge
-        self.observation_range = spaces.Dict({  # not actual observation space if normalizing
-            'arrivals':        spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.float32),
-            'est_departures':  spaces.Box(0, self.max_timestamp, shape=(self.num_stations,), dtype=np.float32),
-            'demands':         spaces.Box(0, data_generator.requested_energy_cap, shape=(self.num_stations,), dtype=np.float32),
+        self.observation_range = {
+            'est_departures':  (0, self.max_timestamp),
+            'demands':         (0, data_generator.requested_energy_cap),
+            'forecasted_moer': (0, 1.0),
+            'timestep':        (0, self.max_timestamp)
+        }
+        self.observation_space = spaces.Dict({
+            'est_departures':  spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
+            'demands':         spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
             'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
-            'timestep':        spaces.Box(0, self.max_timestamp, shape=(1,), dtype=np.float32),
+            'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
         })
-        if normalize_observation:
-            self.observation_space = spaces.Dict({
-                'arrivals':        spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
-                'est_departures':  spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
-                'demands':         spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
-                'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
-                'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-            })
-        else:
-            self.observation_space = self.observation_range
 
         # Initialize information-tracking arrays once, always gets zeroed out at each step
-        self.arrivals = np.zeros(self.num_stations, dtype=np.float32)
         self.est_departures = np.zeros(self.num_stations, dtype=np.float32)
         self.demands = np.zeros(self.num_stations, dtype=np.float32)
-        self.forecasted_moer = np.zeros(1, dtype=np.float32)
+        self.forecasted_moer = np.zeros(self.moer_forecast_steps, dtype=np.float32)
         self.timestep_obs = np.zeros(1, dtype=np.float32)
         self.phases = np.zeros(self.num_stations, dtype=np.float32)
 
         self.obs = {
-            'arrivals': self.arrivals,
             'est_departures': self.est_departures,
             'demands': self.demands,
             'forecasted_moer': self.forecasted_moer,
@@ -213,12 +200,12 @@ class EVChargingEnv(Env):
                     index is empty, the entry is zero.
                 'demands': shape [num_stations], amount of charge demanded by
                     each EVSE in Amp * periods.
-                'forecasted_moer': shape [1], forecasted emissions rate for next
+                'forecasted_moer': shape [moer_forecast_steps], forecasted emissions rate for next
                     timestep in kg CO2 per kWh
                 'timestep': shape [1], simulation's current iteration
             reward: float representing scheduler's performance
             done: whether episode is finished
-            info: dict with the following key-value pairs TODO I really don't want to change comments every time I make a change so I'll just put this TODO here
+            info: dict with the following key-value pairs TODO may change
                 'active_evs': list of acns.EV, all EVs currently charging.
                 'active_sessions': list of acns.interface.SessionInfo, active sessions.
                 'charging_rates': pd.DataFrame, history of charging rates as
@@ -337,7 +324,17 @@ class EVChargingEnv(Env):
                 self.demands_cvx.value = self.demands * self.observation_range['demands'].high
             else:
                 self.demands_cvx.value = self.demands
-            self.prob.solve(warm_start=True, solver=cp.MOSEK)
+            try:
+                self.prob.solve(warm_start=True, solver=cp.MOSEK)
+            except cp.SolverError:
+                print('Default MOSEK solver failed. Trying ECOS. ')
+                self.prob.solve(solver=cp.ECOS)
+                if self.prob.status != 'optimal':
+                    print(f'prob.status = {self.prob.status}')
+                if 'infeasible' in self.prob.status:
+                    # your problem should never be infeasible. So now go debug
+                    import pdb
+                    pdb.set_trace()
             action = self.projected_action.value
 
         if self.action_type == 'discrete':
@@ -370,20 +367,18 @@ class EVChargingEnv(Env):
             obs: observations. See step() for more information.
             info: other information. See step().
         """
-        self.arrivals.fill(0)
         self.est_departures.fill(0)
         self.demands.fill(0)
         for session_info in self.interface.active_sessions():
             station_id = session_info.station_id
             station_idx = self.evse_name_to_idx[station_id]
-            self.arrivals[station_idx] = session_info.arrival
             self.est_departures[station_idx] = session_info.estimated_departure
             self.demands[station_idx] = self.interface.remaining_amp_periods(session_info) * self.A_PERS_TO_KWH
         self.forecasted_moer[:] = self.moer[self.iteration, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
         self.timestep_obs[0] = self.iteration
 
-        if self.normalize_observation:
-            self.normalize()
+        for s in self.obs:
+            self.obs[s] /= self.observation_range[s][1]
 
         if return_info:
             info = {
@@ -431,11 +426,6 @@ class EVChargingEnv(Env):
             'excess_charge': excess_charge,
         }
         return total_reward, info
-
-    def normalize(self) -> None:
-        """Scales each observation value to lie between 0 and 1."""
-        for s in self.obs:
-            self.obs[s] /= self.observation_range[s].high
 
     def render(self) -> None:
         """Render environment."""

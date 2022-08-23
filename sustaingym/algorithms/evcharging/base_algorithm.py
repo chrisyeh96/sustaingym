@@ -54,7 +54,7 @@ class BaseOnlineAlgorithm:
             dict of sum of each individual reward component
         """
         total_rewards = []
-        reward_components = {'revenue': 0., 'carbon_cost': 0., 'excess_charge': 0.}
+        reward_components = {'profit': 0., 'carbon_cost': 0., 'excess_charge': 0.}
         for seed in tqdm(seeds):
             done = False
             obs = env.reset(seed=seed)
