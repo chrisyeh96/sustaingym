@@ -358,9 +358,12 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                 departure time in minutes, estimated departure time in
                 minutes, and requested energy in kWh.
         """
+        if n == 0:
+            return np.empty((0, 4))
         # use while loop for quality check
         all_samples: list[np.ndarray] = []
-        while len(all_samples) < n:
+        num_samples: int = 0
+        while num_samples < n:
             samples = self.gmm.sample(int(n * (1 + oversample_factor)))[0]  # shape (1.2n, 4)
 
             # discard sample if arrival, departure, estimated departure or
@@ -385,6 +388,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             samples[:, EREQCOL] *= REQ_ENERGY_SCALE
 
             all_samples.append(samples)
+            num_samples += len(samples)
 
         return np.concatenate(all_samples, axis=0)[:n]
 
@@ -402,7 +406,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             DataFrame of artificial sessions.
         """
         self._update_day()
-        # generate samples from empirical pdf, capping maximum at the number of stations
+        # generate samples from empirical pdf
         n = int(self.rng.choice(self.cnt))
         samples = self._sample(n)
 
