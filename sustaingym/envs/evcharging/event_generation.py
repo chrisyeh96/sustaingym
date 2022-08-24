@@ -51,7 +51,7 @@ class AbstractTraceGenerator:
                  period: int,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
-                 random_seed: int = None):
+                 seed: int = None):
         """
         Args:
             site: garage to get events from, either 'caltech' or 'jpl'
@@ -61,7 +61,7 @@ class AbstractTraceGenerator:
                 of strings with both strings in the format YYYY-MM-DD.
                 Otherwise, should be a default period string.
             requested_energy_cap: largest amount of requested energy allowed (kWh)
-            random_seed: seed for random sampling
+            seed: seed for random sampling
         """
         if MINS_IN_DAY % period != 0:
             raise ValueError(f'Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0')
@@ -78,7 +78,7 @@ class AbstractTraceGenerator:
         self.station_ids = site_str_to_site(site).station_ids
         self.num_stations = len(self.station_ids)
         self.moer_loader = MOERLoader(self.date_range[0], self.date_range[1], BA_CALTECH_JPL, MOER_SAVE_DIR)
-        self.rng = np.random.default_rng(seed=random_seed)
+        self.rng = np.random.default_rng(seed=seed)
 
     def __repr__(self) -> str:
         """Returns string representation of generator object."""
@@ -90,7 +90,7 @@ class AbstractTraceGenerator:
         """Randomly sets ``self.day`` to a day in the date range."""
         self.day = self.date_range[0] + timedelta(days=self.rng.choice(self.interval_length))
 
-    def set_random_seed(self, seed: int | None) -> None:
+    def set_seed(self, seed: int | None) -> None:
         """Sets random seed to make sampling reproducible."""
         self.rng = np.random.default_rng(seed=seed)
 
@@ -196,7 +196,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
                  period: int = 5,
                  use_unclaimed: bool = False,
                  requested_energy_cap: float = 100,
-                 random_seed: int = None):
+                 seed: int = None):
         """
         Args:
             use_unclaimed: whether to use unclaimed sessions, which do not have
@@ -207,7 +207,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
                 range or randomly
             *See AbstractTraceGenerator for more arguments
         """
-        super().__init__(site, period, date_period, requested_energy_cap, random_seed)
+        super().__init__(site, period, date_period, requested_energy_cap, seed)
         self.use_unclaimed = use_unclaimed
         self.sequential = sequential
         if sequential:  # seed day before first update
@@ -223,7 +223,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
         day = f'{self.day.strftime(DATE_FORMAT)}'
         return f'RealTracesGenerator from the {site} {dr}. Current day {day}. '
 
-    def set_random_seed(self, seed: int | None) -> None:
+    def set_seed(self, seed: int | None) -> None:
         """Override parent method, instead set day."""
         if seed is not None and not self.sequential:
             self.day = self.date_range[0] + timedelta(days=seed % self.interval_length)
@@ -312,7 +312,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                  n_components: int = 30,
                  period: int = 5,
                  requested_energy_cap: float = 100,
-                 random_seed: int = None):
+                 seed: int = None):
         """
         Args:
             n_components: number of components in GMM
@@ -322,7 +322,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             The generator first searches for a matching GMM directory. If
             unfound, it creates one.
         """
-        super().__init__(site, period, date_period, requested_energy_cap, random_seed)
+        super().__init__(site, period, date_period, requested_energy_cap, seed)
         self.n_components = n_components
 
         try:
@@ -341,9 +341,9 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
         return f'GMMsTraceGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
 
-    def set_random_seed(self, seed: int | None) -> None:
+    def set_seed(self, seed: int | None) -> None:
         """Sets random seed to make GMM sampling reproducible."""
-        super().set_random_seed(seed)
+        super().set_seed(seed)
         self.gmm.set_params(random_state=seed)
 
     def _sample(self, n: int, oversample_factor: float = 0.2) -> np.ndarray:

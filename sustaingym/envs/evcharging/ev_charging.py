@@ -29,7 +29,7 @@ class EVChargingEnv(Env):
         site: either 'caltech' or 'jpl' garage to get events from
         period: number of minutes of each time interval in simulation
         requested_energy_cap: largest amount of requested energy allowed (kWh)
-        max_timestamp: maximum timestamp in a day's simulation
+        max_timestep: maximum timestep in a day's simulation
         action_type: either 'continuous' or 'discrete'
         project_action: flag for whether to project action to the feasible
             action space.
@@ -43,23 +43,22 @@ class EVChargingEnv(Env):
     metadata: dict = {"render_modes": []}
 
     # Action constants
-    ACTION_SCALING_FACTOR = 8
-    DISCRETE_MULTIPLE = 8
+    ACTION_SCALE_FACTOR = 8
     EPS = 1e-3
     MAX_ACTION = 4
+    ROUND_UP_THRESH = 0.7
 
     # Reward calculation factors
     VOLTAGE = 208  # in volts (V), default value from ACN-Sim
     MARGINAL_REVENUE_PER_KWH = 0.15  # revenue in $ / kWh
-    OPERATING_MARGIN = 0.20
-    MARGINAL_PROFIT_PER_KWH = MARGINAL_REVENUE_PER_KWH * OPERATING_MARGIN
+    OPERATING_MARGIN = 0.20  # %
+    MARGINAL_PROFIT_PER_KWH = MARGINAL_REVENUE_PER_KWH * OPERATING_MARGIN  # $ / kWh
     CO2_COST_PER_METRIC_TON = 30.85  # carbon cost in $ / 1000 kg CO2
     A_MINS_TO_KWH = (1 / 60) * (VOLTAGE / 1000)  # (kWH / A * mins)
     VIOLATION_WEIGHT = 0.001  # cost in $ / kWh of violation
 
     def __init__(self, data_generator: AbstractTraceGenerator,
                  action_type: ActionType = 'discrete',
-                 project_action: bool = False,  # TODO move into RL algorithm
                  moer_forecast_steps: int = 36,
                  verbose: int = 0):
         """
@@ -67,15 +66,10 @@ class EVChargingEnv(Env):
             data_generator: a subclass of AbstractTraceGenerator
             action_type: either 'continuous' or 'discrete'. If 'discrete', the
                 action space is {0, 1, 2, 3, 4}. If 'continuous', it is [0, 4].
-                See to_schedule() for more information.
-            project_action: flag for whether to project action to the feasible
-                action space. If True, action is projected so that network
-                constraints are obeyed and no more charge is provided than is
-                demanded. Action projection uses convex optimization to
-                minimize the L2 norm between the suggested action and action taken.
-                Action projection leads to ~2x slowdown.
+                See _to_schedule() for more information.
             moer_forecast_steps: number of steps of MOER forecast to include,
-                maximum of 36. Each step is 5 min, for a maximum of 3 hrs.
+                minimuum of 1 and maximum of 36. Each step is 5 min, for a
+                maximum of 3 hrs.
             verbose: level of verbosity for print out.
                 0: nothing
                 1: print description of current simulation day
@@ -87,18 +81,18 @@ class EVChargingEnv(Env):
         self.data_generator = data_generator
         self.site = data_generator.site
         self.period = data_generator.period
-        self.A_PERS_TO_KWH = self.A_MINS_TO_KWH * self.period  # (kWH / A * periods)
-        self.PROFIT_FACTOR = self.A_PERS_TO_KWH * self.MARGINAL_PROFIT_PER_KWH
-        self.VIOLATION_FACTOR = self.A_PERS_TO_KWH * self.VIOLATION_WEIGHT
-        self.CARBON_COST_FACTOR = self.A_PERS_TO_KWH * (self.CO2_COST_PER_METRIC_TON / 1000)  # ($ * kV * hr) / (kg CO2 * min)
-
-        self.max_timestamp = MINS_IN_DAY // self.period
+        self.max_timestep = MINS_IN_DAY // self.period
         self.action_type = action_type
-        self.project_action = project_action
         self.moer_forecast_steps = moer_forecast_steps
         self.verbose = verbose
+        self.project_action_first_run = True
         if verbose < 2:
             warnings.filterwarnings("ignore")
+
+        self.A_PERS_TO_KWH = self.A_MINS_TO_KWH * self.period  # (kWH / A * periods)
+        self.PROFIT_FACTOR = self.A_PERS_TO_KWH * self.MARGINAL_PROFIT_PER_KWH  # $ / (A * period)
+        self.VIOLATION_FACTOR = self.A_PERS_TO_KWH * self.VIOLATION_WEIGHT  # $ / (A * period)
+        self.CARBON_COST_FACTOR = self.A_PERS_TO_KWH * (self.CO2_COST_PER_METRIC_TON / 1000)  # ($ * kV * hr) / (kg CO2 * period)
 
         # Set up infrastructure info with fake parameters
         self.cn = site_str_to_site(self.site)
@@ -106,11 +100,11 @@ class EVChargingEnv(Env):
         self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
 
         # Define observation space and action space
-        self.observation_range = {
-            'est_departures':  (0, self.max_timestamp),
-            'demands':         (0, data_generator.requested_energy_cap),
-            'forecasted_moer': (0, 1.0),
-            'timestep':        (0, self.max_timestamp)
+        self.observation_max = {
+            'est_departures':  self.max_timestep,
+            'demands':         data_generator.requested_energy_cap,
+            'forecasted_moer': 1.0,
+            'timestep':        self.max_timestep
         }
         self.observation_space = spaces.Dict({
             'est_departures':  spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
@@ -140,41 +134,69 @@ class EVChargingEnv(Env):
             self.action_space = spaces.Box(
                 low=0, high=self.MAX_ACTION, shape=(self.num_stations,),
                 dtype=np.float32)
+    
+    def project_action(self, action: np.ndarray) -> np.ndarray:
+        """Projects action to satisfy charging network constraints.
 
-        if project_action:
-            self.set_up_action_projection()
+        Args:
+            action: action: shape [num_stations], charging rate for each charging station.
+                If action_type == 'discrete', entries should be in {0, 1, 2, 3, 4}.
+                If action_type == 'continuous', entries should be in range [0, 4].
+            
+        Returns:
+            projected action so that network constraints are obeyed and no more charge
+                is provided than is demanded. It is the action in the feasible space
+                that minimizes the L2 norm between it and the suggested action.
+        """
+        if self.project_action_first_run:
+            self.projected_action = cp.Variable(self.num_stations, nonneg=True)
 
-    def set_up_action_projection(self) -> None:
-        """Creates cvxpy variables and parameters for action projection."""
-        self.projected_action = cp.Variable(self.num_stations, nonneg=True)
+            # Aggregate magnitude (ACTION_SCALE_FACTOR*A) must be less than observation magnitude (A)
+            phase_factor = np.exp(1j * np.deg2rad(self.cn._phase_angles))
+            A_tilde = self.cn.constraint_matrix * phase_factor[None, :]
+            agg_magnitude = cp.abs(A_tilde @ self.projected_action) * self.ACTION_SCALE_FACTOR  # convert to A
+            magnitude_limit = self.cn.magnitudes
 
-        # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
-        phase_factor = np.exp(1j * np.deg2rad(self.cn._phase_angles))
-        A_tilde = self.cn.constraint_matrix * phase_factor[None, :]
-        agg_magnitude = cp.abs(A_tilde @ self.projected_action) * self.ACTION_SCALING_FACTOR  # convert to A
-        magnitude_limit = self.cn.magnitudes
+            self.actual_action = cp.Parameter((self.num_stations,), nonneg=True)
+            self.demands_cvx = cp.Parameter((self.num_stations,), nonneg=True)
 
-        self.actual_action = cp.Parameter((self.num_stations,), nonneg=True)
-        self.demands_cvx = cp.Parameter((self.num_stations,), nonneg=True)
+            max_action = cp.minimum(self.MAX_ACTION + self.EPS,
+                                    self.demands_cvx / self.A_PERS_TO_KWH / self.ACTION_SCALE_FACTOR)
 
-        max_action = cp.minimum(self.MAX_ACTION + self.EPS,
-                                self.demands_cvx / self.ACTION_SCALING_FACTOR / self.A_PERS_TO_KWH)
+            objective = cp.Minimize(cp.norm(self.projected_action - self.actual_action, p=2))
+            constraints = [
+                self.projected_action <= max_action,
+                agg_magnitude <= magnitude_limit,
+            ]
+            self.prob = cp.Problem(objective, constraints)
 
-        objective = cp.Minimize(cp.norm(self.projected_action - self.actual_action, p=2))
-        constraints = [
-            self.projected_action <= max_action,
-            agg_magnitude <= magnitude_limit,
-        ]
-        self.prob = cp.Problem(objective, constraints)
+            assert self.prob.is_dpp() and self.prob.is_dcp()
 
-        assert self.prob.is_dpp() and self.prob.is_dcp()
+        self.actual_action.value = action
+        self.demands_cvx.value = self.demands * self.observation_max['demands']
+
+        try:
+            self.prob.solve(warm_start=True, solver=cp.MOSEK)
+        except cp.SolverError:
+            print('Default MOSEK solver failed. Trying ECOS. ')
+            self.prob.solve(solver=cp.ECOS)
+            if self.prob.status != 'optimal':
+                print(f'prob.status = {self.prob.status}')
+            if 'infeasible' in self.prob.status:
+                # your problem should never be infeasible. So now go debug
+                import pdb
+                pdb.set_trace()
+        action = self.projected_action.value
+        if self.action_type == 'discrete':
+            # round to nearest integer if above threshold
+            action = np.where(np.modf(action)[0] > self.ROUND_UP_THRESH, np.round(action), np.floor(action))
+        return action
 
     def __repr__(self) -> str:
         """Returns the string representation of charging gym."""
         site = f'{self.site.capitalize()} site'
         action_type = f'action type {self.action_type}'
-        project_action = f'action projection {self.project_action}'
-        return f'EVChargingGym for the {site}, {action_type}, {project_action}. '
+        return f'EVChargingGym for the {site} with {action_type} actions. '
 
     def step(self, action: np.ndarray, return_info: bool = False
              ) -> tuple[dict[str, np.ndarray], float, bool, dict[str, Any]]:
@@ -192,29 +214,22 @@ class EVChargingEnv(Env):
 
         Returns:
             observation: state
-                'arrivals': shape [num_stations], arrival timestamp for each EVSE.
-                    If the EVSE corresponding to the index is empty, the entry
-                    is zero.
-                'est_departures': shape [num_stations], estimated departure
-                    timestamp for each EVSE. If the EVSE corresponding to the
-                    index is empty, the entry is zero.
+                'est_departures': shape [num_stations], the estimated departure
+                    timestep for each EVSE normalized between 0 and 1. If
+                    there is no EVSE at the index, the` entry is 0.
                 'demands': shape [num_stations], amount of charge demanded by
-                    each EVSE in Amp * periods.
-                'forecasted_moer': shape [moer_forecast_steps], forecasted emissions rate for next
-                    timestep in kg CO2 per kWh
-                'timestep': shape [1], simulation's current iteration
-            reward: float representing scheduler's performance
+                    each EVSE in kWh, normalized by `requested_energy_cap` of
+                    data generator.
+                'forecasted_moer': shape [moer_forecast_steps], forecasted
+                    emissions rate for next timestep(s) in kg CO2 per kWh.
+                    Between 0 and 1.
+                'timestep': shape [1], simulation's current iteration during
+                    the day, normalized between 0 and 1.
+            reward: scheduler's performance
             done: whether episode is finished
-            info: dict with the following key-value pairs TODO may change
-                'active_evs': list of acns.EV, all EVs currently charging.
-                'active_sessions': list of acns.interface.SessionInfo, active sessions.
-                'charging_rates': pd.DataFrame, history of charging rates as
-                    provided by the internal simulator. Columns are EVSE id, and
-                    the index is the iteration.
-                'actual_departures': np.ndarray of shape [num_stations],
-                    actual departure timestamp for each EVSE. If the EVSE
-                    corresponding to the index is not currently charging an EV,
-                    the entry is zero.
+            info: auxiliary information for debugging
+                'evs': list of all acns.EV's
+                'active_evs': list of all currently charging acns.EV's
                 'pilot_signals': pd.DataFrame, entire history of pilot signals
                     throughout simulation. Columns are EVSE id, and the index is
                     the iteration.
@@ -223,15 +238,14 @@ class EVChargingEnv(Env):
                     'carbon_cost': marginal CO2 emissions rate ($)
                     'excess_charge': costs for violating network constraints ($)
         """
+        self.timestep += 1
         # Step internal simulator
-        schedule = self.to_schedule(action)  # transform action to pilot signals
-        done = self.simulator.step(schedule)
+        schedule = self._to_schedule(action)  # transform action to pilot signals
+        done = self.simulator.step(schedule)  # should be set by calling reset()
         self.simulator._resolve = False  # work-around to keep iterating
-
         # Retrieve environment information
-        observation, info = self.get_observation(return_info=return_info)
-        reward, reward_info = self.get_rewards(schedule)
-        self.iteration += 1
+        observation, info = self._get_observation(return_info=return_info)
+        reward, reward_info = self._get_reward(schedule)
         info['reward'] = reward_info
         return observation, reward, done, info
 
@@ -244,52 +258,41 @@ class EVChargingEnv(Env):
 
         Prepares for the next episode by re-creating the charging network,
         generating new events, creating the simulation and interface,
-        and resetting the timestamps.
+        and resetting the timesteps.
 
         Args:
             seed: random seed for resetting environment
             return_info: whether information should be returned as well
             options: dictionary containing options for resetting.
                 'verbose': set verbosity [0-2]
-                'project_action': set action projection boolean
 
         Returns:
-            obs: observations. See step() for more information.
-            info: other information. See step().
+            obs: state. See step().
+            info: auxiliary information. See step().
         """
         self.rng = np.random.default_rng(seed)
-        self.data_generator.set_random_seed(seed)
+        self.data_generator.set_seed(seed)
 
-        if options:
-            if 'verbose' in options:
-                self.verbose = options['verbose']
+        if options and 'verbose' in options:
+            self.verbose = options['verbose']
 
-            if 'project_action' in options:
-                self.project_action = options['project_action']
-                if self.project_action:
-                    self.set_up_action_projection()
-
-        # Initialize charging network
+        # Initialize charging network, event queue, MOER data, simulator,
+        # interface, and iteration timestep
         self.cn = site_str_to_site(self.site)
-        # Initialize event queue
         self.events, self.evs, num_plugs = self.data_generator.get_event_queue()
-        if self.verbose >= 1:
-            print(f'Simulating {num_plugs} events. Using {self.data_generator}')
-        # Initialize MOER data
         self.moer = self.data_generator.get_moer()
-        # Initialize simulator and interface
-        day = self.data_generator.day
-        self.simulator = acns.Simulator(network=self.cn, scheduler=None, events=self.events, start=day, period=self.period, verbose=False)
+        self.simulator = acns.Simulator(network=self.cn, scheduler=None,
+                                        events=self.events, start=self.data_generator.day,
+                                        period=self.period, verbose=False)
         self.interface = acns.Interface(self.simulator)
-        # Initialize time steps
-        self.iteration = 0
-        # Retrieve environment information
-        if return_info:
-            return self.get_observation(True)
-        else:
-            return self.get_observation(False)[0]
+        self.timestep = 0
 
-    def to_schedule(self, action: np.ndarray) -> dict[str, list[float]]:
+        if self.verbose >= 1:
+            print(f'Simulating {num_plugs} events using {self.data_generator}')
+
+        return self._get_observation(True) if return_info else self._get_observation(False)[0]
+
+    def _to_schedule(self, action: np.ndarray) -> dict[str, list[float]]:
         """Returns EVSE pilot signals given a numpy action.
 
         If the environment uses a discrete action type, actions are expected
@@ -311,36 +314,13 @@ class EVChargingEnv(Env):
                 If action_type == 'continuous', entries should be in range [0, 4].
 
         Returns:
-            pilot_signals: maps station ids to a single-element list of pilot signals
-                in Amps
+            pilot_signals: dict, str => [int]. Maps station ids to a
+                single-element list of pilot signals in Amps
         """
-        # project action if flag is set
-        # note that if action is already in the feasible action space,
-        # this will just return the action itself
-        if self.project_action:
-            # TODO(chris): switch to MOSEK
-            self.actual_action.value = action
-            if self.normalize_observation:
-                self.demands_cvx.value = self.demands * self.observation_range['demands'].high
-            else:
-                self.demands_cvx.value = self.demands
-            try:
-                self.prob.solve(warm_start=True, solver=cp.MOSEK)
-            except cp.SolverError:
-                print('Default MOSEK solver failed. Trying ECOS. ')
-                self.prob.solve(solver=cp.ECOS)
-                if self.prob.status != 'optimal':
-                    print(f'prob.status = {self.prob.status}')
-                if 'infeasible' in self.prob.status:
-                    # your problem should never be infeasible. So now go debug
-                    import pdb
-                    pdb.set_trace()
-            action = self.projected_action.value
-
         if self.action_type == 'discrete':
-            return {e: [self.ACTION_SCALING_FACTOR * a] for a, e in zip(round(action), self.cn.station_ids)}
+            return {e: [self.ACTION_SCALE_FACTOR * a] for a, e in zip(round(action), self.cn.station_ids)}
         else:
-            action = np.round(action * self.ACTION_SCALING_FACTOR)  # round to nearest integer rate
+            action = np.round(action * self.ACTION_SCALE_FACTOR)  # round to nearest integer rate
             pilot_signals = {}
             for i in range(self.num_stations):
                 station_id = self.cn.station_ids[i]
@@ -352,10 +332,10 @@ class EVChargingEnv(Env):
                     pilot_signals[station_id] = [action[i] if action[i] >= 6 else 0]
                 else:
                     # set to {0, 8, 16, 24, 32}
-                    pilot_signals[station_id] = [(np.round(action[i] / self.DISCRETE_MULTIPLE) * self.DISCRETE_MULTIPLE)]
+                    pilot_signals[station_id] = [(np.round(action[i] / self.ACTION_SCALE_FACTOR) * self.ACTION_SCALE_FACTOR)]
             return pilot_signals
 
-    def get_observation(self, return_info: bool = True
+    def _get_observation(self, return_info: bool = True
                         ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Returns observations for the current state of simulation.
 
@@ -373,12 +353,12 @@ class EVChargingEnv(Env):
             station_id = session_info.station_id
             station_idx = self.evse_name_to_idx[station_id]
             self.est_departures[station_idx] = session_info.estimated_departure
-            self.demands[station_idx] = self.interface.remaining_amp_periods(session_info) * self.A_PERS_TO_KWH
-        self.forecasted_moer[:] = self.moer[self.iteration, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
-        self.timestep_obs[0] = self.iteration
+            self.demands[station_idx] = session_info.remaining_demand  # kWh
+        self.forecasted_moer[:] = self.moer[self.timestep, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
+        self.timestep_obs[0] = self.timestep
 
         for s in self.obs:
-            self.obs[s] /= self.observation_range[s][1]
+            self.obs[s] /= self.observation_max[s]
 
         if return_info:
             info = {
@@ -390,7 +370,7 @@ class EVChargingEnv(Env):
         else:
             return self.obs, {}
 
-    def get_rewards(self, schedule: Mapping[str, Sequence[float]]) -> tuple[float, dict[str, float]]:
+    def _get_reward(self, schedule: Mapping[str, Sequence[float]]) -> tuple[float, dict[str, float]]:
         """Returns reward for scheduler's performance.
 
         The reward is a weighted sum of charging rewards, carbon costs,
@@ -408,7 +388,7 @@ class EVChargingEnv(Env):
         schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
 
         # profit calculation (Amp * period) -> (Amp * mins) -> (KWH) -> ($)
-        profit = self.PROFIT_FACTOR * np.sum(self.simulator.charging_rates[:, self.iteration:self.iteration + 1])
+        profit = self.PROFIT_FACTOR * np.sum(self.simulator.charging_rates[:, self.timestep:self.timestep + 1])
 
         # Network constraints - amount of charge over maximum allowed rates ($)
         current_sum = np.abs(self.simulator.network.constraint_current(schedule))
@@ -416,7 +396,7 @@ class EVChargingEnv(Env):
         excess_charge = excess_current * self.VIOLATION_FACTOR
 
         # Carbon cost ($)
-        carbon_cost = self.CARBON_COST_FACTOR * np.sum(schedule) * self.moer[self.iteration, 0]
+        carbon_cost = self.CARBON_COST_FACTOR * np.sum(schedule) * self.moer[self.timestep, 0]
 
         total_reward = profit - carbon_cost - excess_charge
 
