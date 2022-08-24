@@ -225,7 +225,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
 
     def set_random_seed(self, seed: int | None) -> None:
         """Override parent method, instead set day."""
-        if seed is not None:
+        if seed is not None and not self.sequential:
             self.day = self.date_range[0] + timedelta(days=seed % self.interval_length)
 
     def _update_day(self) -> None:

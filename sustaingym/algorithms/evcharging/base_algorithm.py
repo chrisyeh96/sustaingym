@@ -116,7 +116,7 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
             assert self.prob.is_dpp() and self.prob.is_dcp()
             self.first_run = False
 
-        self.demands.value = observation['demands'] / ACTION_SCALING_FACTOR / env.recompute_freq
+        self.demands.value = observation['demands'] / ACTION_SCALING_FACTOR
         # Set up problem and solve
         self.prob.solve(solver='ECOS')
         action_suggested = np.maximum(0., self.r.value)

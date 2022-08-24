@@ -15,6 +15,7 @@ from sustaingym.envs.evcharging import EVChargingEnv, GMMsTraceGenerator, RealTr
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train Script', formatter_class=RawTextHelpFormatter)
     parser.add_argument('--exp', type=int)
+    parser.add_argument('--random_seed', type=int)
     parser.add_argument('--model', default='ppo', help='Either `ppo` or `a2c')
     parser.add_argument('--action_type', default='discrete', help='Either `continuous` or `discrete')
     parser.add_argument('--timesteps', type=int, default=250_000)
@@ -22,6 +23,8 @@ if __name__ == '__main__':
 
     EXP = args.exp
     assert EXP is not None
+    RANDOM_SEED = args.random_seed
+    assert RANDOM_SEED is not None
     TIMESTEPS = args.timesteps
     MODELS = {'ppo': PPO, 'a2c': A2C}
     MODEL = MODELS[args.model]
@@ -53,7 +56,7 @@ if __name__ == '__main__':
         print("Saved args: ", pickle.load(f))
     print("----- ----- ----- -----")
 
-    train_envs = SubprocVecEnv([get_env(train=True, seed=i) for i in range(4)])
+    train_envs = SubprocVecEnv([get_env(train=True, seed=RANDOM_SEED+i) for i in range(4)])
     eval_env = get_env(train=False)()
 
     # Use deterministic actions for evaluation
