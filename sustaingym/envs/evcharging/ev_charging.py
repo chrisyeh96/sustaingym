@@ -157,8 +157,8 @@ class EVChargingEnv(Env):
             agg_magnitude = cp.abs(A_tilde @ self.projected_action) * self.ACTION_SCALE_FACTOR  # convert to A
             magnitude_limit = self.cn.magnitudes
 
-            self.actual_action = cp.Parameter((self.num_stations,), nonneg=True)
-            self.demands_cvx = cp.Parameter((self.num_stations,), nonneg=True)
+            self.actual_action = cp.Parameter(self.num_stations, nonneg=True)
+            self.demands_cvx = cp.Parameter(self.num_stations, nonneg=True)
 
             max_action = cp.minimum(self.MAX_ACTION + self.EPS,
                                     self.demands_cvx / self.A_PERS_TO_KWH / self.ACTION_SCALE_FACTOR)
@@ -388,7 +388,7 @@ class EVChargingEnv(Env):
         schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
 
         # profit calculation (Amp * period) -> (Amp * mins) -> (KWH) -> ($)
-        profit = self.PROFIT_FACTOR * np.sum(self.simulator.charging_rates[:, self.timestep:self.timestep + 1])
+        profit = self.PROFIT_FACTOR * np.sum(self.simulator.charging_rates[:, self.timestep-1:self.timestep])
 
         # Network constraints - amount of charge over maximum allowed rates ($)
         current_sum = np.abs(self.simulator.network.constraint_current(schedule))

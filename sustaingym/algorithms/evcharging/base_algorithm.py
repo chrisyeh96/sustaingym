@@ -11,12 +11,6 @@ from tqdm import tqdm
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 
 
-ACTION_SCALING_FACTOR = 8
-EPS = 1e-3
-MAX_ACTION = 4
-ROUND_UP_THRESH = 0.7
-
-
 class BaseOnlineAlgorithm:
     """Abstract class for online algorithms for the evcharging gym.
 
@@ -75,14 +69,13 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
     """Greedily charges at each time step.
 
     Attributes:
-        first_run: flag for setting up cvxpy on the first run
-        r: schedule to optimize
-        phases: phases of current
-        demands: a parameter for the amount of energy requested
-        prob: optimization problem to solve
+        project_action: whether environment's action projection should be used
     """
     def __init__(self, project_action=False):
-        self.first_run = True
+        """
+        Args:
+            project_action: whether environment's action projection should be used
+        """
         self.project_action = project_action
 
     def get_action(self, observation: dict[str, Any], env: EVChargingEnv) -> np.ndarray:
@@ -94,41 +87,41 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
         Returns:
             *See get_action() in BaseOnlineAlgorithm.
         """
-        num_stations = len(env.cn.station_ids)
-        action = np.full(num_stations, 4)
+        action = np.full(env.num_stations, 4)
         if self.project_action:
-            action = env.project_action(action)
+            return env.project_action(action)
         return action
+
 
 class MPC(BaseOnlineAlgorithm):
     """Model predictive control.
 
     Attributes:
-        name: name of the algorithm
-        phases: phases of current
-        first_run: flag for when the optimization problem should be set up
-        r: schedule to optimize
-        demands: a parameter for the amount of energy requested
-        prob: optimization problem to solve
+        first_run: if True, cvxpy needs setting up
+        lookahead: number of timesteps to forecast future trajectory
     """
     def __init__(self, lookahead: int = 12):
+        """
+        Args:
+            lookahead: number of timesteps to forecast future trajectory
+        """
         self.first_run = True
         self.lookahead = lookahead
 
     def get_action(self, observation: dict[str, Any], env: EVChargingEnv) -> np.ndarray:
         """Returns first action of the k-step optimal trajectory."""
         if self.first_run:
-            num_stations = len(env.cn.station_ids)
-            self.traj = cp.Variable((num_stations, self.lookahead), nonneg=True)  # units A*periods*ACTION_SCALE_FACTOR
+            self.traj = cp.Variable((env.num_stations, self.lookahead), nonneg=True)  # units A*periods*ACTION_SCALE_FACTOR
 
             # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
             phase_factor = np.exp(1j * np.deg2rad(env.cn._phase_angles))
             A_tilde = env.cn.constraint_matrix * phase_factor[None, :]
-            agg_magnitude = cp.abs(A_tilde @ (self.traj * ACTION_SCALING_FACTOR))
+            agg_magnitude = cp.abs(A_tilde @ (self.traj)) * env.ACTION_SCALE_FACTOR  # convert to A
+            magnitude_limit = np.tile(np.expand_dims(env.cn.magnitudes, axis=1), (1, self.lookahead))
 
-            self.demands = cp.Parameter(num_stations, nonneg=True)
+            self.demands_cvx = cp.Parameter(env.num_stations, nonneg=True)
             self.moers = cp.Parameter(self.lookahead, nonneg=True)
-            self.mask = cp.Parameter((num_stations, self.lookahead), nonneg=True)
+            self.mask = cp.Parameter((env.num_stations, self.lookahead), nonneg=True)
 
             profit = cp.sum(self.traj) * env.PROFIT_FACTOR  # units $*ACTION_SCALE_FACTOR
             carbon_cost = cp.sum(self.traj @ self.moers) * env.CARBON_COST_FACTOR  # units $*ACTION_SCALE_FACTOR
@@ -136,22 +129,26 @@ class MPC(BaseOnlineAlgorithm):
 
             constraints = [
                 self.traj <= self.mask,
-                cp.sum(self.traj, axis=1) <= self.demands,
-                agg_magnitude <= env.cn.magnitudes
+                cp.sum(self.traj, axis=1) <= self.demands_cvx / env.A_PERS_TO_KWH / env.ACTION_SCALE_FACTOR,
+                agg_magnitude <= magnitude_limit
             ]
             self.prob = cp.Problem(objective, constraints)
 
             assert self.prob.is_dpp() and self.prob.is_dcp()
             self.first_run = False
         
-        demands_kWh = observation['demands'] * env.observation_max['demands']
-        self.demands.value = demands_kWh / env.A_PERS_TO_KWH / env.ACTION_SCALE_FACTOR  # # units A*periods*ACTION_SCALE_FACTOR
+        self.demands_cvx.value = observation['demands'] * env.observation_max['demands'] # units A*periods
 
-        self.moers.value = observation['moer_forecast'][:self.lookahead] * env.observation_max['moer_forecast']  # kg CO2 per kWh
+        self.moers.value = observation['forecasted_moer'][:self.lookahead] * env.observation_max['forecasted_moer']  # kg CO2 per kWh
 
-        # need to do mask
+        cur_est_dep = np.round(env.max_timestep * (observation['est_departures'] - observation['timestep'])).astype(np.int32)
+        # if estimated departure has already passed, assume car will stay for entire window
+        cur_est_dep = np.where(observation['demands'] > 0, cur_est_dep, self.lookahead)
 
-        self.mask.value = TODO  # this will be a bit trickier to do, based on estimated departures
+        mask = np.zeros((env.num_stations, self.lookahead))
+        for i in range(env.num_stations):
+            mask[i, :cur_est_dep[i]] = env.MAX_ACTION + env.EPS
+        self.mask.value = np.full((env.num_stations, self.lookahead), env.MAX_ACTION + env.EPS) # mask
 
         try:
             self.prob.solve(warm_start=True, solver=cp.MOSEK)
@@ -165,6 +162,7 @@ class MPC(BaseOnlineAlgorithm):
                 import pdb
                 pdb.set_trace()
         action = self.traj.value[:, 0]  # take first action
+
         if env.action_type == 'discrete':
             # round to nearest integer if above threshold
             action = np.where(np.modf(action)[0] > env.ROUND_UP_THRESH, np.round(action), np.floor(action))
