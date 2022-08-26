@@ -583,7 +583,7 @@ class BatteryStorageInGridEnv(Env):
         return prob.value
     
     def _calculate_realistic_off_optimal_total_episode_reward(
-        self) -> tuple[float, np.ndarray]:
+        self) -> tuple[float, np.ndarray, np.ndarray]:
         """Calculates an approximate total offline optimal reward for the current
         episode.
 
@@ -648,7 +648,7 @@ class BatteryStorageInGridEnv(Env):
                 import pdb
                 pdb.set_trace()
         
-        return prob.value, x.value
+        return prob.value, x.value, prices
 
     def render(self):
         raise NotImplementedError

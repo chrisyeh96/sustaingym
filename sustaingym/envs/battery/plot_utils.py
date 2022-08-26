@@ -12,12 +12,16 @@ import pytz
 from typing import Any, List
 
 import cvxpy as cp
+import datetime
 from gym import Env, spaces
 from matplotlib.axes._axes import Axes as MplAxes
+import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
+import matplotlib.ticker as plticker
 import numpy as np
 import pandas as pd
 from stable_baselines3 import PPO, A2C
+
 
 def training_eval_results(model: str, dist: str):
     assert model in ['PPO', 'A2C']
@@ -33,7 +37,7 @@ def training_eval_results(model: str, dist: str):
     error = results.std(axis=1)
     return timesteps, y, error
 
-def run_model_for_evaluation(model, episodes, env):
+def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = False):
     """
     Run a model for a number of episodes and return the mean and std of the reward.
     :param model: (BaseRLModel object) the model to evaluate
@@ -42,16 +46,23 @@ def run_model_for_evaluation(model, episodes, env):
     :return: (np.ndarray) rewards for episodes
     """
     episode_rewards = []
+    prices = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
+    charges = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
+    
     for i in range(episodes):
         obs = env.reset(seed = i*10)
+        charges[i, 0] = env.battery_charge[-1]
         done = False
         rewards = np.zeros(env.MAX_STEPS_PER_EPISODE)
         while not done:
             action, _ = model.predict(obs)
-            obs, reward, done, _ = env.step(action)
+            obs, reward, done, info = env.step(action)
             rewards[env.count] = reward
+            prices[i, env.count] = info['price']
+            charges[i, env.count] = env.battery_charge[-1]
+        prices[i, 0] = prices[i, 1]
         episode_rewards.append(np.sum(rewards))
-    return episode_rewards
+    return episode_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
 
 def get_offline_optimal(episodes, env):
     """
@@ -61,14 +72,27 @@ def get_offline_optimal(episodes, env):
     :return: (np.ndarray) rewards for episodes
     """
     episode_rewards = []
-    episode_actions = []
+    episode_charges = []
+    episode_prices = []
 
     for i in range(episodes):
         obs = env.reset(seed = i*10)
-        rewards, actions = env._calculate_realistic_off_optimal_total_episode_reward()
+        init_soc = env.battery_charge[-1]
+        rewards, actions, prices = env._calculate_realistic_off_optimal_total_episode_reward()
+        prices[0] = prices[1]
         episode_rewards.append(rewards)
-        episode_actions.append(actions)
-    return episode_rewards, episode_actions
+        episode_prices.append(prices)
+        
+        curr_soc = init_soc
+        charges = np.zeros(env.MAX_STEPS_PER_EPISODE)
+
+        for i in range(len(actions)):
+            charges[i] = curr_soc + actions[i]
+            curr_soc += actions[i]
+
+        episode_charges.append(charges)
+        
+    return episode_rewards, episode_prices, episode_charges
 
 def get_random_action_rewards(episodes, env):
     episode_rewards = []
@@ -96,11 +120,12 @@ def plot_model_training_reward_curves(ax: MplAxes, model: str,
         evals_lst.append(y)
         err_lst.append(err)
     
-    ax.plot(timesteps, evals_lst[0], label='train on May 2019, evaluate on May 2019')
+    ax.plot(timesteps, evals_lst[0], label='train on May 2019, evaluate on May 2019') # too specific!!!
     ax.fill_between(timesteps, evals_lst[0]-err_lst[0], evals_lst[0]+err_lst[0], alpha=0.2)
 
-    ax.plot(timesteps, evals_lst[1], label='train on May 2019, evaluate on May 2021')
-    ax.fill_between(timesteps, evals_lst[1]-err_lst[1], evals_lst[1]+err_lst[1], alpha=0.2)
+    if len(dists) == 2:
+        ax.plot(timesteps, evals_lst[1], label='train on May 2019, evaluate on May 2021') # too specific!!!
+        ax.fill_between(timesteps, evals_lst[1]-err_lst[1], evals_lst[1]+err_lst[1], alpha=0.2)
 
     ax.set_title(f'{model} Training Reward Curves')
     ax.set_ylabel('reward ($)')
@@ -108,4 +133,100 @@ def plot_model_training_reward_curves(ax: MplAxes, model: str,
     ax.legend()
 
     return ax
+
+def plot_reward_distribution(ax: MplAxes, eval_env, models, model_labels, n_episodes = 10,
+    year = str) -> MplAxes:
+    """"
+    Plot reward distributions for a given evaluation and training month where year is
+    variable and month is fixed at May (for now).
+
+    Args:
+        ax: plt axes object to capture resulting reward distribution in a plot
+        eval_env: gym environment representing the env to evaluate models on
+        models: RL models trained on electricity market gym
+        model_labels: corresponding labels for the "models" arg
+        n_episodes: integer for number of episodes to evaluate over
+    Return:
+        populated plt axes object which plots the reward distribution
+    
+    Notes:
+        Use "plt.xticks(rotation=30)" to rotate x axis labels for a more appealing
+        orientation
+    """
+
+    assert len(models) == len(model_labels)
+
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    offline_rewards, _, _= get_offline_optimal(n_episodes, eval_env)
+    random_rewards = get_random_action_rewards(n_episodes, eval_env)
+
+    model_rewards = []
+
+    for model in models:
+        model_rewards.append(run_model_for_evaluation(model, n_episodes, eval_env))
+
+    data = [offline_rewards, random_rewards]
+    data.extend(model_rewards)
+    labels = ['', 'offline', 'random']
+    labels.extend(model_labels)
+
+    ax.violinplot(data, showmedians=True)
+    
+    ax.set_ylabel('Reward ($)')
+    ax.set_title(f'Reward Distribution for May {year}')
+    x = np.arange(len(labels))  # the label locations
+
+    ax.set_xticks(x, labels)
+    fig.tight_layout()
+
+    return ax
+
+def plot_state_of_charge_and_prices(axes: MplAxes, load_data: pd.DataFrame, model,
+    model_label, env) -> tuple[MplAxes, MplAxes]:
+
+    if axes is None:
+        fig, (ax, ax2) = plt.subplots(2)
+        axes = (ax, ax2)
+    
+    assert len(axes) == 2
+    ax, ax2 = axes
+    fmt = mdates.DateFormatter('%H:%M:%S')
+
+    time_arr = load_data.columns[:-1]
+    time_arr = [t + ':00.0' for t in time_arr]
+    timeArray = [datetime.datetime.strptime(i, '%H:%M:%S.%f') for i in time_arr]
+
+    _, prices, charges = run_model_for_evaluation(model, 1, env, True)
+    _, offline_prices, offline_charges = get_offline_optimal(1, env)
+
+    prices = np.reshape(prices, (env.MAX_STEPS_PER_EPISODE,))
+    offline_prices = np.reshape(offline_prices, (env.MAX_STEPS_PER_EPISODE,))
+    charges = np.reshape(charges, (env.MAX_STEPS_PER_EPISODE,))
+    offline_charges = np.reshape(offline_charges, (env.MAX_STEPS_PER_EPISODE,))
+
+    ax.plot(timeArray, prices, label=model_label)
+    ax.plot(timeArray, offline_prices, label='offline prices')
+    ax2.plot(timeArray, charges, label=model_label)
+    ax2.plot(timeArray, offline_charges, label='offline charges')
+
+    # naming the x axis 
+    ax.set_xlabel('time')
+    # naming the y axis 
+    ax.set_ylabel('Prices ($)')
+    ax2.set_ylabel('State of Charge (MWh)')
+
+    ax.xaxis.set_major_formatter(fmt)
+    loc = plticker.MultipleLocator(base=0.2) # this locator puts ticks at regular intervals
+    ax.xaxis.set_major_locator(loc)
+
+    ax2.xaxis.set_major_formatter(fmt)
+    ax2.xaxis.set_major_locator(loc)
+
+    ax.legend()
+    ax2.legend()
+
+    return ax, ax2
+
 
