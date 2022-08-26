@@ -4,10 +4,11 @@ The module implements the BatteryStorageInGridEnv class.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 import os
 import pkgutil
+from socket import AF_AX25
 import pytz
 from typing import Any, List
 
@@ -37,7 +38,7 @@ def training_eval_results(model: str, dist: str):
     error = results.std(axis=1)
     return timesteps, y, error
 
-def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = False):
+def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = False, per_time_step: bool = False):
     """
     Run a model for a number of episodes and return the mean and std of the reward.
     :param model: (BaseRLModel object) the model to evaluate
@@ -48,6 +49,7 @@ def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = Fa
     episode_rewards = []
     prices = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     charges = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
+    all_rewards = []
     
     for i in range(episodes):
         obs = env.reset(seed = i*10)
@@ -62,7 +64,12 @@ def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = Fa
             charges[i, env.count] = env.battery_charge[-1]
         prices[i, 0] = prices[i, 1]
         episode_rewards.append(np.sum(rewards))
-    return episode_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
+        all_rewards.append(rewards)
+    
+    if not per_time_step:
+        return episode_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
+    
+    return all_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
 
 def get_offline_optimal(episodes, env):
     """
@@ -106,6 +113,18 @@ def get_random_action_rewards(episodes, env):
             rewards[env.count] = reward
         episode_rewards.append(np.sum(rewards))
     return episode_rewards
+
+def get_offline_time_step_rewards(env):
+    env.reset(seed=0)
+    _, dispatches, prices = env._calculate_realistic_off_optimal_total_episode_reward()
+    rewards = []
+    rewards.append(0.)
+    moers = env.moer_arr[:, 0]
+
+    for i in range(1, env.MAX_STEPS_PER_EPISODE):
+        rewards.append((prices[i] + env.CARBON_COST * moers[i]) * dispatches[i-1])
+
+    return rewards
 
 def plot_model_training_reward_curves(ax: MplAxes, model: str,
     dists: List[str]) -> MplAxes:
@@ -183,7 +202,7 @@ def plot_reward_distribution(ax: MplAxes, eval_env, models, model_labels, n_epis
 
     return ax
 
-def plot_state_of_charge_and_prices(axes: MplAxes, load_data: pd.DataFrame, model,
+def plot_state_of_charge_and_prices(axes: List[MplAxes], load_data: pd.DataFrame, model,
     model_label, env) -> tuple[MplAxes, MplAxes]:
 
     if axes is None:
@@ -229,4 +248,40 @@ def plot_state_of_charge_and_prices(axes: MplAxes, load_data: pd.DataFrame, mode
 
     return ax, ax2
 
+def plot_reward_over_episode(axes: List[MplAxes], model, env) -> MplAxes:
+    if axes is None:
+        fig, (ax, ax2) = plt.subplots(2)
+        axes = (ax, ax2)
+    
+    assert len(axes) == 2
+    ax, ax2 = axes
+    delta_time = datetime.timedelta(minutes=5)
+    curr_time = datetime.datetime(2022, 1, 1, 0, 0, 0, 0)
+    times = []
+
+    for _ in range(env.MAX_STEPS_PER_EPISODE):
+        times.append(curr_time.strftime('%H:%M:%S'))
+        curr_time += delta_time
+    
+    ppo_reward = run_model_for_evaluation(model, 1, env, False, True)
+    offline_reward = get_offline_time_step_rewards(env)
+    
+    ax.plot(times, ppo_reward[0], label="ppo in-dist")
+    ax2.plot(times, offline_reward, label='offline optimal')
+
+    # naming the x axis 
+    ax.set_xlabel('time')
+    # naming the y axis 
+    ax2.set_ylabel('reward ($)')
+
+    ax.legend()
+    ax2.legend()
+
+    ax.set_xticks(times[::50])
+    ax.set_xticklabels(times[::50])
+
+    ax2.set_xticks(times[::50])
+    ax2.set_xticklabels(times[::50])
+
+    return ax, ax2
 
