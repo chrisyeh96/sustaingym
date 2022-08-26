@@ -137,11 +137,11 @@ class MPC(BaseOnlineAlgorithm):
             assert self.prob.is_dpp() and self.prob.is_dcp()
             self.first_run = False
         
-        self.demands_cvx.value = observation['demands'] * env.observation_max['demands'] # units A*periods
+        self.demands_cvx.value = env.raw_observation(observation, 'demands')  # units A*periods
 
-        self.moers.value = observation['forecasted_moer'][:self.lookahead] * env.observation_max['forecasted_moer']  # kg CO2 per kWh
+        self.moers.value = env.raw_observation(observation, 'forecasted_moer')[:self.lookahead]  # kg CO2 per kWh
 
-        cur_est_dep = np.round(env.max_timestep * (observation['est_departures'] - observation['timestep'])).astype(np.int32)
+        cur_est_dep = np.round(env.max_timestep * observation['est_departures']).astype(np.int32)
         # if estimated departure has already passed, assume car will stay for entire window
         cur_est_dep = np.where(observation['demands'] > 0, cur_est_dep, self.lookahead)
 

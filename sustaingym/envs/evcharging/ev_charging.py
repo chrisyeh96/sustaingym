@@ -100,11 +100,11 @@ class EVChargingEnv(Env):
         self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
 
         # Define observation space and action space
-        self.observation_max = {
-            'est_departures':  self.max_timestep,
-            'demands':         data_generator.requested_energy_cap,
-            'forecasted_moer': 1.0,
-            'timestep':        self.max_timestep
+        self.observation_range = {
+            'est_departures':  (-self.max_timestep, self.max_timestep),
+            'demands':         (0, data_generator.requested_energy_cap),
+            'forecasted_moer': (0, 1.0),
+            'timestep':        (0, self.max_timestep),
         }
         self.observation_space = spaces.Dict({
             'est_departures':  spaces.Box(0, 1.0, shape=(self.num_stations,), dtype=np.float32),
@@ -134,6 +134,22 @@ class EVChargingEnv(Env):
             self.action_space = spaces.Box(
                 low=0, high=self.MAX_ACTION, shape=(self.num_stations,),
                 dtype=np.float32)
+    
+    def raw_observation(self, obs: dict[str, np.ndarray], key: str) -> np.ndarray:
+        """Returns unnormalized form of observation.
+
+        During the step() function, observations are normalized between 0 and
+        1 using ``self.observation_range``. This function "undo's" the
+        normalization.
+
+        Args:
+            obs: state, see step()
+            key: attribute of obs to get
+        
+        Returns:
+            unnormalized observation
+        """
+        return obs[key] * (self.observation_range[key][1] - self.observation_range[key][0]) + self.observation_range[key][0]
     
     def project_action(self, action: np.ndarray) -> np.ndarray:
         """Projects action to satisfy charging network constraints.
@@ -173,7 +189,7 @@ class EVChargingEnv(Env):
             assert self.prob.is_dpp() and self.prob.is_dcp()
 
         self.actual_action.value = action
-        self.demands_cvx.value = self.demands * self.observation_max['demands']
+        self.demands_cvx.value = self.raw_observation(self.obs, 'demands')
 
         try:
             self.prob.solve(warm_start=True, solver=cp.MOSEK)
@@ -189,7 +205,7 @@ class EVChargingEnv(Env):
         action = self.projected_action.value
         if self.action_type == 'discrete':
             # round to nearest integer if above threshold
-            action = np.where(np.modf(action)[0] > self.ROUND_UP_THRESH, np.round(action), np.floor(action))
+            action = round(action, thresh=self.ROUND_UP_THRESH)
         return action
 
     def __repr__(self) -> str:
@@ -214,12 +230,13 @@ class EVChargingEnv(Env):
 
         Returns:
             observation: state
-                'est_departures': shape [num_stations], the estimated departure
-                    timestep for each EVSE normalized between 0 and 1. If
-                    there is no EVSE at the index, the` entry is 0.
+                'est_departures': shape [num_stations], the estimated time
+                    until departure. If there is no EVSE at the index, the
+                    entry is set to ``-self.max_timestep``. Normalized between
+                    0 and 1.
                 'demands': shape [num_stations], amount of charge demanded by
-                    each EVSE in kWh, normalized by `requested_energy_cap` of
-                    data generator.
+                    each EVSE in kWh, normalized by ``requested_energy_cap``
+                    of data generator.
                 'forecasted_moer': shape [moer_forecast_steps], forecasted
                     emissions rate for next timestep(s) in kg CO2 per kWh.
                     Between 0 and 1.
@@ -318,7 +335,8 @@ class EVChargingEnv(Env):
                 single-element list of pilot signals in Amps
         """
         if self.action_type == 'discrete':
-            return {e: [self.ACTION_SCALE_FACTOR * a] for a, e in zip(round(action), self.cn.station_ids)}
+            return {e: [self.ACTION_SCALE_FACTOR * a] for a, e \
+                    in zip(round(action, thresh=self.ROUND_UP_THRESH), self.cn.station_ids)}
         else:
             action = np.round(action * self.ACTION_SCALE_FACTOR)  # round to nearest integer rate
             pilot_signals = {}
@@ -347,18 +365,19 @@ class EVChargingEnv(Env):
             obs: observations. See step() for more information.
             info: other information. See step().
         """
-        self.est_departures.fill(0)
+        self.est_departures.fill(-self.max_timestep)
         self.demands.fill(0)
         for session_info in self.interface.active_sessions():
             station_id = session_info.station_id
             station_idx = self.evse_name_to_idx[station_id]
-            self.est_departures[station_idx] = session_info.estimated_departure
+            self.est_departures[station_idx] = session_info.estimated_departure - self.timestep
             self.demands[station_idx] = session_info.remaining_demand  # kWh
         self.forecasted_moer[:] = self.moer[self.timestep, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
         self.timestep_obs[0] = self.timestep
 
-        for s in self.obs:
-            self.obs[s] /= self.observation_max[s]
+        for s in self.obs:  # modify self.obs in place
+            self.obs[s] -= self.observation_range[s][0]
+            self.obs[s] /= self.observation_range[s][1] - self.observation_range[s][0]
 
         if return_info:
             info = {

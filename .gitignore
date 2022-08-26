@@ -3,6 +3,7 @@
 .vscode/
 sandbox/
 logs/
+plots/
 ## END CUSTOM EXCLUSIONS
 
 # Byte-compiled / optimized / DLL files
