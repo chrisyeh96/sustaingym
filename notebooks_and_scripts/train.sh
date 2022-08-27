@@ -52,3 +52,7 @@ python -m notebooks_and_scripts.train --exp 263 --seed 369 --action_type continu
 python -m notebooks_and_scripts.train --exp 271 --seed 123 --action_type continuous --model a2c --site caltech --train_period summer2021 --test_period summer2021
 python -m notebooks_and_scripts.train --exp 272 --seed 246 --action_type continuous --model a2c --site caltech --train_period summer2021 --test_period summer2021
 python -m notebooks_and_scripts.train --exp 273 --seed 369 --action_type continuous --model a2c --site caltech --train_period summer2021 --test_period summer2021
+
+
+# Evaluate baselines
+python -m notebooks_and_scripts.baselines

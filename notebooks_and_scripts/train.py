@@ -1,4 +1,6 @@
-"""Multiprocessor trains on 4 environments at once.
+"""RL training script for training RL agent, periodically evaluating it, and
+testing it on an entire period at the end. Uses 4 subprocesses to collect
+trajectories in parallel.
 """
 
 import argparse
