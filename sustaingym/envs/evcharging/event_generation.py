@@ -258,7 +258,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
 
         # remove sessions where estimated departure / departure is not the same day as arrival
         max_depart = np.maximum(df['departure'], df['estimated_departure'])
-        mask = (df['arrival'].dt.day == max_depart.dt.day)
+        mask = (self.day.day == max_depart.dt.day)
         df = df[mask]
 
         if len(df) == 0:  # if dataframe is empty, return before using dt attribute
