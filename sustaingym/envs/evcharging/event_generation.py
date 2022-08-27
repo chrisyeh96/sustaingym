@@ -246,7 +246,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
         """
         self._update_day()
         df = self.events_df[(self.day <= self.events_df.arrival) &
-                            (self.events_df.arrival <= self.day + timedelta(days=1))]
+                            (self.events_df.arrival < self.day + timedelta(days=1))]
         if not self.use_unclaimed:
             df = df[df['claimed']]
 

@@ -46,7 +46,6 @@ class BaseOnlineAlgorithm:
             list of total rewards for each episode
             dict of sum of each individual reward component
         """
-        print('Simulating days of charging')
         total_rewards = []
         reward_components = {'profit': 0., 'carbon_cost': 0., 'excess_charge': 0.}
         if isinstance(seeds, int):
@@ -71,7 +70,7 @@ class GreedyAlgorithm(BaseOnlineAlgorithm):
     Attributes:
         project_action: whether environment's action projection should be used
     """
-    def __init__(self, project_action=False):
+    def __init__(self, project_action: bool = False):
         """
         Args:
             project_action: whether environment's action projection should be used
@@ -175,16 +174,16 @@ class RLAlgorithm(BaseOnlineAlgorithm):
 
     Attributes:
         rl_model: stable baselines RL model
-        name: algorithm identifier
+        project_action: whether environment's action projection should be used
     """
-    def __init__(self, rl_model: OnPolicyAlgorithm, name: str):
+    def __init__(self, rl_model: OnPolicyAlgorithm, project_action: bool):
         """
         Args:
             rl_model: stable baselines RL model
             name: algorithm identifier
         """
         self.rl_model = rl_model
-        self.name = name
+        self.project_action = project_action
 
     def get_action(self, observation: dict[str, Any], env: EVChargingEnv) -> np.ndarray:
         """Returns output of RL model.
@@ -195,7 +194,10 @@ class RLAlgorithm(BaseOnlineAlgorithm):
         Returns:
             *See get_action() in BaseOnlineAlgorithm.
         """
-        return self.rl_model.predict(observation, deterministic=True)[0]
+        action = self.rl_model.predict(observation, deterministic=True)[0]
+        if self.project_action:
+            return env.project_action(action)
+        return action
 
 
 class RandomAlgorithm(BaseOnlineAlgorithm):
@@ -203,16 +205,14 @@ class RandomAlgorithm(BaseOnlineAlgorithm):
     Uses random output as action.
 
     Attributes:
-        rl_model: stable baselines RL model
-        name: algorithm identifier
+        project_action: whether environment's action projection should be used
     """
-    def __init__(self):
+    def __init__(self, project_action: bool = False):
         """
         Args:
-            rl_model: stable baselines RL model
-            name: algorithm identifier
+            project_action: whether environment's action projection should be used
         """
-        self.name = 'random'
+        self.project_action = project_action
 
     def get_action(self, observation: dict[str, Any], env: EVChargingEnv) -> np.ndarray:
         """Returns output of RL model.
@@ -223,5 +223,7 @@ class RandomAlgorithm(BaseOnlineAlgorithm):
         Returns:
             *See get_action() in BaseOnlineAlgorithm.
         """
-        num_stations = len(env.cn.station_ids)
-        return np.random.randint(0, 5, size=num_stations)
+        action = np.random.randint(0, 5, size=env.num_stations)
+        if self.project_action:
+            return env.project_action(action)
+        return action
