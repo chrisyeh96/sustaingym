@@ -38,7 +38,8 @@ def training_eval_results(model: str, dist: str):
     error = results.std(axis=1)
     return timesteps, y, error
 
-def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = False, per_time_step: bool = False):
+def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = False,
+    per_time_step: bool = False, include_carbon_costs: bool = False):
     """
     Run a model for a number of episodes and return the mean and std of the reward.
     :param model: (BaseRLModel object) the model to evaluate
@@ -49,6 +50,7 @@ def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = Fa
     episode_rewards = []
     prices = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     charges = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
+    carbon_costs = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     all_rewards = []
     
     for i in range(episodes):
@@ -56,20 +58,28 @@ def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = Fa
         charges[i, 0] = env.battery_charge[-1]
         done = False
         rewards = np.zeros(env.MAX_STEPS_PER_EPISODE)
+
         while not done:
             action, _ = model.predict(obs)
             obs, reward, done, info = env.step(action)
             rewards[env.count] = reward
             prices[i, env.count] = info['price']
             charges[i, env.count] = env.battery_charge[-1]
+            carbon_costs[i, env.count] = info['carbon reward']
         prices[i, 0] = prices[i, 1]
         episode_rewards.append(np.sum(rewards))
         all_rewards.append(rewards)
     
-    if not per_time_step:
-        return episode_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
-    
-    return all_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
+    if not include_carbon_costs:
+        if not per_time_step:
+            return episode_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
+        
+        return all_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
+    else:
+        if not per_time_step:
+            return episode_rewards, carbon_costs  if not add_soc_and_prices else (episode_rewards, prices, charges)
+        
+        return all_rewards, carbon_costs if not add_soc_and_prices else (episode_rewards, prices, charges)
 
 def get_offline_optimal(episodes, env):
     """
@@ -119,12 +129,15 @@ def get_offline_time_step_rewards(env):
     _, dispatches, prices = env._calculate_realistic_off_optimal_total_episode_reward()
     rewards = []
     rewards.append(0.)
+    carbon_costs = []
+    carbon_costs.append(0.)
     moers = env.moer_arr[:, 0]
 
     for i in range(1, env.MAX_STEPS_PER_EPISODE):
         rewards.append((prices[i] + env.CARBON_COST * moers[i]) * dispatches[i-1])
-
-    return rewards
+        carbon_costs.append(env.CARBON_COST * moers[i] * dispatches[i-1])
+    
+    return rewards, carbon_costs
 
 def plot_model_training_reward_curves(ax: MplAxes, model: str,
     dists: List[str]) -> MplAxes:
@@ -225,6 +238,8 @@ def plot_state_of_charge_and_prices(axes: List[MplAxes], load_data: pd.DataFrame
     charges = np.reshape(charges, (env.MAX_STEPS_PER_EPISODE,))
     offline_charges = np.reshape(offline_charges, (env.MAX_STEPS_PER_EPISODE,))
 
+    print(charges)
+
     ax.plot(timeArray, prices, label=model_label)
     ax.plot(timeArray, offline_prices, label='offline prices')
     ax2.plot(timeArray, charges, label=model_label)
@@ -263,16 +278,23 @@ def plot_reward_over_episode(axes: List[MplAxes], model, env) -> MplAxes:
         times.append(curr_time.strftime('%H:%M:%S'))
         curr_time += delta_time
     
-    ppo_reward = run_model_for_evaluation(model, 1, env, False, True)
-    offline_reward = get_offline_time_step_rewards(env)
+    ppo_reward, ppo_carbon_costs = run_model_for_evaluation(model, 1, env, False, True, True)
+    ppo_reward = np.array(ppo_reward[0])
+    offline_reward, offline_carbon_costs = get_offline_time_step_rewards(env)
+    offline_reward = np.array(offline_reward)
     
-    ax.plot(times, ppo_reward[0], label="ppo in-dist")
-    ax2.plot(times, offline_reward, label='offline optimal')
+    cum_ppo_reward = np.cumsum(ppo_reward)
+    cum_offline_reward = np.cumsum(offline_reward)
+    
+    ax.plot(times, cum_ppo_reward, label="ppo in-dist")
+    ax.plot(times, ppo_carbon_costs[0], label="ppo in-dist carbon costs")
+    ax2.plot(times, cum_offline_reward, label='offline optimal')
+    ax2.plot(times, offline_carbon_costs, label='offline carbon costs')
 
     # naming the x axis 
-    ax.set_xlabel('time')
+    ax2.set_xlabel('time')
     # naming the y axis 
-    ax2.set_ylabel('reward ($)')
+    ax.set_ylabel('reward ($)')
 
     ax.legend()
     ax2.legend()
