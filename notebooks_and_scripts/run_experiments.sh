@@ -55,4 +55,4 @@ python -m notebooks_and_scripts.train --exp 273 --seed 369 --action_type continu
 
 
 # Evaluate baselines
-python -m notebooks_and_scripts.baselines
+python -m notebooks_and_scripts.run_baselines
