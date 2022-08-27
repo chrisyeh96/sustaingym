@@ -20,7 +20,7 @@ from sustaingym.envs.evcharging import EVChargingEnv, GMMsTraceGenerator, RealTr
 from sustaingym.algorithms.evcharging.base_algorithm import RLAlgorithm
 
 NUM_SUBPROCESSES = 4
-TIMESTEPS = 15_000
+TIMESTEPS = 250_000
 
 DATE_FORMAT = '%Y-%m-%d'
 FULL_PERIODS = {
@@ -142,7 +142,7 @@ if __name__ == '__main__':
             cnt += 1
             print(f'Evaluating {lbl} RL on {test_period} ({cnt}/{len(args.test_periods) * 2})... ')
             assert test_period in FULL_PERIODS
-            test_save_path = os.path.join(save_path, test_period, lbl)
+            test_save_path = os.path.join(save_path, lbl, test_period)
             os.makedirs(test_save_path, exist_ok=True)
 
             test_env = get_env(True, True, test_period, args.site, args.action_type)()

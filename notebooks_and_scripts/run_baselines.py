@@ -55,7 +55,7 @@ if __name__ == '__main__':
             save_path = os.path.join(baselines_path, lbl, season)
             os.makedirs(save_path, exist_ok=True)
 
-            with open(os.path.join(save_path, 'results.pkl'), 'wb') as f:
+            with open(os.path.join(save_path, 'test_results.pkl'), 'wb') as f:
                 pickle.dump(results, f)
 
             print(f'{lbl} reward statistics: {np.mean(rewards):.2f} +/- {np.std(rewards):.2f}')
