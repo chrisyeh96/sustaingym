@@ -283,11 +283,13 @@ def plot_reward_over_episode(axes: List[MplAxes], model, env) -> MplAxes:
     
     cum_ppo_reward = np.cumsum(ppo_reward)
     cum_offline_reward = np.cumsum(offline_reward)
+    cum_ppo_carbon_costs = np.cumsum(ppo_carbon_costs[0])
+    cum_offline_carbon_costs = np.cumsum(offline_carbon_costs)
     
-    ax.plot(times, cum_ppo_reward, label="ppo in-dist")
-    ax.plot(times, ppo_carbon_costs[0], label="ppo in-dist carbon costs")
+    ax.plot(times, cum_ppo_reward, label="ppo")
+    ax.plot(times, cum_ppo_carbon_costs, label="ppo carbon costs")
     ax2.plot(times, cum_offline_reward, label='offline optimal')
-    ax2.plot(times, offline_carbon_costs, label='offline carbon costs')
+    ax2.plot(times, cum_offline_carbon_costs, label='offline carbon costs')
 
     # naming the x axis 
     ax2.set_xlabel('time')
