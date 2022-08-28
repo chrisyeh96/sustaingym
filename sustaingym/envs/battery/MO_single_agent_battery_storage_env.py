@@ -77,7 +77,8 @@ class MarketOperator:
         self.bats_discharge_costs.value = self.env.bats_costs[:, 0]
         self.bats_charge_costs.value = self.env.bats_costs[:, 1]
         self.load.value = self.env.demand[0]
-        # if self.env.count >= 286:
+        # if self.env.count == 287:
+        #     print("battery charge: ", self.env.battery_charge[-1])
         #     print("gen_max_production: ", self.env.gen_max_production)
         #     print("gen_costs: ", self.env.gen_costs)
         #     print("bats_max_charge: ", self.env.bats_max_charge)
@@ -92,6 +93,10 @@ class MarketOperator:
         price = -self.prob.constraints[0].dual_value  # negative because of minimizing objective in LP
         x_gens = self.x.value[:self.env.num_gens]
         x_bats = self.x.value[self.env.num_gens:]
+
+        # if self.env.count == 287:
+        #     print("battery dispatch: ", x_bats[-1])
+        
         return x_gens, x_bats, price
 
     def get_dispatch_no_agent(self) -> tuple[np.ndarray, np.ndarray, float]:
@@ -521,6 +526,9 @@ class BatteryStorageInGridEnv(Env):
         """
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
 
+        curr_battery_charge = self.battery_charge[-1]
+        time_step = self.TIME_STEP_DURATION / 60  # in hours
+
         if agent_battery_charge is not None:
             self.battery_charge[-1] = agent_battery_charge
         
@@ -561,6 +569,8 @@ class BatteryStorageInGridEnv(Env):
         constraints = [
             0 <= init_battery_charge + cp.cumsum(-x),
             init_battery_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
+            x <= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 1] * time_step),
+            x >= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 0] * time_step),
         ]
 
         moers = self.moer_arr[1:-1, 0]
@@ -580,6 +590,9 @@ class BatteryStorageInGridEnv(Env):
                 import pdb
                 pdb.set_trace()
         
+        # return the battery charge value back to original
+        self.battery_charge[-1] = curr_battery_charge
+        
         return prob.value
     
     def _calculate_realistic_off_optimal_total_episode_reward(
@@ -593,6 +606,7 @@ class BatteryStorageInGridEnv(Env):
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
         
         init_battery_charge = self.battery_capacity[-1] / 2.
+        time_step = self.TIME_STEP_DURATION / 60  # in hours
 
         # get prices from market for all time steps
         for count in range(1, self.MAX_STEPS_PER_EPISODE):
@@ -629,6 +643,8 @@ class BatteryStorageInGridEnv(Env):
         constraints = [
             init_battery_charge <= init_battery_charge + cp.cumsum(-x),
             init_battery_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
+            x <= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 1] * time_step),
+            x >= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 0] * time_step),
         ]
 
         moers = self.moer_arr[1:-1, 0]

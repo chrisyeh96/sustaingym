@@ -238,8 +238,6 @@ def plot_state_of_charge_and_prices(axes: List[MplAxes], load_data: pd.DataFrame
     charges = np.reshape(charges, (env.MAX_STEPS_PER_EPISODE,))
     offline_charges = np.reshape(offline_charges, (env.MAX_STEPS_PER_EPISODE,))
 
-    print(charges)
-
     ax.plot(timeArray, prices, label=model_label)
     ax.plot(timeArray, offline_prices, label='offline prices')
     ax2.plot(timeArray, charges, label=model_label)
