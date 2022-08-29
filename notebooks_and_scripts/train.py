@@ -147,7 +147,7 @@ if __name__ == '__main__':
 
             test_env = get_env(True, True, test_period, args.site, args.action_type)()
             num_eval = num_days_in_period(True, test_period)
-            rewards, breakdown = rl_raw.run(num_eval, test_env)
+            rewards, breakdown = rl.run(num_eval, test_env)
             results = {
                 'rewards': rewards,
                 'breakdown': breakdown
