@@ -134,8 +134,8 @@ def get_offline_time_step_rewards(env):
     moers = env.moer_arr[:, 0]
 
     for i in range(1, env.MAX_STEPS_PER_EPISODE):
-        rewards.append((prices[i] + env.CARBON_COST * moers[i]) * dispatches[i-1])
-        carbon_costs.append(env.CARBON_COST * moers[i] * dispatches[i-1])
+        rewards.append((prices[i] + env.CARBON_COST * moers[i]) * -1. * dispatches[i-1])
+        carbon_costs.append(env.CARBON_COST * moers[i] * -1. * dispatches[i-1])
     
     return rewards, carbon_costs
 
