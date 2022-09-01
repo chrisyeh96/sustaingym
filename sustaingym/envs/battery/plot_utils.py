@@ -95,7 +95,7 @@ def get_offline_optimal(episodes, env):
     for i in range(episodes):
         obs = env.reset(seed = i*10)
         init_soc = env.battery_charge[-1]
-        rewards, actions, prices = env._calculate_realistic_off_optimal_total_episode_reward()
+        rewards, dispatches, prices = env._calculate_realistic_off_optimal_total_episode_reward()
         prices[0] = prices[1]
         episode_rewards.append(rewards)
         episode_prices.append(prices)
@@ -103,9 +103,9 @@ def get_offline_optimal(episodes, env):
         curr_soc = init_soc
         charges = np.zeros(env.MAX_STEPS_PER_EPISODE)
 
-        for i in range(len(actions)):
-            charges[i] = curr_soc + actions[i]
-            curr_soc += actions[i]
+        for i in range(len(dispatches)):
+            charges[i] = curr_soc + -1. * dispatches[i]
+            curr_soc += -1. * dispatches[i]
 
         episode_charges.append(charges)
         
@@ -134,8 +134,8 @@ def get_offline_time_step_rewards(env):
     moers = env.moer_arr[:, 0]
 
     for i in range(1, env.MAX_STEPS_PER_EPISODE):
-        rewards.append((prices[i] + env.CARBON_COST * moers[i]) * -1. * dispatches[i-1])
-        carbon_costs.append(env.CARBON_COST * moers[i] * -1. * dispatches[i-1])
+        rewards.append((prices[i] + env.CARBON_COST * moers[i]) * dispatches[i-1])
+        carbon_costs.append(env.CARBON_COST * moers[i] * dispatches[i-1])
     
     return rewards, carbon_costs
 
