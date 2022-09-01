@@ -664,8 +664,9 @@ class BatteryStorageInGridEnv(Env):
                 import pdb
                 pdb.set_trace()
         
-        print("expected cumulative reward: ", prob.value)
-        
+        # print("expected cumulative reward: ", prob.value)
+        # print("expected state of charges: ", init_battery_charge + np.cumsum(-1. * x.value))
+        # print("expected final state of charge: ", init_battery_charge + np.cumsum(-1. * x.value)[-1])
         return prob.value, x.value, prices
 
     def render(self):

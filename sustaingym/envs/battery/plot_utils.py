@@ -99,13 +99,10 @@ def get_offline_optimal(episodes, env):
         prices[0] = prices[1]
         episode_rewards.append(rewards)
         episode_prices.append(prices)
-        
-        curr_soc = init_soc
-        charges = np.zeros(env.MAX_STEPS_PER_EPISODE)
 
-        for i in range(len(dispatches)):
-            charges[i] = curr_soc + -1. * dispatches[i]
-            curr_soc += -1. * dispatches[i]
+        charges = np.zeros(env.MAX_STEPS_PER_EPISODE)
+        charges[0] = init_soc
+        charges[1:] = init_soc + np.cumsum(-1. * dispatches)
 
         episode_charges.append(charges)
         
