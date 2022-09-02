@@ -8,13 +8,13 @@ from datetime import datetime
 from io import BytesIO
 import os
 import pkgutil
-import pytz
 from typing import Any
 
 import cvxpy as cp
 from gym import Env, spaces
 import numpy as np
 import pandas as pd
+import pytz
 
 from sustaingym.data.load_moer import MOERLoader
 
@@ -510,7 +510,7 @@ class BatteryStorageInGridEnv(Env):
         return self.obs, reward, done, info
 
     def _calculate_off_optimal_total_episode_reward(
-        self, agent_battery_charge: float | None = None) -> float:
+            self, agent_battery_charge: float | None = None) -> float:
         """Calculates an approximate total offline optimal reward for the current
         episode.
 
@@ -525,18 +525,14 @@ class BatteryStorageInGridEnv(Env):
         """
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
 
-        curr_battery_charge = self.battery_charge[-1]
-        time_step = self.TIME_STEP_DURATION / 60  # in hours
-
-        if agent_battery_charge is not None:
-            self.battery_charge[-1] = agent_battery_charge
-        
-        init_battery_charge = self.battery_charge[-1]
+        if agent_battery_charge is None:
+            init_battery_charge = self.battery_charge[-1]
+        else:
+            init_battery_charge = agent_battery_charge
 
         # get prices from market for all time steps
+        time_step = self.TIME_STEP_DURATION / 60  # min -> hours
         for count in range(1, self.MAX_STEPS_PER_EPISODE):
-            time_step = self.TIME_STEP_DURATION / 60  # min -> hr
-
             self.gen_costs = self.all_gen_costs[:, count]
             self.bats_costs = self.all_bats_costs[:, count]
 
@@ -548,11 +544,18 @@ class BatteryStorageInGridEnv(Env):
                 self.bats_max_discharge_range[:, 1],
                 self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
 
+            # prevent agent-battery from participating in market
+            self.bats_max_charge[-1] = 0
+            self.bats_max_discharge[-1] = 0
+
             self.demand[:] = self._generate_load_data(count)
-            _, x_bats, price = self.market_op.get_dispatch_no_agent()
+            _, x_bats, price = self.market_op.get_dispatch()
+
+            # _, x_bats, price = self.market_op.get_dispatch_no_agent()
 
             # sanity checks
-            assert abs(x_bats[-1] - 0) <= 10**-9 and 0 <= price
+            assert np.isclose(x_bats[-1], 0) and 0 <= price
+            x_bats[-1] = 0
             prices[count] = price
 
             # update battery charges
@@ -562,14 +565,18 @@ class BatteryStorageInGridEnv(Env):
             self.battery_charge[:] = self.battery_charge.clip(0, self.battery_capacity)
 
         # find optimal total reward for episode based on prices (price taking assumption)
-
-        x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)
+        x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)  # represents discharge
 
         constraints = [
             0 <= init_battery_charge + cp.cumsum(-x),
             init_battery_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
-            x <= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 1] * time_step),
-            x >= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 0] * time_step),
+
+            # ramping constraints
+            self.bats_max_discharge_range[-1, 0] * time_step <= x,
+            x <= self.bats_max_discharge_range[-1, 1] * time_step,
+
+            # final charge must be >= initial charge
+            # cp.sum(-x) >= 0
         ]
 
         moers = self.moer_arr[1:-1, 0]
@@ -588,9 +595,6 @@ class BatteryStorageInGridEnv(Env):
                 # your problem should never be infeasible. So now go debug
                 import pdb
                 pdb.set_trace()
-        
-        # return the battery charge value back to original
-        self.battery_charge[-1] = curr_battery_charge
         
         return prob.value, prices
     
