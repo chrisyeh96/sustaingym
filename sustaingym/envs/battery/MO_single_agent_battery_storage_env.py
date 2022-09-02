@@ -20,6 +20,7 @@ from sustaingym.data.load_moer import MOERLoader
 
 BATTERY_STORAGE_MODULE = 'sustaingym.envs.battery'
 
+
 class MarketOperator:
     """MarketOperator class."""
     def __init__(self, env: BatteryStorageInGridEnv):
@@ -45,15 +46,14 @@ class MarketOperator:
         self.gen_costs = cp.Parameter(env.num_gens, nonneg=True)
         self.load = cp.Parameter(nonneg=True)
 
-        time_step = env.TIME_STEP_DURATION / 60  # in hours
         constraints = [
             cp.sum(self.x) == self.load,  # supply = demand
 
             0 <= x_gens,
-            x_gens <= self.gen_max_production * time_step,
+            x_gens <= self.gen_max_production * env.TIME_STEP_DURATION,
 
-            self.bats_max_charge * time_step <= x_bats,
-            x_bats <= self.bats_max_discharge * time_step,
+            self.bats_max_charge * env.TIME_STEP_DURATION <= x_bats,
+            x_bats <= self.bats_max_discharge * env.TIME_STEP_DURATION,
         ]
 
         obj = self.gen_costs @ x_gens
@@ -96,59 +96,7 @@ class MarketOperator:
 
         # if self.env.count == 287:
         #     print("battery dispatch: ", x_bats[-1])
-        
-        return x_gens, x_bats, price
 
-    def get_dispatch_no_agent(self) -> tuple[np.ndarray, np.ndarray, float]:
-        """Determines dispatch values given the current state of BatteryStorageInGridEnv
-        object and the assumption that the agent battery does not participate in
-        electricity market.
-
-        Returns:
-            x_gens: array of shape [num_gens], generator dispatch values
-            x_bats: array of shape [num_bats], battery dispatch values
-            price: float
-        """
-        bats_max_charge = self.env.bats_max_charge
-        bats_max_discharge = self.env.bats_max_discharge
-        # restrict agent to not charge or discharge
-        bats_max_charge[-1] = 0
-        bats_max_discharge[-1] = 0
-
-        bats_discharge_costs = self.env.bats_costs[:, 0]
-        bats_charge_costs = self.env.bats_costs[:, 1]
-        # restrict agent to not charge or discharge
-        bats_charge_costs[-1] = 10**3
-        bats_discharge_costs[-1] = 0
-
-        self.gen_max_production.value = self.env.gen_max_production
-        self.gen_costs.value = self.env.gen_costs
-
-        self.bats_max_charge.value = bats_max_charge
-        self.bats_max_discharge.value = bats_max_discharge
-
-        self.bats_charge_costs.value = bats_charge_costs
-        self.bats_discharge_costs.value = bats_discharge_costs
-
-        self.load.value = self.env.demand[0]
-        self.prob.solve()
-        try:
-            self.prob.solve(warm_start=True, solver=cp.MOSEK)
-        except cp.SolverError:
-            print(f'default solver failed. Trying cp.ECOS')
-            self.prob.solve(solver=cp.ECOS)
-        if self.prob.status != 'optimal':
-            print(f'prob.status = {self.prob.status}')
-            if 'infeasible' in self.prob.status:
-                # your problem should never be infeasible. So now go debug
-                import pdb
-                pdb.set_trace()
-        # print("status: ", self.prob.status)
-        # print("x value: ", self.x.value)
-        price = -self.prob.constraints[0].dual_value  # negative because of minimizing objective in LP
-        # print("price:", price)
-        x_gens = self.x.value[:self.env.num_gens]
-        x_bats = self.x.value[self.env.num_gens:]
         return x_gens, x_bats, price
 
 
@@ -177,8 +125,8 @@ class BatteryStorageInGridEnv(Env):
     CHARGE_EFFICIENCY = 0.4
     # Discharge efficiency
     DISCHARGE_EFFICIENCY = 0.6
-    # Time step duration (min)
-    TIME_STEP_DURATION = 5
+    # Time step duration in hours (corresponds to 5 minutes)
+    TIME_STEP_DURATION = 5 / 60
     # Each trajectories is one day (1440 minutes)
     MAX_STEPS_PER_EPISODE = 288
     # probability for running price average in state/observation space
@@ -192,8 +140,8 @@ class BatteryStorageInGridEnv(Env):
     # default range for max charging and discharging rates for batteries (MW)
     # assuming symmetric range
     DEFAULT_BAT_MAX_RATES = tuple((-val, val) for val in DEFAULT_BAT_MAX_DISCHARGE)
-    # cost of carbon ($ / mT of CO2), 1 mT = 1000 kg
-    CARBON_COST = 30.85
+    # price of carbon ($ / mT of CO2), 1 mT = 1000 kg
+    CARBON_PRICE = 30.85
 
     def __init__(self, num_gens: int = 10,
                  gen_max_production: Sequence[float] = DEFAULT_GEN_MAX_PRODUCTION,
@@ -268,18 +216,17 @@ class BatteryStorageInGridEnv(Env):
 
         # observation space is current energy level, current time, previous (a, b, x)
         # from dispatch and previous load demand value
-        time_step = self.TIME_STEP_DURATION / 60  # in hours
         self.observation_space = spaces.Dict({
             "energy":          spaces.Box(low=0, high=self.battery_capacity[-1], shape=(1,), dtype=float),
             "time":            spaces.Box(low=0, high=1, shape=(1,), dtype=float),
             "previous action": spaces.Box(low=0, high=np.inf, shape=(2,), dtype=float),
-            "previous agent dispatch": spaces.Box(low=self.bats_max_discharge_range[-1, 0]*time_step,
-                                                  high=self.bats_max_discharge_range[-1, 1]*time_step,
+            "previous agent dispatch": spaces.Box(low=self.bats_max_discharge_range[-1, 0] * self.TIME_STEP_DURATION,
+                                                  high=self.bats_max_discharge_range[-1, 1] * self.TIME_STEP_DURATION,
                                                   shape=(1,), dtype=float),
             "demand previous": spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
             "demand forecast": spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
-            "moer previous":   spaces.Box(low=0, high=1., shape=(1,), dtype=float),
-            "moer forecast":   spaces.Box(low=0., high=1., shape=(moer_forecast_steps,), dtype=float)
+            "moer previous":   spaces.Box(low=0, high=1, shape=(1,), dtype=float),
+            "moer forecast":   spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=float)
         })
         self.init = False
         self.market_op = MarketOperator(self)
@@ -466,14 +413,12 @@ class BatteryStorageInGridEnv(Env):
         self.demand[:] = self._generate_load_data(self.count)
         self.moer[:] = self.moer_arr[self.count:self.count + 1, 0]
 
-        time_step = self.TIME_STEP_DURATION / 60  # min -> hr
-
         self.bats_max_charge = np.maximum(
             self.bats_max_discharge_range[:, 0],
-            -(self.battery_capacity - self.battery_charge) / (time_step * self.CHARGE_EFFICIENCY))
+            -(self.battery_capacity - self.battery_charge) / (self.TIME_STEP_DURATION * self.CHARGE_EFFICIENCY))
         self.bats_max_discharge = np.minimum(
             self.bats_max_discharge_range[:, 1],
-            self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
+            self.battery_charge * self.DISCHARGE_EFFICIENCY / self.TIME_STEP_DURATION)
 
         _, x_bats, price = self.market_op.get_dispatch()
         x_agent = x_bats[-1]
@@ -491,60 +436,36 @@ class BatteryStorageInGridEnv(Env):
         self.moer_forecast[:] = self.moer_arr[self.count, 1:self.moer_forecast_steps + 1]
 
         energy_reward = price * x_agent
-        carbon_reward = self.CARBON_COST * self.moer[0] * x_agent
+        carbon_reward = self.CARBON_PRICE * self.moer[0] * x_agent
         reward = energy_reward + carbon_reward
         done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
 
         if done:
-            terminal_reward = self._calculate_terminal_cost(self.battery_charge[-1])
-            reward += terminal_reward
-            # print("terminal reward: ", terminal_reward)
+            terminal_cost = self._calculate_terminal_cost(self.battery_charge[-1])
+            reward -= terminal_cost
         else:
-            terminal_reward = None
+            terminal_cost = None
 
         info = {
             'energy reward': energy_reward,
             'carbon reward': carbon_reward,
-            'terminal reward': terminal_reward,
+            'terminal cost': terminal_cost,
             'price': price,
         }
         return self.obs, reward, done, info
 
-    def _calculate_off_optimal_total_episode_reward(
-            self, agent_battery_charge: float | None = None) -> float:
-        """Calculates an approximate total offline optimal reward for the current
-        episode.
-
-        Args:
-            agent_battery_charge: optional float representing the initial charge in the
-            agent-controlled battery storage system. If None, the initial charge is the
-            remainind battery charge at the current state of the environment.
+    def _calculate_prices_without_agent(self) -> np.ndarray:
+        """Calculates market prices, as if the agent did not participate.
 
         Returns:
-            approximate offline optimal reward for the current episode
-            prices calculated without agent interference
+            np.ndarray, shape [num_steps], type float64. prices[0] should not
+                be used, since prices are only calculated starting from
+                timestep = 1
         """
+        battery_charge_save = self.battery_charge.copy()
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
 
-<<<<<<< Updated upstream
-        if agent_battery_charge is None:
-            init_battery_charge = self.battery_charge[-1]
-        else:
-            init_battery_charge = agent_battery_charge
-=======
-        curr_battery_charge = self.battery_charge[-1]
-        time_step = self.TIME_STEP_DURATION / 60  # in hours
-
-        # print("initial battery charge: ", agent_battery_charge)
-
-        if agent_battery_charge is not None:
-            self.battery_charge[-1] = agent_battery_charge
-        
-        init_battery_charge = self.battery_charge[-1]
->>>>>>> Stashed changes
-
         # get prices from market for all time steps
-        time_step = self.TIME_STEP_DURATION / 60  # min -> hours
         for count in range(1, self.MAX_STEPS_PER_EPISODE):
             self.gen_costs = self.all_gen_costs[:, count]
             self.bats_costs = self.all_bats_costs[:, count]
@@ -552,10 +473,10 @@ class BatteryStorageInGridEnv(Env):
             # update charging range for each battery
             self.bats_max_charge = np.maximum(
                 self.bats_max_discharge_range[:, 0],
-                -(self.battery_capacity - self.battery_charge) / (time_step * self.CHARGE_EFFICIENCY))
+                -(self.battery_capacity - self.battery_charge) / (self.TIME_STEP_DURATION * self.CHARGE_EFFICIENCY))
             self.bats_max_discharge = np.minimum(
                 self.bats_max_discharge_range[:, 1],
-                self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
+                self.battery_charge * self.DISCHARGE_EFFICIENCY / self.TIME_STEP_DURATION)
 
             # prevent agent-battery from participating in market
             self.bats_max_charge[-1] = 0
@@ -577,30 +498,46 @@ class BatteryStorageInGridEnv(Env):
             self.battery_charge[~charging] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[~charging]
             self.battery_charge[:] = self.battery_charge.clip(0, self.battery_capacity)
 
-        # find optimal total reward for episode based on prices (price taking assumption)
+        self.battery_charge = battery_charge_save
+        return prices
+
+    def _calculate_price_taking_optimal(
+            self, prices: np.ndarray, init_charge: float,
+            final_charge: float) -> tuple[float, np.ndarray]:
+        """Calculates optimal episode reward, under price-taking assumption.
+
+        Args:
+            prices: array of shape [num_steps], fixed prices at each time step
+            init_charge: float in [0, self.battery_capacity[-1]],
+                initial state of charge for agent battery
+            final_charge: float, minimum final charge of agent battery
+
+        Returns:
+            reward: episode reward with fixed prices
+            dispatch: array of shape [num_steps-1], battery discharge amounts
+        """
         x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)  # represents discharge
 
         constraints = [
-            0 <= init_battery_charge + cp.cumsum(-x),
-            init_battery_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
+            0 <= init_charge + cp.cumsum(-x),
+            init_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
 
             # ramping constraints
-            self.bats_max_discharge_range[-1, 0] * time_step <= x,
-            x <= self.bats_max_discharge_range[-1, 1] * time_step,
-
-            # final charge must be >= initial charge
-            # cp.sum(-x) >= 0
+            self.bats_max_discharge_range[-1, 0] * self.TIME_STEP_DURATION <= x,
+            x <= self.bats_max_discharge_range[-1, 1] * self.TIME_STEP_DURATION
         ]
+        if final_charge > 0:
+            constraints.append(final_charge <= init_charge + cp.sum(-x))
 
         moers = self.moer_arr[1:-1, 0]
-        obj = (prices[1:] + self.CARBON_COST * moers) @ x
+        obj = (prices[1:] + self.CARBON_PRICE * moers) @ x
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
 
         try:
             prob.solve(warm_start=True, solver=cp.MOSEK)
         except cp.SolverError:
-            print(f'default solver failed. Trying cp.ECOS')
+            print('default solver failed. Trying cp.ECOS')
             prob.solve(solver=cp.ECOS)
         if prob.status != 'optimal':
             print(f'prob.status = {prob.status}')
@@ -608,108 +545,31 @@ class BatteryStorageInGridEnv(Env):
                 # your problem should never be infeasible. So now go debug
                 import pdb
                 pdb.set_trace()
-        
-        return prob.value, prices
-    
+
+        return prob.value, x.value
+
     def _calculate_terminal_cost(self, agent_battery_charge: float) -> float:
-        """Calculates an approximate total offline optimal reward for the current
-        episode.
+        """Calculates terminal cost term.
 
         Args:
             agent_battery_charge: float representing the initial charge in the
             agent-controlled battery storage system.
 
         Returns:
-            terminal cost for the current episode's reward function
+            terminal cost for the current episode's reward function,
+                always nonnegative
         """
-
-        future_reward, prices = self._calculate_off_optimal_total_episode_reward(agent_battery_charge)
-        potential_reward, _ = self._calculate_off_optimal_total_episode_reward(self.battery_capacity[-1] / 2.)
+        prices = self._calculate_prices_without_agent()
+        half_charge = self.battery_capacity[-1] / 2.
+        future_reward, _ = self._calculate_price_taking_optimal(
+            prices, init_charge=agent_battery_charge, final_charge=half_charge)
+        potential_reward, _ = self._calculate_price_taking_optimal(
+            prices, init_charge=half_charge, final_charge=half_charge)
 
         # added factor to ensure terminal costs motivates charging actions
-        penalty = min(0., prices[-1]*(agent_battery_charge - self.battery_capacity[-1] / 2.)) # this is minimum so not convex anymore... maybe cvxpy will complain?
+        penalty = max(0, prices[-1] * (half_charge - agent_battery_charge))
 
-        # print("added penalty: ", penalty)
-
-        return penalty + future_reward - potential_reward
-
-
-    
-    def _calculate_realistic_off_optimal_total_episode_reward(
-        self) -> tuple[float, np.ndarray, np.ndarray]:
-        """Calculates an approximate total offline optimal reward for the current
-        episode.
-
-        Returns:
-            a more realistic approximate offline optimal reward for the current episode
-        """
-        prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
-        
-        init_battery_charge = self.battery_capacity[-1] / 2.
-        time_step = self.TIME_STEP_DURATION / 60  # in hours
-
-        # get prices from market for all time steps
-        for count in range(1, self.MAX_STEPS_PER_EPISODE):
-            time_step = self.TIME_STEP_DURATION / 60  # min -> hr
-
-            self.gen_costs = self.all_gen_costs[:, count]
-            self.bats_costs = self.all_bats_costs[:, count]
-
-            # update charging range for each battery
-            self.bats_max_charge = np.maximum(
-                self.bats_max_discharge_range[:, 0],
-                -(self.battery_capacity - self.battery_charge) / (time_step * self.CHARGE_EFFICIENCY))
-            self.bats_max_discharge = np.minimum(
-                self.bats_max_discharge_range[:, 1],
-                self.battery_charge * self.DISCHARGE_EFFICIENCY / time_step)
-
-            self.demand[:] = self._generate_load_data(count)
-            _, x_bats, price = self.market_op.get_dispatch_no_agent()
-
-            # sanity checks
-            assert abs(x_bats[-1] - 0) <= 10**-9 and 0 <= price
-            prices[count] = price
-
-            # update battery charges
-            charging = (x_bats < 0)
-            self.battery_charge[charging] -= self.CHARGE_EFFICIENCY * x_bats[charging]
-            self.battery_charge[~charging] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[~charging]
-            self.battery_charge[:] = self.battery_charge.clip(0, self.battery_capacity)
-
-        # find optimal total reward for episode based on prices (price taking assumption)
-
-        x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)
-
-        constraints = [
-            0. <= init_battery_charge + cp.cumsum(-x),
-            init_battery_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
-            x <= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 1] * time_step),
-            x >= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 0] * time_step),
-        ]
-
-        moers = self.moer_arr[1:-1, 0]
-        # obj = (prices[1:] + self.CARBON_COST * moers) @ x + self._calculate_terminal_cost(
-        #     init_battery_charge + cp.cumsum(-x))
-        obj = (prices[1:] + self.CARBON_COST * moers) @ x
-        prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
-        assert prob.is_dcp() and prob.is_dpp()
-
-        try:
-            prob.solve(warm_start=True, solver=cp.MOSEK)
-        except cp.SolverError:
-            print(f'default solver failed. Trying cp.ECOS')
-            prob.solve(solver=cp.ECOS)
-        if prob.status != 'optimal':
-            print(f'prob.status = {prob.status}')
-            if 'infeasible' in prob.status:
-                # your problem should never be infeasible. So now go debug
-                import pdb
-                pdb.set_trace()
-        
-        # print("expected cumulative reward: ", prob.value)
-        # print("expected state of charges: ", init_battery_charge + np.cumsum(-1. * x.value))
-        # print("expected final state of charge: ", init_battery_charge + np.cumsum(-1. * x.value)[-1])
-        return prob.value, x.value, prices
+        return max(0, potential_reward - future_reward) + penalty
 
     def render(self):
         raise NotImplementedError
