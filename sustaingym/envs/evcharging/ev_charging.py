@@ -171,7 +171,6 @@ class EVChargingEnv(Env):
             phase_factor = np.exp(1j * np.deg2rad(self.cn._phase_angles))
             A_tilde = self.cn.constraint_matrix * phase_factor[None, :]
             agg_magnitude = cp.abs(A_tilde @ self.projected_action) * self.ACTION_SCALE_FACTOR  # convert to A
-            magnitude_limit = self.cn.magnitudes
 
             self.actual_action = cp.Parameter(self.num_stations, nonneg=True)
             self.demands_cvx = cp.Parameter(self.num_stations, nonneg=True)
@@ -182,7 +181,7 @@ class EVChargingEnv(Env):
             objective = cp.Minimize(cp.norm(self.projected_action - self.actual_action, p=2))
             constraints = [
                 self.projected_action <= max_action,
-                agg_magnitude <= magnitude_limit,
+                agg_magnitude <= self.cn.magnitudes,
             ]
             self.prob = cp.Problem(objective, constraints)
 
