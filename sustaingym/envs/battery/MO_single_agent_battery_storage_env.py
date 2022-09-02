@@ -496,9 +496,7 @@ class BatteryStorageInGridEnv(Env):
         done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
 
         if done:
-            terminal_reward = self._calculate_off_optimal_total_episode_reward(
-            ) - self._calculate_off_optimal_total_episode_reward(
-                self.battery_capacity[-1] / 2.)
+            terminal_reward = self._calculate_terminal_cost(self.battery_charge[-1])
             reward += terminal_reward
         else:
             terminal_reward = None
@@ -523,6 +521,7 @@ class BatteryStorageInGridEnv(Env):
 
         Returns:
             approximate offline optimal reward for the current episode
+            prices calculated without agent interference
         """
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
 
@@ -593,7 +592,29 @@ class BatteryStorageInGridEnv(Env):
         # return the battery charge value back to original
         self.battery_charge[-1] = curr_battery_charge
         
-        return prob.value
+        return prob.value, prices
+    
+    def _calculate_terminal_cost(self, agent_battery_charge: float) -> float:
+        """Calculates an approximate total offline optimal reward for the current
+        episode.
+
+        Args:
+            agent_battery_charge: float representing the initial charge in the
+            agent-controlled battery storage system.
+
+        Returns:
+            terminal cost for the current episode's reward function
+        """
+
+        future_reward, prices = self._calculate_off_optimal_total_episode_reward(agent_battery_charge)
+        potential_reward, _ = self._calculate_off_optimal_total_episode_reward(self.battery_capacity[-1] / 2.)
+
+        # added factor to ensure terminal costs motivates charging actions
+        penalty = max(0., prices[-1]*(agent_battery_charge - self.battery_capacity[-1] / 2.))
+
+        return penalty + future_reward - potential_reward
+
+
     
     def _calculate_realistic_off_optimal_total_episode_reward(
         self) -> tuple[float, np.ndarray, np.ndarray]:
@@ -641,14 +662,15 @@ class BatteryStorageInGridEnv(Env):
         x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)
 
         constraints = [
-            init_battery_charge <= init_battery_charge + cp.cumsum(-x),
+            0. <= init_battery_charge + cp.cumsum(-x),
             init_battery_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
             x <= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 1] * time_step),
             x >= np.full(self.MAX_STEPS_PER_EPISODE - 1, self.bats_max_discharge_range[-1, 0] * time_step),
         ]
 
         moers = self.moer_arr[1:-1, 0]
-        obj = (prices[1:] + self.CARBON_COST * moers) @ x
+        obj = (prices[1:] + self.CARBON_COST * moers) @ x + self._calculate_terminal_cost(
+            init_battery_charge + cp.cumsum(-x))
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
 
