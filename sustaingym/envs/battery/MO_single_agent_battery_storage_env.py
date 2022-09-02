@@ -498,6 +498,7 @@ class BatteryStorageInGridEnv(Env):
         if done:
             terminal_reward = self._calculate_terminal_cost(self.battery_charge[-1])
             reward += terminal_reward
+            # print("terminal reward: ", terminal_reward)
         else:
             terminal_reward = None
 
@@ -525,10 +526,22 @@ class BatteryStorageInGridEnv(Env):
         """
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
 
+<<<<<<< Updated upstream
         if agent_battery_charge is None:
             init_battery_charge = self.battery_charge[-1]
         else:
             init_battery_charge = agent_battery_charge
+=======
+        curr_battery_charge = self.battery_charge[-1]
+        time_step = self.TIME_STEP_DURATION / 60  # in hours
+
+        # print("initial battery charge: ", agent_battery_charge)
+
+        if agent_battery_charge is not None:
+            self.battery_charge[-1] = agent_battery_charge
+        
+        init_battery_charge = self.battery_charge[-1]
+>>>>>>> Stashed changes
 
         # get prices from market for all time steps
         time_step = self.TIME_STEP_DURATION / 60  # min -> hours
@@ -614,7 +627,9 @@ class BatteryStorageInGridEnv(Env):
         potential_reward, _ = self._calculate_off_optimal_total_episode_reward(self.battery_capacity[-1] / 2.)
 
         # added factor to ensure terminal costs motivates charging actions
-        penalty = max(0., prices[-1]*(agent_battery_charge - self.battery_capacity[-1] / 2.))
+        penalty = min(0., prices[-1]*(agent_battery_charge - self.battery_capacity[-1] / 2.)) # this is minimum so not convex anymore... maybe cvxpy will complain?
+
+        # print("added penalty: ", penalty)
 
         return penalty + future_reward - potential_reward
 
@@ -673,8 +688,9 @@ class BatteryStorageInGridEnv(Env):
         ]
 
         moers = self.moer_arr[1:-1, 0]
-        obj = (prices[1:] + self.CARBON_COST * moers) @ x + self._calculate_terminal_cost(
-            init_battery_charge + cp.cumsum(-x))
+        # obj = (prices[1:] + self.CARBON_COST * moers) @ x + self._calculate_terminal_cost(
+        #     init_battery_charge + cp.cumsum(-x))
+        obj = (prices[1:] + self.CARBON_COST * moers) @ x
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
 
