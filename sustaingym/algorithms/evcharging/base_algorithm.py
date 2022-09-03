@@ -152,7 +152,7 @@ class MPC(BaseOnlineAlgorithm):
         try:
             self.prob.solve(warm_start=True, solver=cp.MOSEK)
         except cp.SolverError:
-            print('Default MOSEK solver failed. Trying ECOS. ')
+            print('Default MOSEK solver failed in MPC. Trying ECOS. ')
             self.prob.solve(solver=cp.ECOS)
             if self.prob.status != 'optimal':
                 print(f'prob.status = {self.prob.status}')
