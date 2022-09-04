@@ -95,9 +95,11 @@ def get_offline_optimal(episodes, env):
     for i in range(episodes):
         obs = env.reset(seed = i*10)
         init_soc = env.battery_charge[-1]
-        rewards, dispatches, prices = env._calculate_realistic_off_optimal_total_episode_reward()
+        prices = env._calculate_prices_without_agent()
+        ep_reward, dispatches = env._calculate_price_taking_optimal(prices=prices,
+            init_charge=init_soc, final_charge=env.battery_capacity[-1] / 2.)
         prices[0] = prices[1]
-        episode_rewards.append(rewards)
+        episode_rewards.append(ep_reward)
         episode_prices.append(prices)
 
         charges = np.zeros(env.MAX_STEPS_PER_EPISODE)
@@ -123,18 +125,20 @@ def get_random_action_rewards(episodes, env):
 
 def get_offline_time_step_rewards(env):
     env.reset(seed=0)
-    _, dispatches, prices = env._calculate_realistic_off_optimal_total_episode_reward()
+    prices = env._calculate_prices_without_agent()
+    _, dispatches = env._calculate_price_taking_optimal(prices=prices,
+            init_charge=env.battery_charge[-1], final_charge=env.battery_capacity[-1] / 2.)
     rewards = []
     rewards.append(0.)
-    carbon_costs = []
-    carbon_costs.append(0.)
+    carbon_rewards = []
+    carbon_rewards.append(0.)
     moers = env.moer_arr[:, 0]
 
     for i in range(1, env.MAX_STEPS_PER_EPISODE):
-        rewards.append((prices[i] + env.CARBON_COST * moers[i]) * dispatches[i-1])
-        carbon_costs.append(env.CARBON_COST * moers[i] * dispatches[i-1])
+        rewards.append((prices[i] + env.CARBON_PRICE * moers[i]) * dispatches[i-1])
+        carbon_rewards.append(env.CARBON_PRICE * moers[i] * dispatches[i-1])
     
-    return rewards, carbon_costs
+    return rewards, carbon_rewards
 
 def plot_model_training_reward_curves(ax: MplAxes, model: str,
     dists: List[str]) -> MplAxes:
