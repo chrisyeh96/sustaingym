@@ -31,13 +31,15 @@ if __name__ == '__main__':
     save_path_in_dist = os.path.join(save_path, 'in_dist/')
     save_path_out_dist = os.path.join(save_path, 'out_dist/')
 
+    steps_per_ep = env_2019.MAX_STEPS_PER_EPISODE
+
     stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=3, min_evals=5, verbose=1)
     eval_callback_in_dist = EvalCallback(env_2019, best_model_save_path=save_path_in_dist, log_path=save_path_in_dist,
-    eval_freq=2500, callback_after_eval=stop_train_callback)
-    eval_callback_out_dist = EvalCallback(env_2021, best_model_save_path=save_path_out_dist, log_path=save_path_out_dist, eval_freq=2500)
+    eval_freq=10*steps_per_ep, callback_after_eval=stop_train_callback)
+    eval_callback_out_dist = EvalCallback(env_2021, best_model_save_path=save_path_out_dist, log_path=save_path_out_dist, eval_freq=10*steps_per_ep)
     callback_list = CallbackList([eval_callback_in_dist, eval_callback_out_dist])
 
-    model = A2C("MultiInputPolicy", env_2019, verbose=1)
+    model = A2C("MultiInputPolicy", env_2019, gamma=0.995, verbose=1)
     print("Training model")
     model.learn(int(1e10), callback=callback_list)
     print("\nTraining finished. \n")
