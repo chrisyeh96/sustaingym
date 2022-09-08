@@ -60,6 +60,7 @@ class EVChargingEnv(Env):
     def __init__(self, data_generator: AbstractTraceGenerator,
                  action_type: ActionType = 'discrete',
                  moer_forecast_steps: int = 36,
+                 project_action_in_env: bool = False,
                  verbose: int = 0):
         """
         Args:
@@ -85,6 +86,7 @@ class EVChargingEnv(Env):
         self.action_type = action_type
         self.moer_forecast_steps = moer_forecast_steps
         self.verbose = verbose
+        self.project_action_in_env = project_action_in_env
         self.project_action_first_run = True
         if verbose < 2:
             warnings.filterwarnings("ignore")
@@ -338,6 +340,9 @@ class EVChargingEnv(Env):
             pilot_signals: dict, str => [int]. Maps station ids to a
                 single-element list of pilot signals in Amps
         """
+        if self.project_action_in_env:
+            action = self.project_action(action)
+
         if self.action_type == 'discrete':
             return {e: [self.ACTION_SCALE_FACTOR * a] for a, e
                     in zip(round(action, thresh=self.ROUND_UP_THRESH), self.cn.station_ids)}
@@ -409,14 +414,11 @@ class EVChargingEnv(Env):
             info: dictionary containing the individual, unweighted
                 components making up total reward. See step().
         """
-        # schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
+        schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
         total_charging_rate = np.sum(self.simulator.charging_rates[:, self.timestep-1:self.timestep])
 
         # profit calculation (Amp * period) -> (Amp * mins) -> (KWH) -> ($)
         profit = self.PROFIT_FACTOR * total_charging_rate
-        # TODO: check that these are actual charging rates, not just pilot signals
-        # - a sanity check would be that the remaining_demand decreases by
-        #   charging_rate??
 
         # Network constraints - amount of charge over maximum allowed rates ($)
         current_sum = np.abs(self.simulator.network.constraint_current(schedule))

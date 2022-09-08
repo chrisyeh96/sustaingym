@@ -44,10 +44,10 @@ class BaseOnlineAlgorithm:
 
         Returns:
             list of total rewards for each episode
-            dict of sum of each individual reward component
+            dict of list of each individual reward component
         """
         total_rewards = []
-        reward_components = {'profit': 0., 'carbon_cost': 0., 'excess_charge': 0.}
+        reward_components = {'profit': [], 'carbon_cost': [], 'excess_charge': []}
         if isinstance(seeds, int):
             seeds = [i for i in range(seeds)]
         for seed in tqdm(seeds):
@@ -58,7 +58,7 @@ class BaseOnlineAlgorithm:
                 action = self.get_action(obs, env)  # type: ignore
                 obs, reward, done, info = env.step(action)
                 for comp in info['reward']:
-                    reward_components[comp] += info['reward'][comp]
+                    reward_components[comp].append(info['reward'][comp])
                 episode_reward += reward
             total_rewards.append(episode_reward)
         return total_rewards, reward_components
