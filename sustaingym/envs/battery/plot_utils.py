@@ -4,24 +4,14 @@ The module implements the BatteryStorageInGridEnv class.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime, timedelta
-from io import BytesIO
-import os
-import pkgutil
-from socket import AF_AX25
-import pytz
-from typing import Any, List
+from datetime import datetime
 
-import cvxpy as cp
 import datetime
-from gym import Env, spaces
-from matplotlib.axes._axes import Axes as MplAxes
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib.ticker as plticker
 import numpy as np
 import pandas as pd
-from stable_baselines3 import PPO, A2C
 
 
 def training_eval_results(model: str, dist: str):
@@ -38,6 +28,7 @@ def training_eval_results(model: str, dist: str):
     error = results.std(axis=1)
     return timesteps, y, error
 
+
 def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = False,
     per_time_step: bool = False, include_carbon_costs: bool = False):
     """
@@ -52,7 +43,7 @@ def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = Fa
     charges = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     carbon_costs = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     all_rewards = []
-    
+
     for i in range(episodes):
         obs = env.reset(seed = i*10)
         charges[i, 0] = env.battery_charge[-1]
@@ -69,17 +60,18 @@ def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = Fa
         prices[i, 0] = prices[i, 1]
         episode_rewards.append(np.sum(rewards))
         all_rewards.append(rewards)
-    
+
     if not include_carbon_costs:
         if not per_time_step:
             return episode_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
-        
+
         return all_rewards if not add_soc_and_prices else (episode_rewards, prices, charges)
     else:
         if not per_time_step:
             return episode_rewards, carbon_costs  if not add_soc_and_prices else (episode_rewards, prices, charges)
-        
+
         return all_rewards, carbon_costs if not add_soc_and_prices else (episode_rewards, prices, charges)
+
 
 def get_offline_optimal(episodes, env):
     """
@@ -107,8 +99,9 @@ def get_offline_optimal(episodes, env):
         charges[1:] = init_soc + np.cumsum(-1. * dispatches)
 
         episode_charges.append(charges)
-        
+
     return episode_rewards, episode_prices, episode_charges
+
 
 def get_random_action_rewards(episodes, env):
     episode_rewards = []
@@ -122,6 +115,7 @@ def get_random_action_rewards(episodes, env):
             rewards[env.count] = reward
         episode_rewards.append(np.sum(rewards))
     return episode_rewards
+
 
 def get_offline_time_step_rewards(env):
     env.reset(seed=0)
@@ -137,14 +131,15 @@ def get_offline_time_step_rewards(env):
     for i in range(1, env.MAX_STEPS_PER_EPISODE):
         rewards.append((prices[i] + env.CARBON_PRICE * moers[i]) * dispatches[i-1])
         carbon_rewards.append(env.CARBON_PRICE * moers[i] * dispatches[i-1])
-    
+
     return rewards, carbon_rewards
 
-def plot_model_training_reward_curves(ax: MplAxes, model: str,
-    dists: List[str]) -> MplAxes:
+
+def plot_model_training_reward_curves(ax: plt.Axes, model: str,
+    dists: Sequence[str]) -> plt.Axes:
     if ax is None:
         fig, ax = plt.subplots()
-    
+
     evals_lst = []
     err_lst = []
 
@@ -152,7 +147,7 @@ def plot_model_training_reward_curves(ax: MplAxes, model: str,
         timesteps, y, err = training_eval_results(model, dist)
         evals_lst.append(y)
         err_lst.append(err)
-    
+
     ax.plot(timesteps, evals_lst[0], label='train on May 2019, evaluate on May 2019') # too specific!!!
     ax.fill_between(timesteps, evals_lst[0]-err_lst[0], evals_lst[0]+err_lst[0], alpha=0.2)
 
@@ -167,8 +162,9 @@ def plot_model_training_reward_curves(ax: MplAxes, model: str,
 
     return ax
 
-def plot_reward_distribution(ax: MplAxes, eval_env, models, model_labels, n_episodes = 10,
-    year = str) -> MplAxes:
+
+def plot_reward_distribution(ax: plt.Axes, eval_env, models, model_labels, n_episodes = 10,
+    year = str) -> plt.Axes:
     """"
     Plot reward distributions for a given evaluation and training month where year is
     variable and month is fixed at May (for now).
@@ -181,7 +177,7 @@ def plot_reward_distribution(ax: MplAxes, eval_env, models, model_labels, n_epis
         n_episodes: integer for number of episodes to evaluate over
     Return:
         populated plt axes object which plots the reward distribution
-    
+
     Notes:
         Use "plt.xticks(rotation=30)" to rotate x axis labels for a more appealing
         orientation
@@ -206,7 +202,7 @@ def plot_reward_distribution(ax: MplAxes, eval_env, models, model_labels, n_epis
     labels.extend(model_labels)
 
     ax.violinplot(data, showmedians=True)
-    
+
     ax.set_ylabel('Reward ($)')
     ax.set_title(f'Reward Distribution for May {year}')
     x = np.arange(len(labels))  # the label locations
@@ -216,13 +212,14 @@ def plot_reward_distribution(ax: MplAxes, eval_env, models, model_labels, n_epis
 
     return ax
 
-def plot_state_of_charge_and_prices(axes: List[MplAxes], load_data: pd.DataFrame, model,
-    model_label, env) -> tuple[MplAxes, MplAxes]:
+
+def plot_state_of_charge_and_prices(axes: Sequence[plt.Axes], load_data: pd.DataFrame, model,
+    model_label, env) -> tuple[plt.Axes, plt.Axes]:
 
     if axes is None:
         fig, (ax, ax2) = plt.subplots(2)
         axes = (ax, ax2)
-    
+
     assert len(axes) == 2
     ax, ax2 = axes
     fmt = mdates.DateFormatter('%H:%M:%S')
@@ -244,9 +241,9 @@ def plot_state_of_charge_and_prices(axes: List[MplAxes], load_data: pd.DataFrame
     ax2.plot(timeArray, charges, label=model_label)
     ax2.plot(timeArray, offline_charges, label='offline charges')
 
-    # naming the x axis 
+    # naming the x axis
     ax.set_xlabel('time')
-    # naming the y axis 
+    # naming the y axis
     ax.set_ylabel('Prices ($)')
     ax2.set_ylabel('State of Charge (MWh)')
 
@@ -262,11 +259,12 @@ def plot_state_of_charge_and_prices(axes: List[MplAxes], load_data: pd.DataFrame
 
     return ax, ax2
 
-def plot_reward_over_episode(axes: List[MplAxes], model, env) -> MplAxes:
+
+def plot_reward_over_episode(axes: Sequence[plt.Axes], model, env) -> plt.Axes:
     if axes is None:
         fig, (ax, ax2) = plt.subplots(2)
         axes = (ax, ax2)
-    
+
     assert len(axes) == 2
     ax, ax2 = axes
     delta_time = datetime.timedelta(minutes=5)
@@ -276,25 +274,25 @@ def plot_reward_over_episode(axes: List[MplAxes], model, env) -> MplAxes:
     for _ in range(env.MAX_STEPS_PER_EPISODE):
         times.append(curr_time.strftime('%H:%M:%S'))
         curr_time += delta_time
-    
+
     ppo_reward, ppo_carbon_costs = run_model_for_evaluation(model, 1, env, False, True, True)
     ppo_reward = np.array(ppo_reward[0])
     offline_reward, offline_carbon_costs = get_offline_time_step_rewards(env)
     offline_reward = np.array(offline_reward)
-    
+
     cum_ppo_reward = np.cumsum(ppo_reward)
     cum_offline_reward = np.cumsum(offline_reward)
     cum_ppo_carbon_costs = np.cumsum(ppo_carbon_costs[0])
     cum_offline_carbon_costs = np.cumsum(offline_carbon_costs)
-    
+
     ax.plot(times, cum_ppo_reward, label="ppo")
     ax.plot(times, cum_ppo_carbon_costs, label="ppo carbon costs")
     ax2.plot(times, cum_offline_reward, label='offline optimal')
     ax2.plot(times, cum_offline_carbon_costs, label='offline carbon costs')
 
-    # naming the x axis 
+    # naming the x axis
     ax2.set_xlabel('time')
-    # naming the y axis 
+    # naming the y axis
     ax.set_ylabel('reward ($)')
 
     ax.legend()
@@ -307,4 +305,3 @@ def plot_reward_over_episode(axes: List[MplAxes], model, env) -> MplAxes:
     ax2.set_xticklabels(times[::50])
 
     return ax, ax2
-

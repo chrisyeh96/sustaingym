@@ -23,12 +23,12 @@ BATTERY_STORAGE_MODULE = 'sustaingym.envs.battery'
 
 class MarketOperator:
     """MarketOperator class."""
-    def __init__(self, env: BatteryStorageInGridEnv):
+    def __init__(self, env: ElectricityMarketEnv):
         """
         Constructs instance of MarketOperator class.
 
         Args:
-            env: instance of BatteryStorageInGridEnv class
+            env: instance of ElectricityMarketEnv class
         """
         self.env = env
 
