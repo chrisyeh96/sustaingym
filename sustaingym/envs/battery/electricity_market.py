@@ -100,7 +100,7 @@ class MarketOperator:
         return x_gens, x_bats, price
 
 
-class BatteryStorageInGridEnv(Env):
+class ElectricityMarketEnv(Env):
     """
     Actions:
         Type: Box(2)
