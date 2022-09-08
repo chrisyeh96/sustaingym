@@ -409,10 +409,11 @@ class EVChargingEnv(Env):
             info: dictionary containing the individual, unweighted
                 components making up total reward. See step().
         """
-        schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
+        # schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
+        total_charging_rate = np.sum(self.simulator.charging_rates[:, self.timestep-1:self.timestep])
 
         # profit calculation (Amp * period) -> (Amp * mins) -> (KWH) -> ($)
-        profit = self.PROFIT_FACTOR * np.sum(self.simulator.charging_rates[:, self.timestep-1:self.timestep])
+        profit = self.PROFIT_FACTOR * total_charging_rate
         # TODO: check that these are actual charging rates, not just pilot signals
         # - a sanity check would be that the remaining_demand decreases by
         #   charging_rate??
@@ -423,7 +424,7 @@ class EVChargingEnv(Env):
         excess_charge = excess_current * self.VIOLATION_FACTOR
 
         # Carbon cost ($)
-        carbon_cost = self.CARBON_COST_FACTOR * np.sum(schedule) * self.moer[self.timestep, 0]
+        carbon_cost = self.CARBON_COST_FACTOR * total_charging_rate * self.moer[self.timestep, 0]
 
         total_reward = profit - carbon_cost - excess_charge
 
