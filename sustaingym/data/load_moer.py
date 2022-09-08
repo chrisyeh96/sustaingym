@@ -319,6 +319,7 @@ def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str
 
 class MOERLoader:
     """Class for loading emission rates data for gyms.
+
     Attributes:
         df: DataFrame of forecasted and historical data for date time range
     """
@@ -333,11 +334,11 @@ class MOERLoader:
         self.df = load_moer(starttime, endtime, ba, save_dir)
 
     def retrieve(self, dt: datetime) -> np.ndarray:
-        """Retrieves MOER data from attribute.
-        Returns data starting at datetime for the next 24 hours. Assumes that
-        dt is a timezone-aware datetime object.
+        """Retrieves MOER data starting at given datetime for next 24 hours.
+
         Args:
             dt: a timezone-aware datetime object
+
         Returns:
             array of shape (289, 37). The first column is the historical
                 MOER. The remaining columns are forecasts for the next 36
