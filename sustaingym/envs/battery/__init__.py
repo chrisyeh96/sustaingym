@@ -1,2 +1,2 @@
 from .simple_battery_storage_env import BatteryStorageEnv
-from .electricity_market import MarketOperator, BatteryStorageInGridEnv
+from .electricity_market import MarketOperator, ElectricityMarketEnv
