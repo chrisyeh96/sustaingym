@@ -14,7 +14,7 @@ from stable_baselines3.common.callbacks import EvalCallback, CallbackList, BaseC
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, StopTrainingOnNoModelImprovement
 
-from sustaingym.envs.battery.MO_single_agent_battery_storage_env import BatteryStorageInGridEnv
+from sustaingym.envs import ElectricityMarketEnv
 
 class SaveActionsExperienced(BaseCallback):
     def __init__(self, log_dir: str, verbose: int = 1):
@@ -64,7 +64,21 @@ class SaveActionsExperienced(BaseCallback):
                 energy_lvl=self.training_energy_lvl,
                 dispatch=self.training_dispatch)
     
-        return True 
+        return True
+
+class DiscreteActions(gym.ActionWrapper):
+    def __init__(self, env: ElectricityMarketEnv):
+        super().__init__(env)
+        self.charge_action = (env.action_space.high[0], env.action_space.high[0])
+        self.discharge_action = (0.01*env.action_space.high[0], 0.01*env.action_space.high[0])
+        self.action_space = gym.spaces.Discrete(2)
+    
+    def action(self, action: int):
+        assert action in [0, 1]
+        if action == 0:
+            return self.charge_action
+        else:
+            return self.discharge_action
 
 
 if __name__ == '__main__':
@@ -74,15 +88,19 @@ if __name__ == '__main__':
     print("----- ----- ----- -----")
     print("----- ----- ----- -----")
     
-    save_path = os.path.join(os.getcwd(), 'logs_A2C/')
-    model_save_path = os.path.join(os.getcwd(), 'model_A2C_2019_5')
+    save_path = os.path.join(os.getcwd(), 'discrete_logs_A2C/')
+    model_save_path = os.path.join(os.getcwd(), 'discrete_model_A2C_2019_5')
 
-    env_2019 = BatteryStorageInGridEnv(month='2019-05', seed=195)
-    env_2021 = BatteryStorageInGridEnv(month='2021-05', seed=215)
+    env_2019 = ElectricityMarketEnv(month='2019-05', seed=195)
+    env_2021 = ElectricityMarketEnv(month='2021-05', seed=215)
 
     # rescale action spaces to normalized [0,1] interval
     wrapped_env_2019 = gym.wrappers.RescaleAction(env_2019, min_action=0, max_action=1)
     wrapped_env_2021 = gym.wrappers.RescaleAction(env_2021, min_action=0, max_action=1)
+
+    # wrap environments to have discrete action space
+    wrapped_env_2019 = DiscreteActions(wrapped_env_2019)
+    wrapped_env_2021 = DiscreteActions(wrapped_env_2021)
 
     save_path_in_dist = os.path.join(save_path, 'in_dist/')
     save_path_out_dist = os.path.join(save_path, 'out_dist/')
@@ -90,7 +108,7 @@ if __name__ == '__main__':
     steps_per_ep = wrapped_env_2019.MAX_STEPS_PER_EPISODE
 
     log_actions_callback = SaveActionsExperienced(log_dir=save_path)
-    stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=5, min_evals=85, verbose=1)
+    stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=5, min_evals=50, verbose=1)
     eval_callback_in_dist = EvalCallback(wrapped_env_2019, best_model_save_path=save_path_in_dist, log_path=save_path_in_dist,
     eval_freq=10*steps_per_ep, callback_after_eval=stop_train_callback)
     eval_callback_out_dist = EvalCallback(wrapped_env_2021, best_model_save_path=save_path_out_dist, log_path=save_path_out_dist, eval_freq=10*steps_per_ep)

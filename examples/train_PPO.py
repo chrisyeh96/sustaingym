@@ -66,8 +66,9 @@ class SaveActionsExperienced(BaseCallback):
 class DiscreteActions(gym.ActionWrapper):
     def __init__(self, env: ElectricityMarketEnv):
         super().__init__(env)
+        print(env.action_space.high[0])
         self.charge_action = (env.action_space.high[0], env.action_space.high[0])
-        self.discharge_action = (0.1, 0.1)
+        self.discharge_action = (0.01*env.action_space.high[0], 0.01*env.action_space.high[0])
         self.action_space = gym.spaces.Discrete(2)
     
     def action(self, action: int):
@@ -83,8 +84,8 @@ print("Training PPO model on 2019-05")
 print("----- ----- ----- -----")
 print("----- ----- ----- -----")
 
-save_path = os.path.join(os.getcwd(), 'logs_PPO/')
-model_save_path = os.path.join(os.getcwd(), 'model_PPO_2019_5')
+save_path = os.path.join(os.getcwd(), 'discrete_logs_PPO/')
+model_save_path = os.path.join(os.getcwd(), 'discrete_model_PPO_2019_5')
 
 save_path_in_dist = os.path.join(save_path, 'in_dist/')
 save_path_out_dist = os.path.join(save_path, 'out_dist/')
@@ -104,7 +105,7 @@ steps_per_ep = wrapped_env_2019.MAX_STEPS_PER_EPISODE
 
 log_actions_callback = SaveActionsExperienced(log_dir=save_path)
 stop_train_callback = StopTrainingOnNoModelImprovement(
-    max_no_improvement_evals=5, min_evals=85, verbose=1)
+    max_no_improvement_evals=5, min_evals=50, verbose=1)
 eval_callback_in_dist = EvalCallback(
     wrapped_env_2019, best_model_save_path=save_path_in_dist,
     log_path=save_path_in_dist, eval_freq=10*steps_per_ep,

@@ -393,8 +393,10 @@ class ElectricityMarketEnv(Env):
             done: whether the episode is done
             info: additional info (currently empty)
         """
+        # print("action: ", action)
+        # print("action space: ", self.action_space)
         assert self.init
-        assert self.action_space.contains(action)
+        # assert self.action_space.contains(action)
 
         self.count += 1
 
