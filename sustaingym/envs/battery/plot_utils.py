@@ -18,7 +18,7 @@ def training_eval_results(model: str, dist: str):
     assert model in ['PPO', 'A2C']
     assert dist in ['in_dist', 'out_dist']
     results = []
-    fname = f'examples/logs_{model}/{dist}/evaluations.npz'
+    fname = f'examples/discrete_logs_{model}/{dist}/evaluations.npz'
     x = np.load(fname, allow_pickle=True)
     results.append(x['results'])
 
