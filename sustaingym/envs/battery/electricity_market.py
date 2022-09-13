@@ -17,6 +17,7 @@ import pandas as pd
 import pytz
 
 from sustaingym.data.load_moer import MOERLoader
+from sustaingym.envs.utils import solve_mosek
 
 BATTERY_STORAGE_MODULE = 'sustaingym.envs.battery'
 
@@ -25,8 +26,6 @@ class MarketOperator:
     """MarketOperator class."""
     def __init__(self, env: ElectricityMarketEnv):
         """
-        Constructs instance of MarketOperator class.
-
         Args:
             env: instance of ElectricityMarketEnv class
         """
@@ -44,10 +43,10 @@ class MarketOperator:
         self.bats_charge_costs = cp.Parameter(env.num_bats, nonneg=True)
         self.bats_discharge_costs = cp.Parameter(env.num_bats, nonneg=True)
         self.gen_costs = cp.Parameter(env.num_gens, nonneg=True)
-        self.load = cp.Parameter(nonneg=True)
+        self.demand = cp.Parameter()  # net demand: usually +, but could be -
 
         constraints = [
-            cp.sum(self.x) == self.load,  # supply = demand
+            cp.sum(self.x) == self.demand,  # supply = demand
 
             0 <= x_gens,
             x_gens <= self.gen_max_production * env.TIME_STEP_DURATION,
@@ -62,8 +61,7 @@ class MarketOperator:
         assert self.prob.is_dcp() and self.prob.is_dpp()
 
     def get_dispatch(self) -> tuple[np.ndarray, np.ndarray, float]:
-        """Determines dispatch values given the current state of BatteryStorageInGridEnv
-        object.
+        """Determines dispatch values.
 
         Returns:
             x_gens: array of shape [num_gens], generator dispatch values
@@ -76,7 +74,7 @@ class MarketOperator:
         self.bats_max_discharge.value = self.env.bats_max_discharge
         self.bats_discharge_costs.value = self.env.bats_costs[:, 0]
         self.bats_charge_costs.value = self.env.bats_costs[:, 1]
-        self.load.value = self.env.demand[0]
+        self.demand.value = self.env.demand[0]
         # if self.env.count == 287:
         #     print("battery charge: ", self.env.battery_charge[-1])
         #     print("gen_max_production: ", self.env.gen_max_production)
@@ -86,7 +84,7 @@ class MarketOperator:
         #     print("bats_charge_costs: ", self.env.bats_costs[:, 0])
         #     print("bats_discharge_costs: ", self.env.bats_costs[:, 1])
         #     print("load: ", self.env.demand)
-        self.prob.solve()
+        solve_mosek(self.prob)
         # print("status: ", self.prob.status)
         # print("x value: ", self.x.value)
         # print("price:", -1*self.prob.constraints[0].dual_value)
@@ -121,22 +119,22 @@ class ElectricityMarketEnv(Env):
         MOER Forecast                        0                     Inf
     """
 
-    # Charge efficiency
-    CHARGE_EFFICIENCY = 0.4
-    # Discharge efficiency
-    DISCHARGE_EFFICIENCY = 0.6
     # Time step duration in hours (corresponds to 5 minutes)
     TIME_STEP_DURATION = 5 / 60
     # Each trajectories is one day (1440 minutes)
     MAX_STEPS_PER_EPISODE = 288
-    # probability for running price average in state/observation space
-    eta = 0.5
+
+    # charge efficiency for all batteries
+    CHARGE_EFFICIENCY = 0.4
+    # discharge efficiency for all batteries
+    DISCHARGE_EFFICIENCY = 0.6
+
     # default max production rates (MW)
     DEFAULT_GEN_MAX_PRODUCTION = (36.8, 31.19, 3.8, 9.92, 49.0, 50.0, 50.0, 15.0, 48.5, 56.7)
     # default max discharging rates for batteries (MW)
     DEFAULT_BAT_MAX_DISCHARGE = (20.0, 29.7, 7.5, 2.0, 30.0)
     # default max capacity for batteries (MWh)
-    DEFAULT_BAT_CAPACITY = (80.0, 118.8, 30.0, 8.0, 120.0)
+    DEFAULT_BAT_CAPACITY = (80, 20, 30, 0.95, 120)
     # default range for max charging and discharging rates for batteries (MW)
     # assuming symmetric range
     DEFAULT_BAT_MAX_RATES = tuple((-val, val) for val in DEFAULT_BAT_MAX_DISCHARGE)
@@ -536,18 +534,7 @@ class ElectricityMarketEnv(Env):
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
 
-        try:
-            prob.solve(warm_start=True, solver=cp.MOSEK)
-        except cp.SolverError:
-            print('default solver failed. Trying cp.ECOS')
-            prob.solve(solver=cp.ECOS)
-        if prob.status != 'optimal':
-            print(f'prob.status = {prob.status}')
-            if 'infeasible' in prob.status:
-                # your problem should never be infeasible. So now go debug
-                import pdb
-                pdb.set_trace()
-
+        solve_mosek(prob)
         return prob.value, x.value
 
     def _calculate_terminal_cost(self, agent_battery_charge: float) -> float:
