@@ -21,6 +21,7 @@ from sustaingym.algorithms.evcharging.base_algorithm import RLAlgorithm
 
 NUM_SUBPROCESSES = 4
 TIMESTEPS = 250_000
+EVAL_FREQ = 10_000 #10_000
 
 DATE_FORMAT = '%Y-%m-%d'
 FULL_PERIODS = {
@@ -45,7 +46,7 @@ def num_days_in_period(full: bool, dp: str) -> int:
     return td.days + 1
 
 
-def get_env(full: bool, real_trace: bool, dp: str, site: str, project_action_in_env: bool, seed=None) -> Callable:
+def get_env(full: bool, real_trace: bool, dp: str, site: str, project_action_in_env: bool, seed: int=None) -> Callable:
     d = FULL_PERIODS if full else SAMPLE_EVAL_PERIODS
     date_period = d[dp]
 
@@ -93,6 +94,7 @@ class EvalCallbackWithBreakdown(EvalCallback):
         super().__init__(eval_env, callback_on_new_best, callback_after_eval,
                          n_eval_episodes, eval_freq, log_path, best_model_save_path,
                          True, False, verbose, True)
+        self.eval_env = eval_env
         self.project_action = project_action
 
     def _on_step(self) -> bool:
@@ -134,7 +136,7 @@ class EvalCallbackWithBreakdown(EvalCallback):
                     results=self.evaluations_results,
                     profit=breakdown['profit'],
                     carbon_cost=breakdown['carbon_cost'],
-                    excess_charge=breakdown['excess_charge']
+                    excess_charge=breakdown['excess_charge'],
                     **kwargs,
                 )
 
@@ -209,30 +211,36 @@ if __name__ == '__main__':
             print(f'{arg_name}: {arg_val}')
     print("-----------------------\n")
 
-    envs = []
+    train_envs = []
     for i in range(NUM_SUBPROCESSES):
         # train on GMM over full period
         # set seed slightly differently so the environments aren't exact
         #  copies of each other
-        envs.append(
+        train_envs.append(
             get_env(True, False, args.train_period,
                     args.site, args.project_action_in_env, seed=args.seed + i)
         )
-    train_envs = SubprocVecEnv(envs)
+    train_envs = SubprocVecEnv(train_envs)
 
-    # running evaluation environment, run on only 2-week subset to limit variability
-    running_eval_env = get_env(False, True, args.train_period, args.site, args.project_action_in_env)()  # TODO make sure last arg
-
-    # evaluate every 10000 timesteps
     # use CallbackList in case other callbacks are to be added
     callbacks = []
-    eval_callback = EvalCallbackWithBreakdown(
-        running_eval_env, best_model_save_path=save_path,
-        log_path=save_path, eval_freq=10000 // NUM_SUBPROCESSES,
-        n_eval_episodes=14, project_action=False # ????? TODO should we project action while training
-    )
 
-    callbacks.append(eval_callback)
+    for test_period in args.test_periods:
+        # running evaluation environment, run on only 2-week subset to limit variability
+        # evaluate every 10000 timesteps
+        # test on eval date period and project action during evaluation
+        running_eval_env = get_env(False, True, test_period, args.site, True)()
+
+        sp_running_eval = os.path.join(save_path, test_period)
+        os.makedirs(sp_running_eval, exist_ok=True)
+
+        eval_callback = EvalCallbackWithBreakdown(
+            running_eval_env, best_model_save_path=sp_running_eval,
+            log_path=sp_running_eval, eval_freq=EVAL_FREQ // NUM_SUBPROCESSES,
+            n_eval_episodes=14, project_action=False  # environment already projecting
+        )
+
+        callbacks.append(eval_callback)
     callbacks = CallbackList(callbacks)
 
     # Create model
@@ -252,23 +260,24 @@ if __name__ == '__main__':
     # Load best model to run on test_period's    
     del model
     gc.collect()
-    best_model = models[args.model].load(save_path + 'best_model.zip')
-    rl_raw = RLAlgorithm(best_model, project_action=False)  # TODO what to do here
+    bm_path = os.path.join(save_path, args.test_periods[0], 'best_model.zip')  # evaluate best model on first test period
+    best_model = models[args.model].load(bm_path)
+    # rl_raw = RLAlgorithm(best_model, project_action=False)  # TODO what to do here
     rl_project = RLAlgorithm(best_model, project_action=True)  # TODO SAME
 
     print(f'Testing model on {args.test_periods}...\n')
     cnt = 0
-    for rl, lbl in zip([rl_raw, rl_project], ['raw', 'projection']):
+    for rl, lbl in zip([rl_project], ['projection']):
         for test_period in args.test_periods:
             cnt += 1
-            print(f'Evaluating {lbl} RL on {test_period} ({cnt}/{len(args.test_periods) * 2})... ')
+            print(f'Evaluating {lbl} RL on {test_period} ({cnt}/{len(args.test_periods)})... ')
             assert test_period in FULL_PERIODS
             test_save_path = os.path.join(save_path, lbl, test_period)
             os.makedirs(test_save_path, exist_ok=True)
 
-            test_env = get_env(True, True, test_period, args.site, args.action_type)()
+            test_env = get_env(True, True, test_period, args.site, False)()
             num_eval = num_days_in_period(True, test_period)
-            rewards, breakdown = rl.run(num_eval, test_env)
+            rewards, breakdown = rl.run(1, test_env)
             results = {
                 'rewards': rewards,
                 'breakdown': breakdown
