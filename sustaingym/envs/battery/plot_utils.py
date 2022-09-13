@@ -15,7 +15,7 @@ import pandas as pd
 
 
 def training_eval_results(model: str, dist: str):
-    assert model in ['PPO', 'A2C']
+    assert model in ['PPO', 'A2C', 'DQN']
     assert dist in ['in_dist', 'out_dist']
     results = []
     fname = f'examples/discrete_logs_{model}/{dist}/evaluations.npz'
@@ -240,6 +240,9 @@ def plot_state_of_charge_and_prices(axes: Sequence[plt.Axes], load_data: pd.Data
     ax.plot(timeArray, offline_prices, label='offline prices')
     ax2.plot(timeArray, charges, label=model_label)
     ax2.plot(timeArray, offline_charges, label='offline charges')
+
+    # print("state of charge: ", charges)
+    # print("prices: ", prices)
 
     # naming the x axis
     ax.set_xlabel('time')
