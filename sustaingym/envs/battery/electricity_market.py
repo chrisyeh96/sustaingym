@@ -125,9 +125,9 @@ class ElectricityMarketEnv(Env):
     MAX_STEPS_PER_EPISODE = 288
 
     # charge efficiency for all batteries
-    CHARGE_EFFICIENCY = 0.4
+    CHARGE_EFFICIENCY = 0.9
     # discharge efficiency for all batteries
-    DISCHARGE_EFFICIENCY = 0.6
+    DISCHARGE_EFFICIENCY = 0.9
 
     # default max production rates (MW)
     DEFAULT_GEN_MAX_RATES = (36.8, 31.19, 3.8, 9.92, 49.0, 50.0, 50.0, 15.0, 48.5, 56.7)
