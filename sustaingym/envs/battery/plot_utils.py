@@ -1,12 +1,13 @@
 """
-The module implements the BatteryStorageInGridEnv class.
+Plotting helper functions
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import Any
 
-import datetime
+import gym
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib.ticker as plticker
@@ -29,14 +30,23 @@ def training_eval_results(model: str, dist: str):
     return timesteps, y, error
 
 
-def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = False,
-    per_time_step: bool = False, include_carbon_costs: bool = False):
+def run_model_for_evaluation(
+        model: Any,
+        episodes: int,
+        env: gym.Env,
+        add_soc_and_prices: bool = False,
+        per_time_step: bool = False,
+        include_carbon_costs: bool = False):
     """
     Run a model for a number of episodes and return the mean and std of the reward.
-    :param model: (BaseRLModel object) the model to evaluate
-    :param episodes: (int) number of episodes to evaluate for
-    :param env: (Gym Environment) the environment to evaluate the model on
-    :return: (np.ndarray) rewards for episodes
+
+    Args:
+        model: (BaseRLModel object) the model to evaluate
+        episodes: (int) number of episodes to evaluate for
+        env: (Gym Environment) the environment to evaluate the model on
+
+    Returns:
+        rewards for episodes
     """
     episode_rewards = []
     prices = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
@@ -45,7 +55,7 @@ def run_model_for_evaluation(model, episodes, env, add_soc_and_prices: bool = Fa
     all_rewards = []
 
     for i in range(episodes):
-        obs = env.reset(seed = i*10)
+        obs = env.reset(seed=i*10)
         charges[i, 0] = env.battery_charge[-1]
         done = False
         rewards = np.zeros(env.MAX_STEPS_PER_EPISODE)
@@ -163,8 +173,13 @@ def plot_model_training_reward_curves(ax: plt.Axes, model: str,
     return ax
 
 
-def plot_reward_distribution(ax: plt.Axes, eval_env, models, model_labels, n_episodes = 10,
-    year = str) -> plt.Axes:
+def plot_reward_distribution(
+        ax: plt.Axes,
+        eval_env: gym.Env,
+        models: Sequence,
+        model_labels: Sequence[str],
+        n_episodes = 10,
+        year = str) -> plt.Axes:
     """"
     Plot reward distributions for a given evaluation and training month where year is
     variable and month is fixed at May (for now).
@@ -213,8 +228,10 @@ def plot_reward_distribution(ax: plt.Axes, eval_env, models, model_labels, n_epi
     return ax
 
 
-def plot_state_of_charge_and_prices(axes: Sequence[plt.Axes], load_data: pd.DataFrame, model,
-    model_label, env) -> tuple[plt.Axes, plt.Axes]:
+def plot_state_of_charge_and_prices(
+        axes: Sequence[plt.Axes], load_data: pd.DataFrame, model,
+        model_label, env
+        ) -> tuple[plt.Axes, plt.Axes]:
 
     if axes is None:
         fig, (ax, ax2) = plt.subplots(2)

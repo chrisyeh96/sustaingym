@@ -37,7 +37,7 @@ class MarketOperator:
         x_bats = self.x[env.num_gens:]
 
         # time-dependent parameters
-        self.gen_max_production = cp.Parameter(env.num_gens, nonneg=True)
+        self.gen_max_production = cp.Parameter(env.num_gens, nonneg=True)  # rate in MW
         self.bats_max_charge = cp.Parameter(env.num_bats, nonpos=True)  # rate in MW
         self.bats_max_discharge = cp.Parameter(env.num_bats, nonneg=True)
         self.bats_charge_costs = cp.Parameter(env.num_bats, nonneg=True)
@@ -130,24 +130,26 @@ class ElectricityMarketEnv(Env):
     DISCHARGE_EFFICIENCY = 0.6
 
     # default max production rates (MW)
-    DEFAULT_GEN_MAX_PRODUCTION = (36.8, 31.19, 3.8, 9.92, 49.0, 50.0, 50.0, 15.0, 48.5, 56.7)
-    # default max discharging rates for batteries (MW)
+    DEFAULT_GEN_MAX_RATES = (36.8, 31.19, 3.8, 9.92, 49.0, 50.0, 50.0, 15.0, 48.5, 56.7)
+    # default max discharging rates for batteries (MW), from the perspective
+    #   of the market operator
     DEFAULT_BAT_MAX_DISCHARGE = (20.0, 29.7, 7.5, 2.0, 30.0)
     # default max capacity for batteries (MWh)
     DEFAULT_BAT_CAPACITY = (80, 20, 30, 0.95, 120)
     # default range for max charging and discharging rates for batteries (MW)
-    # assuming symmetric range
+    #   assuming symmetric range
     DEFAULT_BAT_MAX_RATES = tuple((-val, val) for val in DEFAULT_BAT_MAX_DISCHARGE)
     # price of carbon ($ / mT of CO2), 1 mT = 1000 kg
     CARBON_PRICE = 30.85
 
     def __init__(self, num_gens: int = 10,
-                 gen_max_production: Sequence[float] = DEFAULT_GEN_MAX_PRODUCTION,
+                 gen_max_production: Sequence[float] = DEFAULT_GEN_MAX_RATES,
                  gen_costs: np.ndarray | None = None,
                  num_bats: int = 5,
                  battery_capacity: Sequence[float] = DEFAULT_BAT_CAPACITY,
-                 bats_max_discharge_range: Sequence[Sequence[float]] = DEFAULT_BAT_MAX_RATES,
+                 bats_max_rates: Sequence[Sequence[float]] = DEFAULT_BAT_MAX_RATES,
                  bats_costs: np.ndarray | None = None,
+                 randomize_costs: Sequence[str] = (),
                  month: str = '2019-05',
                  moer_forecast_steps: int = 36,
                  seed: int | None = None,
@@ -159,10 +161,12 @@ class ElectricityMarketEnv(Env):
             gen_costs: shape [num_gens], costs of each generator ($/MWh)
             num_bats: number of batteries (last battery is agent-controlled)
             battery_capacity: shape [num_bats], capacity of each battery (MWh)
-            bats_max_discharge_range: shape [num_bats, 2],
+            bats_max_rates: shape [num_bats, 2],
                 maximum charge (-) and discharge (+) rates of each battery (MW)
-            bats_costs: shape [num_bats - 1, 2], discharging and charging costs
+            bats_costs: shape [num_bats - 1, 2], charging and discharging costs
                 for each battery, excluding the agent-controlled battery ($/MWh)
+            randomize_costs: list of str, chosen from ['gens', 'bats'], which
+                costs should be randomly scaled
             month: year and month to load moer and net demand data from, format YYYY-MM
             moer_forecast_steps: number of steps of MOER forecast to include,
                 maximum of 36. Each step is 5 min, for a maximum of 3 hrs.
@@ -173,6 +177,7 @@ class ElectricityMarketEnv(Env):
 
         self.num_gens = num_gens
         self.num_bats = num_bats
+        self.randomize_costs = randomize_costs
         self.month = month
         self.moer_forecast_steps = moer_forecast_steps
         self.LOCAL_PATH = LOCAL_FILE_PATH
@@ -192,18 +197,17 @@ class ElectricityMarketEnv(Env):
         assert len(battery_capacity) == self.num_bats
         self.battery_capacity = np.array(battery_capacity, dtype=np.float32)
 
-        self.bats_max_discharge_range = np.array(bats_max_discharge_range, dtype=np.float32)
-        assert self.bats_max_discharge_range.shape == (self.num_bats, 2)
-        assert (self.bats_max_discharge_range[:, 0] < 0).all()
-        assert (self.bats_max_discharge_range[:, 1] > 0).all()
+        self.bats_max_rates = np.array(bats_max_rates, dtype=np.float32)
+        assert self.bats_max_rates.shape == (self.num_bats, 2)
+        assert (self.bats_max_rates[:, 0] < 0).all()
+        assert (self.bats_max_rates[:, 1] > 0).all()
 
         self.init_bats_costs = np.zeros((self.num_bats, 2))
         if bats_costs is None:
-            self.init_bats_costs[:-1, 0] = rng.uniform(50, 100, size=self.num_bats-1)
-            self.init_bats_costs[:-1, 1] = 0.75 * self.init_bats_costs[:-1, 0]
+            self.init_bats_costs[:-1, 1] = rng.uniform(50, 100, size=self.num_bats-1)  # discharging
+            self.init_bats_costs[:-1, 0] = 0.75 * self.init_bats_costs[:-1, 1]  # charging
         else:
             self.init_bats_costs[:-1] = bats_costs
-
         assert (self.init_bats_costs >= 0).all()
 
         # determine the maximum possible cost of energy ($ / MWh)
@@ -218,8 +222,8 @@ class ElectricityMarketEnv(Env):
             "energy":          spaces.Box(low=0, high=self.battery_capacity[-1], shape=(1,), dtype=float),
             "time":            spaces.Box(low=0, high=1, shape=(1,), dtype=float),
             "previous action": spaces.Box(low=0, high=np.inf, shape=(2,), dtype=float),
-            "previous agent dispatch": spaces.Box(low=self.bats_max_discharge_range[-1, 0] * self.TIME_STEP_DURATION,
-                                                  high=self.bats_max_discharge_range[-1, 1] * self.TIME_STEP_DURATION,
+            "previous agent dispatch": spaces.Box(low=self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION,
+                                                  high=self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION,
                                                   shape=(1,), dtype=float),
             "demand previous": spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
             "demand forecast": spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
@@ -325,15 +329,18 @@ class ElectricityMarketEnv(Env):
         rng = self.rng
 
         # initialize gen costs, battery charge costs, and battery discharge costs for all time steps
-        # self.all_gen_costs = self.init_gen_costs[:, None] * rng.uniform(0.8, 1.25, size=(self.num_gens, self.MAX_STEPS_PER_EPISODE))
-        # self.all_bats_costs = self.init_bats_costs[:, None, :] * rng.uniform(0.8, 1.25, size=(self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
-
-        self.all_gen_costs = self.init_gen_costs[:, None] * np.ones((self.num_gens, self.MAX_STEPS_PER_EPISODE))
-        self.all_bats_costs = self.init_bats_costs[:, None, :] * np.ones((self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
+        if 'gens' in self.randomize_costs:
+            self.all_gen_costs = self.init_gen_costs[:, None] * rng.uniform(0.8, 1.25, size=(self.num_gens, self.MAX_STEPS_PER_EPISODE))
+        else:
+            self.all_gen_costs = self.init_gen_costs[:, None] * np.ones((self.num_gens, self.MAX_STEPS_PER_EPISODE))
+        if 'bats' in self.randomize_costs:
+            self.all_bats_costs = self.init_bats_costs[:, None, :] * rng.uniform(0.8, 1.25, size=(self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
+        else:
+            self.all_bats_costs = self.init_bats_costs[:, None, :] * np.ones((self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
 
         # enforce convexity of battery bids:
         # discharge costs must be >= charge costs
-        self.all_bats_costs[:, :, 0] = np.maximum(
+        self.all_bats_costs[:, :, 1] = np.maximum(
             self.all_bats_costs[:, :, 0], self.all_bats_costs[:, :, 1])
 
         # randomly pick a day for the episode, among the days with complete demand data
@@ -383,7 +390,7 @@ class ElectricityMarketEnv(Env):
 
         Args:
             action: array of shape [2], two float values representing
-                discharging and charging costs during this time step
+                charging and discharging bid prices ($/MWh) for this time step
 
         Returns:
             obs: dict representing the resulting state from that action
@@ -400,24 +407,25 @@ class ElectricityMarketEnv(Env):
 
         # ensure selling cost (discharging) is at least as large as buying cost (charging)
         self.action[:] = action
-        if action[0] < action[1]:
+        if action[1] < action[0]:
             # print('Warning: selling cost (discharging) is less than buying cost (charging)')
-            self.action[0] = action[1]
+            self.action[1] = action[0]
 
         self.gen_costs = self.all_gen_costs[:, self.count]
         self.bats_costs = self.all_bats_costs[:, self.count]
         self.bats_costs[-1] = self.action
 
-        assert (self.bats_costs[:, 0] >= self.bats_costs[:, 1]).all()
+        assert (self.bats_costs[:, 1] >= self.bats_costs[:, 0]).all()
 
         self.demand[:] = self._generate_load_data(self.count)
         self.moer[:] = self.moer_arr[self.count:self.count + 1, 0]
 
+        # rates in MW
         self.bats_max_charge = np.maximum(
-            self.bats_max_discharge_range[:, 0],
+            self.bats_max_rates[:, 0],
             -(self.battery_capacity - self.battery_charge) / (self.TIME_STEP_DURATION * self.CHARGE_EFFICIENCY))
         self.bats_max_discharge = np.minimum(
-            self.bats_max_discharge_range[:, 1],
+            self.bats_max_rates[:, 1],
             self.battery_charge * self.DISCHARGE_EFFICIENCY / self.TIME_STEP_DURATION)
 
         _, x_bats, price = self.market_op.get_dispatch()
@@ -472,10 +480,10 @@ class ElectricityMarketEnv(Env):
 
             # update charging range for each battery
             self.bats_max_charge = np.maximum(
-                self.bats_max_discharge_range[:, 0],
+                self.bats_max_rates[:, 0],
                 -(self.battery_capacity - self.battery_charge) / (self.TIME_STEP_DURATION * self.CHARGE_EFFICIENCY))
             self.bats_max_discharge = np.minimum(
-                self.bats_max_discharge_range[:, 1],
+                self.bats_max_rates[:, 1],
                 self.battery_charge * self.DISCHARGE_EFFICIENCY / self.TIME_STEP_DURATION)
 
             # prevent agent-battery from participating in market
@@ -484,8 +492,6 @@ class ElectricityMarketEnv(Env):
 
             self.demand[:] = self._generate_load_data(count)
             _, x_bats, price = self.market_op.get_dispatch()
-
-            # _, x_bats, price = self.market_op.get_dispatch_no_agent()
 
             # sanity checks
             assert np.isclose(x_bats[-1], 0) and 0 <= price
@@ -509,22 +515,22 @@ class ElectricityMarketEnv(Env):
         Args:
             prices: array of shape [num_steps], fixed prices at each time step
             init_charge: float in [0, self.battery_capacity[-1]],
-                initial state of charge for agent battery
-            final_charge: float, minimum final charge of agent battery
+                initial energy level for agent battery
+            final_charge: float, minimum final energy level of agent battery
 
         Returns:
             reward: episode reward with fixed prices
             dispatch: array of shape [num_steps-1], battery discharge amounts
         """
-        x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)  # represents discharge
+        x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)  # represents dispatch
 
         constraints = [
             0 <= init_charge + cp.cumsum(-x),
             init_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
 
-            # ramping constraints
-            self.bats_max_discharge_range[-1, 0] * self.TIME_STEP_DURATION <= x,
-            x <= self.bats_max_discharge_range[-1, 1] * self.TIME_STEP_DURATION
+            # rate constraints
+            self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION <= x,
+            x <= self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION
         ]
         if final_charge > 0:
             constraints.append(final_charge <= init_charge + cp.sum(-x))
