@@ -11,13 +11,12 @@ class DiscreteActions(gym.ActionWrapper):
         """
         super().__init__(env)
         max_price = env.action_space.high[0]
-        # print(env.action_space.high[0])
-        self.charge_action = (max_price, max_price)
-        self.discharge_action = (0.01*max_price, 0.01*max_price)
-        self.action_space = gym.spaces.Discrete(2)
+        self.actions = {
+            0: (max_price, max_price),  # charge
+            1: (0, max_price),  # no action
+            2: (0.01*max_price, 0.01*max_price)  # discharge
+        }
+        self.action_space = gym.spaces.Discrete(3)
 
     def action(self, action: int) -> tuple[float, float]:
-        if action == 0:
-            return self.charge_action
-        else:
-            return self.discharge_action
+        return self.actions[action]
