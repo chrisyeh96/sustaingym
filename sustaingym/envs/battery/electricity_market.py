@@ -528,6 +528,10 @@ class ElectricityMarketEnv(Env):
         delta_energy = cp.cumsum(c) - cp.cumsum(d)
 
         constraints = [
+            # prevent negative energy amounts
+            0 <= c,
+            0 <= d,
+
             0 <= init_charge + delta_energy,
             init_charge + delta_energy <= self.battery_capacity[-1],
 
@@ -544,7 +548,8 @@ class ElectricityMarketEnv(Env):
         assert prob.is_dcp() and prob.is_dpp()
 
         solve_mosek(prob)
-        return prob.value, x.value
+
+        return prob.value, c.value - d.value
 
     def _calculate_terminal_cost(self, agent_battery_charge: float) -> float:
         """Calculates terminal cost term.

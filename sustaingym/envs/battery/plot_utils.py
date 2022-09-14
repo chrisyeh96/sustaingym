@@ -106,7 +106,7 @@ def get_offline_optimal(episodes, env):
 
         charges = np.zeros(env.MAX_STEPS_PER_EPISODE)
         charges[0] = init_soc
-        charges[1:] = init_soc + np.cumsum(-1. * dispatches)
+        charges[1:] = init_soc + np.cumsum(dispatches)
 
         episode_charges.append(charges)
 
@@ -230,7 +230,7 @@ def plot_reward_distribution(
 
 def plot_state_of_charge_and_prices(
         axes: Sequence[plt.Axes], load_data: pd.DataFrame, model,
-        model_label, env
+        model_label, env, org_env
         ) -> tuple[plt.Axes, plt.Axes]:
 
     if axes is None:
@@ -243,10 +243,10 @@ def plot_state_of_charge_and_prices(
 
     time_arr = load_data.columns[:-1]
     time_arr = [t + ':00.0' for t in time_arr]
-    timeArray = [datetime.datetime.strptime(i, '%H:%M:%S.%f') for i in time_arr]
+    timeArray = [datetime.strptime(i, '%H:%M:%S.%f') for i in time_arr]
 
     _, prices, charges = run_model_for_evaluation(model, 1, env, True)
-    _, offline_prices, offline_charges = get_offline_optimal(1, env)
+    _, offline_prices, offline_charges = get_offline_optimal(1, org_env)
 
     prices = np.reshape(prices, (env.MAX_STEPS_PER_EPISODE,))
     offline_prices = np.reshape(offline_prices, (env.MAX_STEPS_PER_EPISODE,))
@@ -288,7 +288,7 @@ def plot_reward_over_episode(axes: Sequence[plt.Axes], model, env) -> plt.Axes:
     assert len(axes) == 2
     ax, ax2 = axes
     delta_time = datetime.timedelta(minutes=5)
-    curr_time = datetime.datetime(2022, 1, 1, 0, 0, 0, 0)
+    curr_time = datetime(2022, 1, 1, 0, 0, 0, 0)
     times = []
 
     for _ in range(env.MAX_STEPS_PER_EPISODE):
