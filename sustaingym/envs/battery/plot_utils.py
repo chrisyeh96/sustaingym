@@ -230,7 +230,7 @@ def plot_reward_distribution(
 
 def plot_state_of_charge_and_prices(
         axes: Sequence[plt.Axes], load_data: pd.DataFrame, model,
-        model_label, env, org_env
+        model_label, env
         ) -> tuple[plt.Axes, plt.Axes]:
 
     if axes is None:
@@ -246,7 +246,7 @@ def plot_state_of_charge_and_prices(
     timeArray = [datetime.strptime(i, '%H:%M:%S.%f') for i in time_arr]
 
     _, prices, charges = run_model_for_evaluation(model, 1, env, True)
-    _, offline_prices, offline_charges = get_offline_optimal(1, org_env)
+    _, offline_prices, offline_charges = get_offline_optimal(1, env)
 
     prices = np.reshape(prices, (env.MAX_STEPS_PER_EPISODE,))
     offline_prices = np.reshape(offline_prices, (env.MAX_STEPS_PER_EPISODE,))
