@@ -83,34 +83,39 @@ def run_model_for_evaluation(
         return all_rewards, carbon_costs if not add_soc_and_prices else (episode_rewards, prices, charges)
 
 
-def get_offline_optimal(episodes, env):
+def get_offline_optimal(episodes: int, env: gym.Env
+                        ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Get offline optimal reward for a number of episodes.
+
+    Args:
+        episodes: number of episodes to evaluate for
+        env: environment to evaluate the model on
+
+    Returns:
+        rewards: list of array, array is rewards from an episode, shape [num_steps]
+        prices: list of array, array is prices from an episode, shape [num_steps]
+        net_prices: list of array, array is net prices from an episode, shape [num_steps]
+        energies: list of array, array is energy level from an episode, shape [num_steps]
     """
-    Get the offline optimal reward for a number of episodes.
-    :param episodes: (int) number of episodes to evaluate for
-    :param env: (Gym Environment) the environment to evaluate the model on
-    :return: (np.ndarray) rewards for episodes
-    """
-    episode_rewards = []
-    episode_charges = []
-    episode_prices = []
+    rewards = []
+    prices = []
+    net_prices = []
+    energies = []
 
     for i in range(episodes):
-        obs = env.reset(seed = i*10)
-        init_soc = env.battery_charge[-1]
-        prices = env._calculate_prices_without_agent()
-        ep_reward, dispatches = env._calculate_price_taking_optimal(prices=prices,
-            init_charge=init_soc, final_charge=env.battery_capacity[-1] / 2.)
-        prices[0] = prices[1]
-        episode_rewards.append(ep_reward)
-        episode_prices.append(prices)
+        env.reset(seed=i*10)
+        print('Day of month:', env.idx + 1)
+        half = env.battery_capacity[-1] / 2.
+        ep_prices = env._calculate_prices_without_agent()
+        ep_rewards, _, energy, net_price = env._calculate_price_taking_optimal(
+            prices=ep_prices, init_charge=half, final_charge=half)
+        ep_prices[0] = ep_prices[1]
+        rewards.append(ep_rewards)
+        prices.append(ep_prices)
+        net_prices.append(net_price)
+        energies.append(energy)
 
-        charges = np.zeros(env.MAX_STEPS_PER_EPISODE)
-        charges[0] = init_soc
-        charges[1:] = init_soc + np.cumsum(dispatches)
-
-        episode_charges.append(charges)
-
-    return episode_rewards, episode_prices, episode_charges
+    return rewards, prices, net_prices, energies
 
 
 def get_random_action_rewards(episodes, env):
@@ -197,7 +202,6 @@ def plot_reward_distribution(
         Use "plt.xticks(rotation=30)" to rotate x axis labels for a more appealing
         orientation
     """
-
     assert len(models) == len(model_labels)
 
     if ax is None:
@@ -229,64 +233,65 @@ def plot_reward_distribution(
 
 
 def plot_state_of_charge_and_prices(
-        axes: Sequence[plt.Axes], load_data: pd.DataFrame, model,
-        model_label, env
+        env, load_data: pd.DataFrame,
+        model: Any | None = None, model_label: str | None = None,
+        axs: Sequence[plt.Axes] | None = None
         ) -> tuple[plt.Axes, plt.Axes]:
+    """Plots prices and battery energy level over time.
 
-    if axes is None:
-        fig, (ax, ax2) = plt.subplots(2)
-        axes = (ax, ax2)
+    Creates two axes. Top axes is prices (raw electricity price and net price),
+    bottom axes is battery energy level.
 
-    assert len(axes) == 2
-    ax, ax2 = axes
-    fmt = mdates.DateFormatter('%H:%M:%S')
+    Args:
+        env: ElectricityMarketEnv
+        load_data:
+        model: optional
+        model_label: label for model, only needed if model is given
+        axs: list of two plt.Axes
+    """
+    if axs is None:
+        _, axs = plt.subplots(2, 1, sharex=True, tight_layout=True)
+    assert len(axs) == 2
+    ax, ax2 = axs
 
     time_arr = load_data.columns[:-1]
-    time_arr = [t + ':00.0' for t in time_arr]
-    timeArray = [datetime.strptime(i, '%H:%M:%S.%f') for i in time_arr]
+    timeArray = [datetime.strptime(t, '%H:%M') for t in time_arr]
 
-    _, prices, charges = run_model_for_evaluation(model, 1, env, True)
-    _, offline_prices, offline_charges = get_offline_optimal(1, env)
+    if model is not None:
+        assert model_label is not None
+        _, prices, charges = run_model_for_evaluation(model, 1, env, True)
+        prices = np.reshape(prices, (env.MAX_STEPS_PER_EPISODE,))
+        charges = np.reshape(charges, (env.MAX_STEPS_PER_EPISODE,))
+        ax.plot(timeArray, prices, label=model_label)
+        ax2.plot(timeArray, charges, label=model_label)
 
-    prices = np.reshape(prices, (env.MAX_STEPS_PER_EPISODE,))
-    offline_prices = np.reshape(offline_prices, (env.MAX_STEPS_PER_EPISODE,))
-    charges = np.reshape(charges, (env.MAX_STEPS_PER_EPISODE,))
-    offline_charges = np.reshape(offline_charges, (env.MAX_STEPS_PER_EPISODE,))
-
-    ax.plot(timeArray, prices, label=model_label)
+    _, offline_prices, offline_net_prices, offline_charges = get_offline_optimal(episodes=1, env=env)
+    offline_prices = offline_prices[0]
+    offline_net_prices = offline_net_prices[0]
+    offline_charges = offline_charges[0]
     ax.plot(timeArray, offline_prices, label='offline prices')
-    ax2.plot(timeArray, charges, label=model_label)
+    ax.plot(timeArray, offline_net_prices, label='offline net prices')
     ax2.plot(timeArray, offline_charges, label='offline charges')
 
-    # print("state of charge: ", charges)
-    # print("prices: ", prices)
-
-    # naming the x axis
-    ax.set_xlabel('time')
-    # naming the y axis
     ax.set_ylabel('Prices ($)')
-    ax2.set_ylabel('State of Charge (MWh)')
+    ax2.set(xlabel='time', ylabel='State of Charge (MWh)', ylim=(0, 120))
 
-    ax.xaxis.set_major_formatter(fmt)
-    loc = plticker.MultipleLocator(base=0.2) # this locator puts ticks at regular intervals
-    ax.xaxis.set_major_locator(loc)
-
-    ax2.xaxis.set_major_formatter(fmt)
-    ax2.xaxis.set_major_locator(loc)
-
-    ax.legend()
-    ax2.legend()
+    fmt = mdates.DateFormatter('%H:%M')
+    loc = plticker.MultipleLocator(base=0.2)  # this locator puts ticks at regular intervals
+    for ax in axs:
+        ax.xaxis.set_major_formatter(fmt)
+        ax.xaxis.set_major_locator(loc)
+        ax.legend()
 
     return ax, ax2
 
 
-def plot_reward_over_episode(axes: Sequence[plt.Axes], model, env) -> plt.Axes:
-    if axes is None:
-        fig, (ax, ax2) = plt.subplots(2)
-        axes = (ax, ax2)
+def plot_reward_over_episode(axs: Sequence[plt.Axes], model, env) -> plt.Axes:
+    if axs is None:
+        fig, axs = plt.subplots(2)
 
-    assert len(axes) == 2
-    ax, ax2 = axes
+    assert len(axs) == 2
+    ax, ax2 = axs
     delta_time = datetime.timedelta(minutes=5)
     curr_time = datetime(2022, 1, 1, 0, 0, 0, 0)
     times = []
@@ -315,13 +320,9 @@ def plot_reward_over_episode(axes: Sequence[plt.Axes], model, env) -> plt.Axes:
     # naming the y axis
     ax.set_ylabel('reward ($)')
 
-    ax.legend()
-    ax2.legend()
-
-    ax.set_xticks(times[::50])
-    ax.set_xticklabels(times[::50])
-
-    ax2.set_xticks(times[::50])
-    ax2.set_xticklabels(times[::50])
+    for ax in axs:
+        ax.legend()
+        ax.set_xticks(times[::50])
+        ax.set_xticklabels(times[::50])
 
     return ax, ax2

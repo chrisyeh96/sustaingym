@@ -125,9 +125,9 @@ class ElectricityMarketEnv(Env):
     MAX_STEPS_PER_EPISODE = 288
 
     # charge efficiency for all batteries
-    CHARGE_EFFICIENCY = 0.9
+    CHARGE_EFFICIENCY = 0.95
     # discharge efficiency for all batteries
-    DISCHARGE_EFFICIENCY = 0.9
+    DISCHARGE_EFFICIENCY = 0.95
 
     # default max production rates (MW)
     DEFAULT_GEN_MAX_RATES = (36.8, 31.19, 3.8, 9.92, 49.0, 50.0, 50.0, 15.0, 48.5, 56.7)
@@ -509,8 +509,8 @@ class ElectricityMarketEnv(Env):
 
     def _calculate_price_taking_optimal(
             self, prices: np.ndarray, init_charge: float,
-            final_charge: float) -> tuple[float, np.ndarray]:
-        """Calculates optimal episode reward, under price-taking assumption.
+            final_charge: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """Calculates optimal episode, under price-taking assumption.
 
         Args:
             prices: array of shape [num_steps], fixed prices at each time step
@@ -519,37 +519,45 @@ class ElectricityMarketEnv(Env):
             final_charge: float, minimum final energy level of agent battery
 
         Returns:
-            reward: episode reward with fixed prices
-            dispatch: array of shape [num_steps-1], battery discharge amounts
+            rewards: array of shape [num_steps], rewards at each time step
+            dispatch: array of shape [num_steps], battery dispatch amounts
+            energy: array of shape [num_steps], battery energy level
+            net_price: array of shape [num_steps], net price (inc. carbon)
         """
-        c = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)  # charging
-        d = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)  # discharging
-        x = d * self.DISCHARGE_EFFICIENCY - c / self.CHARGE_EFFICIENCY  # dispatch
+        prices[0] = prices[1]
+
+        c = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # charging (in MWh)
+        d = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # discharging (in MWh)
+        x = d * self.DISCHARGE_EFFICIENCY - c / self.CHARGE_EFFICIENCY  # dispatch (in MWh)
         delta_energy = cp.cumsum(c) - cp.cumsum(d)
 
         constraints = [
-            # prevent negative energy amounts
-            0 <= c,
-            0 <= d,
+            c[0] == 0, d[0] == 0,  # do nothing on 1st time step
 
             0 <= init_charge + delta_energy,
             init_charge + delta_energy <= self.battery_capacity[-1],
 
             # rate constraints
-            self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION <= x,
-            x <= self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION
+            0 <= c,
+            c / self.CHARGE_EFFICIENCY <= -self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION,
+            0 <= d,
+            d * self.DISCHARGE_EFFICIENCY <= self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION
+            # self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION <= x,
+            # x <= self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION
         ]
         if final_charge > 0:
             constraints.append(final_charge <= init_charge + delta_energy[-1])
 
-        moers = self.moer_arr[1:-1, 0]
-        obj = (prices[1:] + self.CARBON_PRICE * moers) @ x
+        moers = self.moer_arr[0:-1, 0]
+        net_price = prices + self.CARBON_PRICE * moers
+        obj = net_price @ x
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
-
         solve_mosek(prob)
 
-        return prob.value, c.value - d.value
+        rewards = net_price * x.value
+        energy = init_charge + delta_energy.value
+        return rewards, x.value, energy, net_price
 
     def _calculate_terminal_cost(self, agent_battery_charge: float) -> float:
         """Calculates terminal cost term.
