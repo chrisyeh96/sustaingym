@@ -548,7 +548,7 @@ class ElectricityMarketEnv(Env):
         if final_charge > 0:
             constraints.append(final_charge <= init_charge + delta_energy[-1])
 
-        moers = self.moer_arr[0:-1, 0]
+        moers = self.moer_arr[:-1, 0]
         net_price = prices + self.CARBON_PRICE * moers
         obj = net_price @ x
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)

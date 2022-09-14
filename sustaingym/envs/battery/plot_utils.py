@@ -14,6 +14,8 @@ import matplotlib.ticker as plticker
 import numpy as np
 import pandas as pd
 
+from sustaingym.envs import ElectricityMarketEnv
+
 
 def training_eval_results(model: str, dist: str):
     assert model in ['PPO', 'A2C', 'DQN']
@@ -284,6 +286,74 @@ def plot_state_of_charge_and_prices(
         ax.legend()
 
     return ax, ax2
+
+
+def setup_episode_plot(env: ElectricityMarketEnv, month_str: str, include_bids: bool
+                       ) -> tuple[list[plt.Axes], list[datetime]]:
+    """Sets up main plot. Plots demand + carbon cost curves.
+
+    Args:
+        env: already reset to desired day
+        month_str: format 'YYYY-MM'
+        include_bids: whether to include a final row of bids
+    """
+    nrows = 4
+    if include_bids:
+        nrows += 1
+    fig, axs = plt.subplots(nrows, 1, figsize=(6, 8), dpi=200, sharex=True, tight_layout=True)
+
+    day = env.idx + 1
+    fig.suptitle(f'Episode: {month_str}-{day:02d}', y=1.02)
+
+    # demand
+    ax = axs[0]
+    demand_df = env._get_demand_data()
+    demand_forecast_df = env._get_demand_forecast_data()
+    times = [datetime.strptime(t, '%H:%M') for t in demand_df.columns[:-1]]
+    ax.plot(times, demand_df.iloc[env.idx, :-1], label='demand')
+    ax.plot(times, demand_forecast_df.iloc[env.idx, :-1], label='forecasted demand')
+    ax.set_ylabel('demand (MWh)')
+
+    # carbon price
+    ax = axs[1]
+    ax.plot(times, env.moer_arr[:-1, 0] * env.CARBON_PRICE, label=r'CO$_2$ price')
+    ax.set_ylabel('price ($)')
+
+    # energy level
+    axs[2].set_ylabel('energy level (MWh)')
+
+    # cumulative reward
+    axs[3].set_ylabel('cumulative reward ($)')
+
+    if include_bids:
+        axs[4].set_ylabel('bid price')
+
+    fmt = mdates.DateFormatter('%H:%M')
+    loc = plticker.MultipleLocator(base=0.2)  # this locator puts ticks at regular intervals
+    for ax in axs:
+        ax.xaxis.set_major_formatter(fmt)
+        ax.xaxis.set_major_locator(loc)
+
+    return axs, times
+
+
+def plot_episode(axs: Sequence[plt.Axes],
+                 times: Sequence[datetime],
+                 model_name: str,
+                 prices: np.ndarray,
+                 energy_level: np.ndarray,
+                 rewards: np.ndarray,
+                 bids: np.ndarray | None = None) -> None:
+    """
+    Args:
+        bids: array of shape [num_steps, 2]
+    """
+    axs[1].plot(times, prices, label=model_name)
+    axs[2].plot(times, energy_level, label=model_name)
+    axs[3].plot(times, np.cumsum(rewards), label=model_name)
+    if bids is not None:
+        axs[4].plot(times, bids[:,0], label=f'{model_name}: buy price')
+        axs[4].plot(times, bids[:,1], '.', label=f'{model_name}: sell price')
 
 
 def plot_reward_over_episode(axs: Sequence[plt.Axes], model, env) -> plt.Axes:
