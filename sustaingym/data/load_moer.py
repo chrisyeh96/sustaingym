@@ -1,7 +1,12 @@
-"""Methods for handling Marginal Operating Emissions Rate (MOER) data from te
+"""Methods for handling Marginal Operating Emissions Rate (MOER) data from the
 California Self-Generation Incentive Program. See
     http://sgipsignal.com/api-documentation
 for more information.
+
+By default, saves MOER files to
+    sustaingym/data/moer/{ba}_{year}-{month}.csv.gz
+where {ba} is the balancing authority. The default balancing authorities are
+SGIP_CAISO_PGE and SGIP_CAISO_SCE.
 """
 from __future__ import annotations
 
@@ -15,8 +20,6 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 import pytz
-
-DataTypeStr = Literal['historical', 'forecasted']
 
 DEFAULT_DATE_RANGES = [
     ('2019-05', '2019-08'),
@@ -46,7 +49,7 @@ TIME_COLUMN = {
     'forecasted': 'generated_at',
 }
 
-SGIP_DT_FORMAT = '%Y-%m-%dT%H:%M:%S'  # ISO 8601 timestamp
+SGIP_DT_FORMAT = r'%Y-%m-%dT%H:%M:%S%z'  # timezone-aware ISO 8601 timestamp
 
 FNAME_FORMAT_STR = '{ba}_{year}-{month:02}.csv.gz'
 DEFAULT_SAVE_DIR = 'moer'
@@ -59,20 +62,26 @@ FIVEMINS = timedelta(seconds=300)
 ONEDAY = timedelta(days=1)
 
 
-def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr,
+def get_data_sgip(starttime: str, endtime: str, ba: str,
+                  req_type: Literal['historical', 'forecasted'],
                   forecast_timesteps: int = 36) -> pd.DataFrame:
     """Retrieves data from the SGIP Signal API.
+
     Authenticates user, performs API request, and returns data as a DataFrame.
     If req_type is 'historical', returns the historical marginal emissions rate.
     If req_type is 'forecast', returns the forecast for emissions rate at the next
     5 minute mark. See https://sgipsignal.com/api-documentation
+
     Args:
-        starttime: start time for data. Format ISO 8601 timestamp.
+        starttime: start time. Format ISO 8601 timestamp.
             See https://en.wikipedia.org/wiki/ISO_8601#Combined_date_and_time_representations
-        endtime: end time for data. See starttime.
+        endtime: end time for data, inclusive. See starttime.
+            Historical queries are limited to 31 days. Forecast queries are
+            are limited to 1 day.
         ba: balancing authority, responsible for region grid operation.
         req_type: either 'historical' or 'forecast'
         forecast_timesteps: number of forecast timesteps to grab, default next 3 hours
+
     Returns:
         A DataFrame containing either historical or forecasted
             rates with a DateTimeIndex named as "time". The time index type
@@ -84,12 +93,10 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr,
             f{forecast_timesteps}     float64
         If historical:
             moer                      float64
-    Notes:
-        Historical queries are limited to 31 days. Queries on forecasts
-        are limited to 1 day.
-    Examples:
-        starttimestr = '2021-02-20T00:00:00'
-        endtimestr = '2021-02-20T23:10:00'
+
+    Example:
+        starttimestr = '2021-02-20T00:00:00+0000'
+        endtimestr = '2021-02-20T23:10:00+0000'
         ba = 'SGIP_CAISO_PGE'
         df = get_data_sgip(starttimestr, endtimestr, ba, 'forecasted')
     """
@@ -122,14 +129,17 @@ def get_data_sgip(starttime: str, endtime: str, ba: str, req_type: DataTypeStr,
 
 def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
                                  ) -> pd.DataFrame:
-    """Retrieves both forecasted and historical data.
+    """Retrieves historical and forecast MOER data.
+
     May request forecasted data repeatedly due to API constraints.
     See notes section in get_data_sgip() for more info.
+
     Args:
         starttime: start time. A timezone-aware datetime object. If not
             timezone-aware, assumes UTC time.
         endtime: timezone-aware datetime object. See starttime.
         ba: balancing authority, responsible for region grid operation.
+
     Returns:
         A DataFrame containing both historical and forecasted MOER values
             time (index)    datetime64[ns, UTC]
@@ -181,15 +191,18 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
         dfs = pd.concat(dfs, axis=0)
         combined_dfs.append(dfs)
     combined_dfs = pd.concat(combined_dfs, axis=1)
-    combined_dfs.sort_index(axis=0, ascending=False, inplace=True)
+    combined_dfs.sort_index(axis=0, inplace=True)
     return combined_dfs
 
 
 def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
-    """Saves month data.
-    Saves month of forecasted and historical data from the balancing
-    authority to a compressed csv file. May request forecasted data repeatedly
-    due to API constraints. See notes section in get_data_sgip() for more info.
+    """Saves 1 month of historical and forecasted MOER data, with 1 day of
+    padding on either end.
+
+    May request forecasted data repeatedly due to API constraints. See notes
+    in get_data_sgip() for more info. NaNs in data are imputed with the previous
+    non-NaN value.
+
     Args:
         year: year of requested month
         month: requested month
@@ -243,6 +256,7 @@ def save_moer(starttime: datetime, endtime: datetime, ba: str) -> None:
 
 def save_moer_default_ranges() -> None:
     """Saves all monthly data for default date ranges.
+
     Repeatedly calls ``save_moer()`` for all months spanned by the default
     ranges. Saves for both balancing authorities: 'SGIP_CAISO_PGE',
     'SGIP_CAISO_SCE'.

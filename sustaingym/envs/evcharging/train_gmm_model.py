@@ -22,10 +22,8 @@ optional arguments:
 from __future__ import annotations
 
 import argparse
-from argparse import RawTextHelpFormatter
 from collections.abc import Sequence
 from datetime import datetime
-import os
 
 import numpy as np
 import pandas as pd
@@ -181,7 +179,7 @@ def create_gmms(site: SiteStr, n_components: int,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="GMM Training Script", formatter_class=RawTextHelpFormatter)
+        description="GMM Training Script", formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(
         "--site", default="caltech",
         help="Name of site: 'caltech' or 'jpl'")

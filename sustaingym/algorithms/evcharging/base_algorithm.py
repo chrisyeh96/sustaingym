@@ -135,7 +135,7 @@ class MPC(BaseOnlineAlgorithm):
 
             assert self.prob.is_dpp() and self.prob.is_dcp()
             self.first_run = False
-        
+
         self.demands_cvx.value = env.raw_observation(observation, 'demands')  # units A*periods
 
         self.moers.value = env.raw_observation(observation, 'forecasted_moer')[:self.lookahead]  # kg CO2 per kWh
@@ -147,7 +147,7 @@ class MPC(BaseOnlineAlgorithm):
         mask = np.zeros((env.num_stations, self.lookahead))
         for i in range(env.num_stations):
             mask[i, :cur_est_dep[i]] = env.MAX_ACTION + env.EPS
-        self.mask.value = np.full((env.num_stations, self.lookahead), env.MAX_ACTION + env.EPS) # mask
+        self.mask.value = np.full((env.num_stations, self.lookahead), env.MAX_ACTION + env.EPS)  # mask
 
         try:
             self.prob.solve(warm_start=True, solver=cp.MOSEK)
