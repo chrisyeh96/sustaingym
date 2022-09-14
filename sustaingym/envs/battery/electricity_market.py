@@ -522,18 +522,21 @@ class ElectricityMarketEnv(Env):
             reward: episode reward with fixed prices
             dispatch: array of shape [num_steps-1], battery discharge amounts
         """
-        x = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)  # represents dispatch
+        c = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)  # charging
+        d = cp.Variable(self.MAX_STEPS_PER_EPISODE - 1)  # discharging
+        x = d * self.DISCHARGE_EFFICIENCY - c / self.CHARGE_EFFICIENCY  # dispatch
+        delta_energy = cp.cumsum(c) - cp.cumsum(d)
 
         constraints = [
-            0 <= init_charge + cp.cumsum(-x),
-            init_charge + cp.cumsum(-x) <= self.battery_capacity[-1],
+            0 <= init_charge + delta_energy,
+            init_charge + delta_energy <= self.battery_capacity[-1],
 
             # rate constraints
             self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION <= x,
             x <= self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION
         ]
         if final_charge > 0:
-            constraints.append(final_charge <= init_charge + cp.sum(-x))
+            constraints.append(final_charge <= init_charge + delta_energy[-1])
 
         moers = self.moer_arr[1:-1, 0]
         obj = (prices[1:] + self.CARBON_PRICE * moers) @ x
