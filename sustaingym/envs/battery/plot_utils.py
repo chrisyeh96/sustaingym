@@ -85,12 +85,12 @@ def run_model_for_evaluation(
         return all_rewards, carbon_costs if not add_soc_and_prices else (episode_rewards, prices, charges)
 
 
-def get_offline_optimal(episodes: int, env: gym.Env
+def get_offline_optimal(seeds: Sequence[int], env: gym.Env
                         ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Get offline optimal reward for a number of episodes.
 
     Args:
-        episodes: number of episodes to evaluate for
+        seeds: seeds for environment reset, length is number of episodes to evaluate for
         env: environment to evaluate the model on
 
     Returns:
@@ -103,21 +103,23 @@ def get_offline_optimal(episodes: int, env: gym.Env
     prices = []
     net_prices = []
     energies = []
+    dispatches = []
 
-    for i in range(episodes):
-        env.reset(seed=i*10)
+    for seed in seeds:
+        env.reset(seed=seed)
         print('Day of month:', env.idx + 1)
         half = env.battery_capacity[-1] / 2.
         ep_prices = env._calculate_prices_without_agent()
-        ep_rewards, _, energy, net_price = env._calculate_price_taking_optimal(
+        ep_rewards, dispatch, energy, net_price = env._calculate_price_taking_optimal(
             prices=ep_prices, init_charge=half, final_charge=half)
         ep_prices[0] = ep_prices[1]
         rewards.append(ep_rewards)
         prices.append(ep_prices)
         net_prices.append(net_price)
         energies.append(energy)
+        dispatches.append(dispatch)
 
-    return rewards, prices, net_prices, energies
+    return rewards, prices, net_prices, energies, dispatches
 
 
 def get_random_action_rewards(episodes, env):
@@ -316,17 +318,19 @@ def setup_episode_plot(env: ElectricityMarketEnv, month_str: str, include_bids: 
 
     # carbon price
     ax = axs[1]
-    ax.plot(times, env.moer_arr[:-1, 0] * env.CARBON_PRICE, label=r'CO$_2$ price')
+    ax.plot(times, env.moer_arr[:-1, 0] * env.CARBON_PRICE, color='grey', label=r'CO$_2$ price')
     ax.set_ylabel('price ($)')
 
     # energy level
     axs[2].set_ylabel('energy level (MWh)')
+    axs[2].axhline(y=env.battery_capacity[-1]/2, color='grey')
 
-    # cumulative reward
-    axs[3].set_ylabel('cumulative reward ($)')
+    # return (aka. cumulative reward)
+    axs[3].set_ylabel('return ($)')
+    axs[3].axhline(y=0, color='grey')
 
     if include_bids:
-        axs[4].set_ylabel('bid price')
+        axs[4].set_ylabel('bid price ($/MWh)')
 
     fmt = mdates.DateFormatter('%H:%M')
     loc = plticker.MultipleLocator(base=0.2)  # this locator puts ticks at regular intervals
@@ -334,7 +338,7 @@ def setup_episode_plot(env: ElectricityMarketEnv, month_str: str, include_bids: 
         ax.xaxis.set_major_formatter(fmt)
         ax.xaxis.set_major_locator(loc)
 
-    return axs, times
+    return fig, axs, times
 
 
 def plot_episode(axs: Sequence[plt.Axes],

@@ -572,15 +572,17 @@ class ElectricityMarketEnv(Env):
         """
         prices = self._calculate_prices_without_agent()
         half_charge = self.battery_capacity[-1] / 2.
-        future_reward, _ = self._calculate_price_taking_optimal(
-            prices, init_charge=agent_battery_charge, final_charge=half_charge)
-        potential_reward, _ = self._calculate_price_taking_optimal(
-            prices, init_charge=half_charge, final_charge=half_charge)
+        future_rewards = self._calculate_price_taking_optimal(
+            prices, init_charge=agent_battery_charge, final_charge=half_charge)[0]
+        potential_rewards = self._calculate_price_taking_optimal(
+            prices, init_charge=half_charge, final_charge=half_charge)[0]
 
         # added factor to ensure terminal costs motivates charging actions
         penalty = max(0, prices[-1] * (half_charge - agent_battery_charge))
 
-        return max(0, potential_reward - future_reward) + penalty
+        future_return = np.sum(future_rewards)
+        potential_return = np.sum(potential_rewards)
+        return max(0, potential_return - future_return) + penalty
 
     def render(self):
         raise NotImplementedError
