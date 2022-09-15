@@ -27,8 +27,8 @@ class DiscreteActions(gym.ActionWrapper):
 
     def _calculate_price_taking_optimal(
             self, prices: np.ndarray, init_charge: float,
-            final_charge: float) -> tuple[float, np.ndarray]:
+            final_charge: float) -> dict[str, np.ndarray]:
         return self.env._calculate_price_taking_optimal(prices, init_charge, final_charge)
 
-    def _calculate_terminal_cost(self, agent_battery_charge: float) -> float:
-        return self.env._caculate_terminal_cost(agent_battery_charge)
+    def _calculate_terminal_cost(self, agent_energy_level: float) -> float:
+        return self.env._caculate_terminal_cost(agent_energy_level)
