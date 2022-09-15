@@ -54,13 +54,16 @@ class BaseOnlineAlgorithm:
             done = False
             obs = env.reset(seed=seed)
             episode_reward = 0.0
+            episode_breakdown = {'profit': 0.0, 'carbon_cost': 0.0, 'excess_charge': 0.0}
             while not done:
                 action = self.get_action(obs, env)  # type: ignore
                 obs, reward, done, info = env.step(action)
                 for comp in info['reward']:
-                    reward_components[comp].append(info['reward'][comp])
+                    episode_breakdown[comp] += info['reward'][comp]
                 episode_reward += reward
             total_rewards.append(episode_reward)
+            for comp in episode_breakdown:
+                reward_components[comp].append(episode_breakdown[comp])
         return total_rewards, reward_components
 
 
@@ -115,7 +118,7 @@ class MPC(BaseOnlineAlgorithm):
             # Aggregate magnitude (ACTION_SCALING_FACTOR*A) must be less than observation magnitude (A)
             phase_factor = np.exp(1j * np.deg2rad(env.cn._phase_angles))
             A_tilde = env.cn.constraint_matrix * phase_factor[None, :]
-            agg_magnitude = cp.abs(A_tilde @ (self.traj)) * env.ACTION_SCALE_FACTOR  # convert to A
+            agg_magnitude = cp.abs(A_tilde @ self.traj) * env.ACTION_SCALE_FACTOR  # convert to A
             magnitude_limit = np.tile(np.expand_dims(env.cn.magnitudes, axis=1), (1, self.lookahead))
 
             self.demands_cvx = cp.Parameter(env.num_stations, nonneg=True)
@@ -140,14 +143,14 @@ class MPC(BaseOnlineAlgorithm):
 
         self.moers.value = env.raw_observation(observation, 'forecasted_moer')[:self.lookahead]  # kg CO2 per kWh
 
-        cur_est_dep = np.round(env.max_timestep * observation['est_departures']).astype(np.int32)
-        # if estimated departure has already passed, assume car will stay for entire window
-        cur_est_dep = np.where(observation['demands'] > 0, cur_est_dep, self.lookahead)
+        cur_est_dep = np.maximum(1, np.round(env.max_timestep * observation['est_departures'])).astype(np.int32)
+        # if estimated departure has already passed, assume car will stay for 1 timestep
+        cur_est_dep = np.where(observation['demands'] > 0, cur_est_dep, 0)
 
         mask = np.zeros((env.num_stations, self.lookahead))
         for i in range(env.num_stations):
             mask[i, :cur_est_dep[i]] = env.MAX_ACTION + env.EPS
-        self.mask.value = np.full((env.num_stations, self.lookahead), env.MAX_ACTION + env.EPS) # mask
+        self.mask.value = mask
 
         try:
             self.prob.solve(warm_start=True, solver=cp.MOSEK)

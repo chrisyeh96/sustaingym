@@ -97,6 +97,12 @@ class EvalCallbackWithBreakdown(EvalCallback):
         self.eval_env = eval_env
         self.project_action = project_action
 
+        self.breakdown_results = {
+            'profit': [],
+            'carbon_cost': [],
+            'excess_charge': [],
+        }
+
     def _on_step(self) -> bool:
 
         continue_training = True
@@ -124,6 +130,9 @@ class EvalCallbackWithBreakdown(EvalCallback):
                 self.evaluations_timesteps.append(self.num_timesteps)
                 self.evaluations_results.append(episode_rewards)
 
+                for c in breakdown:
+                    self.breakdown_results[c].append(breakdown[c])
+
                 kwargs = {}
                 # Save success log if present
                 if len(self._is_success_buffer) > 0:
@@ -134,9 +143,9 @@ class EvalCallbackWithBreakdown(EvalCallback):
                     self.log_path,
                     timesteps=self.evaluations_timesteps,
                     results=self.evaluations_results,
-                    profit=breakdown['profit'],
-                    carbon_cost=breakdown['carbon_cost'],
-                    excess_charge=breakdown['excess_charge'],
+                    profit=self.breakdown_results['profit'],
+                    carbon_cost=self.breakdown_results['carbon_cost'],
+                    excess_charge=self.breakdown_results['excess_charge'],
                     **kwargs,
                 )
 
@@ -277,7 +286,7 @@ if __name__ == '__main__':
 
             test_env = get_env(True, True, test_period, args.site, False)()
             num_eval = num_days_in_period(True, test_period)
-            rewards, breakdown = rl.run(1, test_env)
+            rewards, breakdown = rl.run(num_eval, test_env)
             results = {
                 'rewards': rewards,
                 'breakdown': breakdown

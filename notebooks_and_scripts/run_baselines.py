@@ -18,10 +18,10 @@ FULL_PERIODS = {
 }
 
 baselines = {
-    'ga1': GreedyAlgorithm(project_action=False),
-    'ga2': GreedyAlgorithm(project_action=True),
-    'ra1': RandomAlgorithm(project_action=False),
-    'ra2': RandomAlgorithm(project_action=True),
+    # 'ga1': GreedyAlgorithm(project_action=False),
+    # 'ga2': GreedyAlgorithm(project_action=True),
+    # 'ra1': RandomAlgorithm(project_action=False),
+    # 'ra2': RandomAlgorithm(project_action=True),
     'mpc1': MPC(lookahead=1),
     'mpc2': MPC(lookahead=2),
     'mpc6': MPC(lookahead=6),
