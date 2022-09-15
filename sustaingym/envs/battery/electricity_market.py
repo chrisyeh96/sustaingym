@@ -366,7 +366,7 @@ class ElectricityMarketEnv(Env):
         self.moer_forecast = self.moer_arr[0, 1:self.moer_forecast_steps + 1]
         self.time = np.array([self._get_time()], dtype=np.float32)
 
-        self.price = np.array([self._calculate_prices_without_agent(count)], dtype=np.float32)
+        self.price = np.array([self._calculate_dispatch_without_agent(self.count)[2]], dtype=np.float32)
 
         # set up observations
         self.obs = {
@@ -530,7 +530,7 @@ class ElectricityMarketEnv(Env):
 
     def _calculate_price_taking_optimal(
             self, prices: np.ndarray, init_charge: float,
-            final_charge: float) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+            final_charge: float) -> dict[str, np.ndarray]:
         """Calculates optimal episode, under price-taking assumption.
 
         Args:
@@ -540,10 +540,9 @@ class ElectricityMarketEnv(Env):
             final_charge: float, minimum final energy level of agent battery
 
         Returns:
-            rewards: array of shape [num_steps], rewards at each time step
-            dispatch: array of shape [num_steps], battery dispatch amounts
-            energy: array of shape [num_steps], battery energy level
-            net_price: array of shape [num_steps], net price (inc. carbon)
+            results dict, keys are ['rewards', 'dispatch', 'energy', 'net_prices'],
+                values are arrays of shape [num_steps].
+                'net_prices' is prices + carbon cost
         """
         c = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # charging (in MWh)
         d = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # discharging (in MWh)
@@ -576,7 +575,7 @@ class ElectricityMarketEnv(Env):
 
         rewards = net_price * x.value
         energy = init_charge + delta_energy.value
-        return rewards, x.value, energy, net_price
+        return dict(rewards=rewards, dispatch=x.value, energy=energy, net_prices=net_price)
 
     def _calculate_terminal_cost(self, agent_energy_level: float) -> float:
         """Calculates terminal cost term.
@@ -592,9 +591,9 @@ class ElectricityMarketEnv(Env):
         prices = self._calculate_prices_without_agent()
         half_charge = self.battery_capacity[-1] / 2.
         future_rewards = self._calculate_price_taking_optimal(
-            prices, init_charge=agent_energy_level, final_charge=half_charge)[0]
+            prices, init_charge=agent_energy_level, final_charge=half_charge)['rewards']
         potential_rewards = self._calculate_price_taking_optimal(
-            prices, init_charge=half_charge, final_charge=half_charge)[0]
+            prices, init_charge=half_charge, final_charge=half_charge)['rewards']
 
         # added factor to ensure terminal costs motivates charging actions
         penalty = max(0, prices[-1] * (half_charge - agent_energy_level))
