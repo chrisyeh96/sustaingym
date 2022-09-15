@@ -53,14 +53,14 @@ def run_model_for_evaluation(model: Any, episodes: int, env: gym.Env
     for i in range(episodes):
         obs = env.reset(seed=i*10)
         energies[i, 0] = env.battery_charge[-1]
-        prices[i, 0] = obs['price']
+        prices[i, 0] = obs['price previous']
         done = False
 
         while not done:
             action, _ = model.predict(obs)
             obs, reward, done, info = env.step(action)
             rewards[i, env.count] = reward
-            prices[i, env.count] = obs['price']
+            prices[i, env.count] = obs['price previous']
             energies[i, env.count] = env.battery_charge[-1]
             carbon_rewards[i, env.count] = info['carbon reward']
 
