@@ -99,11 +99,7 @@ def get_offline_optimal(seeds: Sequence[int], env: gym.Env
         net_prices: list of array, array is net prices from an episode, shape [num_steps]
         energies: list of array, array is energy level from an episode, shape [num_steps]
     """
-    rewards = []
-    prices = []
-    net_prices = []
-    energies = []
-    dispatches = []
+    rewards, prices, net_prices, energies, dispatches = [], [], [], [], []
 
     for seed in seeds:
         env.reset(seed=seed)
@@ -112,7 +108,6 @@ def get_offline_optimal(seeds: Sequence[int], env: gym.Env
         ep_prices = env._calculate_prices_without_agent()
         ep_rewards, dispatch, energy, net_price = env._calculate_price_taking_optimal(
             prices=ep_prices, init_charge=half, final_charge=half)
-        ep_prices[0] = ep_prices[1]
         rewards.append(ep_rewards)
         prices.append(ep_prices)
         net_prices.append(net_price)

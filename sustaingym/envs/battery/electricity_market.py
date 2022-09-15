@@ -219,16 +219,17 @@ class ElectricityMarketEnv(Env):
         # observation space is current energy level, current time, previous (a, b, x)
         # from dispatch and previous load demand value
         self.observation_space = spaces.Dict({
-            "energy":          spaces.Box(low=0, high=self.battery_capacity[-1], shape=(1,), dtype=float),
-            "time":            spaces.Box(low=0, high=1, shape=(1,), dtype=float),
-            "previous action": spaces.Box(low=0, high=np.inf, shape=(2,), dtype=float),
-            "previous agent dispatch": spaces.Box(low=self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION,
+            'energy':          spaces.Box(low=0, high=self.battery_capacity[-1], shape=(1,), dtype=float),
+            'time':            spaces.Box(low=0, high=1, shape=(1,), dtype=float),
+            'previous action': spaces.Box(low=0, high=np.inf, shape=(2,), dtype=float),
+            'previous agent dispatch': spaces.Box(low=self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION,
                                                   high=self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION,
                                                   shape=(1,), dtype=float),
-            "demand previous": spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
-            "demand forecast": spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
-            "moer previous":   spaces.Box(low=0, high=1, shape=(1,), dtype=float),
-            "moer forecast":   spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=float)
+            'demand previous': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
+            'demand forecast': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
+            'moer previous':   spaces.Box(low=0, high=1, shape=(1,), dtype=float),
+            'moer forecast':   spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=float),
+            'price previous':  spaces.Box(low=0, high=max_cost, shape=(1,), dtype=float)
         })
         self.init = False
         self.market_op = MarketOperator(self)
@@ -365,23 +366,25 @@ class ElectricityMarketEnv(Env):
         self.moer_forecast = self.moer_arr[0, 1:self.moer_forecast_steps + 1]
         self.time = np.array([self._get_time()], dtype=np.float32)
 
+        self.price = np.array([self._calculate_prices_without_agent(count)], dtype=np.float32)
+
         # set up observations
         self.obs = {
-            "energy": self.battery_charge[-1:],
-            "time": self.time,
-            "previous action": self.action,
-            "previous agent dispatch": self.dispatch,
-            "demand previous": self.demand,
-            "demand forecast": self.demand_forecast,
-            "moer previous": self.moer,
-            "moer forecast": self.moer_forecast
+            'energy': self.battery_charge[-1:],
+            'time': self.time,
+            'previous action': self.action,
+            'previous agent dispatch': self.dispatch,
+            'demand previous': self.demand,
+            'demand forecast': self.demand_forecast,
+            'moer previous': self.moer,
+            'moer forecast': self.moer_forecast,
+            'price previous': self.price
         }
 
         info = {
-            "energy reward": None,
-            "carbon reward": None,
-            "terminal reward": None,
-            "price": None,
+            'energy reward': None,
+            'carbon reward': None,
+            'terminal reward': None
         }
         return self.obs if not return_info else (self.obs, info)
 
@@ -431,6 +434,7 @@ class ElectricityMarketEnv(Env):
         _, x_bats, price = self.market_op.get_dispatch()
         x_agent = x_bats[-1]
         self.dispatch[:] = x_agent
+        self.price[:] = price
 
         # update battery charges
         charging = (x_bats < 0)
@@ -458,44 +462,61 @@ class ElectricityMarketEnv(Env):
             'energy reward': energy_reward,
             'carbon reward': carbon_reward,
             'terminal cost': terminal_cost,
-            'price': price,
         }
         return self.obs, reward, done, info
+
+    def _calculate_dispatch_without_agent(self, count: int
+                                          ) -> tuple[np.ndarray, np.ndarray, float]:
+        """Calculates market price and dispatch at given time step, without
+        agent participation.
+
+        The only state variable that is modified is self.demand.
+
+        Args:
+            count: time step
+
+        Returns:
+            x_gens: array of shape [num_gens], generator dispatch values
+            x_bats: array of shape [num_bats], battery dispatch values
+            price: float
+        """
+        self.gen_costs = self.all_gen_costs[:, count]
+        self.bats_costs = self.all_bats_costs[:, count]
+
+        # update charging range for each battery
+        self.bats_max_charge = np.maximum(
+            self.bats_max_rates[:, 0],
+            -(self.battery_capacity - self.battery_charge) / (self.TIME_STEP_DURATION * self.CHARGE_EFFICIENCY))
+        self.bats_max_discharge = np.minimum(
+            self.bats_max_rates[:, 1],
+            self.battery_charge * self.DISCHARGE_EFFICIENCY / self.TIME_STEP_DURATION)
+
+        # prevent agent-battery from participating in market
+        self.bats_max_charge[-1] = 0
+        self.bats_max_discharge[-1] = 0
+
+        self.demand[:] = self._generate_load_data(count)
+        x_gens, x_bats, price = self.market_op.get_dispatch()
+
+        # sanity checks
+        assert np.isclose(x_bats[-1], 0) and 0 <= price
+        x_bats[-1] = 0
+        return x_gens, x_bats, price
 
     def _calculate_prices_without_agent(self) -> np.ndarray:
         """Calculates market prices, as if the agent did not participate.
 
+        The only state variable that is modified is self.demand.
+
         Returns:
-            np.ndarray, shape [num_steps], type float64. prices[0] should not
-                be used, since prices are only calculated starting from
-                timestep = 1
+            np.ndarray, shape [num_steps], type float64
         """
         battery_charge_save = self.battery_charge.copy()
         prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
 
         # get prices from market for all time steps
-        for count in range(1, self.MAX_STEPS_PER_EPISODE):
-            self.gen_costs = self.all_gen_costs[:, count]
-            self.bats_costs = self.all_bats_costs[:, count]
-
-            # update charging range for each battery
-            self.bats_max_charge = np.maximum(
-                self.bats_max_rates[:, 0],
-                -(self.battery_capacity - self.battery_charge) / (self.TIME_STEP_DURATION * self.CHARGE_EFFICIENCY))
-            self.bats_max_discharge = np.minimum(
-                self.bats_max_rates[:, 1],
-                self.battery_charge * self.DISCHARGE_EFFICIENCY / self.TIME_STEP_DURATION)
-
-            # prevent agent-battery from participating in market
-            self.bats_max_charge[-1] = 0
-            self.bats_max_discharge[-1] = 0
-
-            self.demand[:] = self._generate_load_data(count)
-            _, x_bats, price = self.market_op.get_dispatch()
-
-            # sanity checks
-            assert np.isclose(x_bats[-1], 0) and 0 <= price
-            x_bats[-1] = 0
+        for count in range(self.MAX_STEPS_PER_EPISODE):
+            _, x_bats, price = self._calculate_dispatch_without_agent(count)
             prices[count] = price
 
             # update battery charges
@@ -524,8 +545,6 @@ class ElectricityMarketEnv(Env):
             energy: array of shape [num_steps], battery energy level
             net_price: array of shape [num_steps], net price (inc. carbon)
         """
-        prices[0] = prices[1]
-
         c = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # charging (in MWh)
         d = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # discharging (in MWh)
         x = d * self.DISCHARGE_EFFICIENCY - c / self.CHARGE_EFFICIENCY  # dispatch (in MWh)
@@ -559,12 +578,12 @@ class ElectricityMarketEnv(Env):
         energy = init_charge + delta_energy.value
         return rewards, x.value, energy, net_price
 
-    def _calculate_terminal_cost(self, agent_battery_charge: float) -> float:
+    def _calculate_terminal_cost(self, agent_energy_level: float) -> float:
         """Calculates terminal cost term.
 
         Args:
-            agent_battery_charge: float representing the initial charge in the
-            agent-controlled battery storage system.
+            agent_energy_level: initial energy level (MWh) in the
+                agent-controlled battery
 
         Returns:
             terminal cost for the current episode's reward function,
@@ -573,12 +592,12 @@ class ElectricityMarketEnv(Env):
         prices = self._calculate_prices_without_agent()
         half_charge = self.battery_capacity[-1] / 2.
         future_rewards = self._calculate_price_taking_optimal(
-            prices, init_charge=agent_battery_charge, final_charge=half_charge)[0]
+            prices, init_charge=agent_energy_level, final_charge=half_charge)[0]
         potential_rewards = self._calculate_price_taking_optimal(
             prices, init_charge=half_charge, final_charge=half_charge)[0]
 
         # added factor to ensure terminal costs motivates charging actions
-        penalty = max(0, prices[-1] * (half_charge - agent_battery_charge))
+        penalty = max(0, prices[-1] * (half_charge - agent_energy_level))
 
         future_return = np.sum(future_rewards)
         potential_return = np.sum(potential_rewards)
