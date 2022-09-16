@@ -203,7 +203,7 @@ class BatteryStorageEnv(gym.Env):
                 pwr = min(
                     action, (self.ENERGY_MAX - self.energy_lvl) / self.TIME_STEP_DURATION
                 )
-                reward = -1*self.curr_price*(1 / self.CHARGE_EFFICIENCY)*pwr
+                reward = -self.curr_price*(1 / self.CHARGE_EFFICIENCY)*pwr
                 self.energy_lvl += (1 / self.CHARGE_EFFICIENCY)*pwr*self.TIME_STEP_DURATION
             else:
                 reward = 0
