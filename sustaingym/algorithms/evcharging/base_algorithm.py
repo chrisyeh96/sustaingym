@@ -150,16 +150,12 @@ class MPC(BaseOnlineAlgorithm):
         mask = np.zeros((env.num_stations, self.lookahead))
         for i in range(env.num_stations):
             mask[i, :cur_est_dep[i]] = env.MAX_ACTION + env.EPS
-<<<<<<< HEAD
         self.mask.value = mask
-=======
-        self.mask.value = np.full((env.num_stations, self.lookahead), env.MAX_ACTION + env.EPS)  # mask
->>>>>>> 8387eb1f4aa21747b3ae4c409bcc9c166fcc52a1
 
         try:
             self.prob.solve(warm_start=True, solver=cp.MOSEK)
         except cp.SolverError:
-            print('Default MOSEK solver failed in MPC. Trying ECOS.')
+            # print('Default MOSEK solver failed in MPC. Trying ECOS.')
             self.prob.solve(solver=cp.ECOS)
             if self.prob.status != 'optimal':
                 print(f'prob.status = {self.prob.status}')

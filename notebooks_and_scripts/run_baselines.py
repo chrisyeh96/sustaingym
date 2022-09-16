@@ -22,11 +22,11 @@ baselines = {
     # 'ga2': GreedyAlgorithm(project_action=True),
     # 'ra1': RandomAlgorithm(project_action=False),
     # 'ra2': RandomAlgorithm(project_action=True),
-    'mpc1': MPC(lookahead=1),
-    'mpc2': MPC(lookahead=2),
+    # 'mpc1': MPC(lookahead=1),
+    # 'mpc2': MPC(lookahead=2),
     'mpc6': MPC(lookahead=6),
-    'mpc12': MPC(lookahead=12),
-    'mpc36': MPC(lookahead=36)
+    # 'mpc12': MPC(lookahead=12),
+    # 'mpc36': MPC(lookahead=36)
 }
 
 
