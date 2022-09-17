@@ -21,9 +21,9 @@ print("Training PPO model on 2019-05")
 print("----- ----- ----- -----")
 print("----- ----- ----- -----")
 
-save_path = os.path.join(os.getcwd(), 'logs_PPO/')
-model_save_path = os.path.join(os.getcwd(), 'model_PPO_2019_5')
+save_path = os.path.join(os.getcwd(), 'logs_PPO_2019/')
 
+model_save_path = os.path.join(save_path, 'model_PPO_2019_5')
 save_path_in_dist = os.path.join(save_path, 'in_dist/')
 save_path_out_dist = os.path.join(save_path, 'out_dist/')
 
@@ -50,9 +50,9 @@ eval_callback_in_dist = EvalCallback(
 eval_callback_out_dist = EvalCallback(
     wrapped_env_2021, best_model_save_path=save_path_out_dist,
     log_path=save_path_out_dist, eval_freq=10*steps_per_ep)
-callback_list = CallbackList([log_actions_callback, eval_callback_in_dist, eval_callback_out_dist])
+callback_list = CallbackList([log_actions_callback, eval_callback_in_dist, eval_callback_out_dist])  # , eval_callback_out_dist])
 
-model = PPO("MultiInputPolicy", wrapped_env_2019, gamma=0.995, verbose=1)
+model = PPO("MultiInputPolicy", wrapped_env_2019, gamma=0.9999, verbose=1)
 print("Training model")
 model.learn(1000*steps_per_ep, callback=callback_list)
 print("\nTraining finished. \n")

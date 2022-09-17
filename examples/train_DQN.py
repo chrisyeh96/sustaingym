@@ -43,12 +43,12 @@ log_actions_callback = SaveActionsExperienced(log_dir=save_path)
 stop_train_callback = StopTrainingOnNoModelImprovement(
     max_no_improvement_evals=5, min_evals=50, verbose=1)
 eval_callback_in_dist = EvalCallback(
-    wrapped_env_2019, best_model_save_path=save_path_in_dist,
+    wrapped_env_2021, best_model_save_path=save_path_in_dist,
     log_path=save_path_in_dist, eval_freq=10*steps_per_ep)
-eval_callback_out_dist = EvalCallback(
-    wrapped_env_2021, best_model_save_path=save_path_out_dist,
-    log_path=save_path_out_dist, eval_freq=10*steps_per_ep)
-callback_list = CallbackList([log_actions_callback, eval_callback_in_dist, eval_callback_out_dist])
+# eval_callback_out_dist = EvalCallback(
+#     wrapped_env_2021, best_model_save_path=save_path_out_dist,
+#     log_path=save_path_out_dist, eval_freq=10*steps_per_ep)
+callback_list = CallbackList([log_actions_callback, eval_callback_in_dist]) # , eval_callback_out_dist])
 
 model = DQN("MultiInputPolicy", wrapped_env_2019, gamma=0.9999, verbose=1)
 print("Training model")
