@@ -15,10 +15,10 @@ import numpy as np
 import pandas as pd
 
 from sustaingym.envs import ElectricityMarketEnv
+from sustaingym.envs.battery.wrapped import DiscreteActions
 
 
-def training_eval_results(model: str, dist: str) -> tuple[np.ndarray, float, float]:
-    assert model in ['PPO', 'A2C', 'DQN']
+def training_eval_results(model: str, dist: str):
     assert dist in ['in_dist', 'out_dist']
     results = []
     fname = f'examples/discrete_logs_{model}/{dist}/evaluations.npz'
@@ -32,8 +32,10 @@ def training_eval_results(model: str, dist: str) -> tuple[np.ndarray, float, flo
     return timesteps, y, error
 
 
-def run_model_for_evaluation(model: Any, episodes: int, env: gym.Env
-                             ) -> dict[str, np.ndarray]:
+def run_model_for_evaluation(
+        model: Any,
+        episodes: int,
+        env: gym.Env):
     """
     Run a model for a number of episodes and return results.
 
@@ -42,25 +44,30 @@ def run_model_for_evaluation(model: Any, episodes: int, env: gym.Env
         episodes: (int) number of episodes to evaluate for
         env: (Gym Environment) the environment to evaluate the model on
 
-    Returns: results dict, keys ['rewards', 'energies', 'prices', 'carbon rewards'],
+    Returns: results dict, keys ['rewards', 'energies', 'prices', 'carbon rewards', 'bids'],
         values are arrays of shape [episodes, num_steps]
+        except bids which is [episodes, num_steps, 2]
     """
     rewards = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     energies = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     prices = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     carbon_rewards = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
+    bids = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE, 2))
 
     for i in range(episodes):
         obs = env.reset(seed=i*10)
         energies[i, 0] = env.battery_charge[-1]
-        prices[i, 0] = obs['price previous']
+        prices[i, 0] = env.price
         done = False
 
         while not done:
+            if 'price previous' in obs.keys():
+                del obs['price previous']
             action, _ = model.predict(obs)
+            bids[i, env.count, :] = action * env.action_space.high[0]
             obs, reward, done, info = env.step(action)
             rewards[i, env.count] = reward
-            prices[i, env.count] = obs['price previous']
+            prices[i, env.count] = env.price
             energies[i, env.count] = env.battery_charge[-1]
             carbon_rewards[i, env.count] = info['carbon reward']
 
@@ -68,11 +75,58 @@ def run_model_for_evaluation(model: Any, episodes: int, env: gym.Env
         'rewards': rewards,
         'prices': prices,
         'energies': energies,
-        'carbon rewards': carbon_rewards
+        'carbon rewards': carbon_rewards,
+        'bids': bids
     }
 
+def get_follow_offline_optimal(seeds: Sequence[int], env: gym.Env,
+                    optimal_dispatches: np.ndarray, optimal_eng_lvl
+                    ) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    """Get offline optimal reward for a number of episodes.
 
-def get_offline_optimal(seeds: Sequence[int], env: gym.Env) -> dict[str, np.ndarray]:
+    Args:
+        seeds: seeds for environment reset, length is number of episodes to evaluate for
+        env: environment to evaluate the model on
+        optimal_dispatches: array of dispatches from the optimal agent, shape [len(seeds), num_steps]
+        optimal_eng_lvl: array of energy levels from the optimal agent, shape [len(seeds), num_steps]
+
+    Returns:
+        rewards: list of array, array is rewards from each episode, shape [len(seeds), num_steps]
+        energies: list of array, array is energy level from each episode, shape [len(seeds), num_steps]
+    """
+    max_price = env.action_space.high[0]
+    charge_action = (max_price, max_price)
+    discharge_action = (0.01*max_price, 0.01*max_price)
+    no_action = (0, max_price)
+
+    all_rewards = []
+    energies = []
+
+    curr_ep = 0
+    for seed in seeds:
+        energy = np.zeros(env.MAX_STEPS_PER_EPISODE)
+        rewards = np.zeros(env.MAX_STEPS_PER_EPISODE)
+        obs, _ = env.reset(seed=seed, return_info=True)
+        energy[0] = obs['energy'][0]
+
+        for i in range(287):
+            action = no_action
+            if (optimal_dispatches[curr_ep, i] < -0.1) and (energy[i] < optimal_eng_lvl[curr_ep, i+1]):
+                action = charge_action
+            elif (optimal_dispatches[curr_ep, i] > 0.1) and (energy[i] > optimal_eng_lvl[curr_ep, i+1]):
+                action = discharge_action
+            obs, reward, _, _ = env.step(action)
+            rewards[i+1] = reward
+            energy[i+1] = obs['energy'][0]
+        
+        all_rewards.append(rewards)
+        energies.append(energy)
+        curr_ep += 1
+    
+    return all_rewards, energies
+
+def get_offline_optimal(seeds: Sequence[int], env: gym.Env
+                        ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """Get offline optimal reward for a number of episodes.
 
     Args:
@@ -91,8 +145,7 @@ def get_offline_optimal(seeds: Sequence[int], env: gym.Env) -> dict[str, np.ndar
 
     for i, seed in enumerate(seeds):
         env.reset(seed=seed)
-        print('Day of month:', env.idx + 1)
-        half = env.battery_capacity[-1] / 2.
+        half = env.bats_capacity[-1] / 2.
         ep_prices = env._calculate_prices_without_agent()
         all_results['prices'][i] = ep_prices
 
@@ -181,22 +234,27 @@ def plot_reward_distribution(
         Use "plt.xticks(rotation=30)" to rotate x axis labels for a more appealing
         orientation
     """
-    assert len(models) == len(model_labels)
-
     if ax is None:
         fig, ax = plt.subplots()
 
-    offline_rewards = get_offline_optimal(seeds=list(range(n_episodes)), env=eval_env)['rewards']
+    results = get_offline_optimal(seeds=list(range(n_episodes)), env=eval_env)
+    offline_rewards = results['rewards']
+    offline_dispatch = results['dispatch']
+    offline_energy = results['energy']
     offline_returns = np.sum(offline_rewards, axis=1)
+    follow_offline_rewards, _ = get_follow_offline_optimal(seeds=list(range(n_episodes)), env=eval_env,
+                            optimal_dispatches=offline_dispatch, optimal_eng_lvl=offline_energy)
+    follow_offline_returns = np.sum(follow_offline_rewards, axis=1)
     random_returns = get_random_action_returns(n_episodes, eval_env)
+    discrete_random_returns = get_random_action_returns(n_episodes, DiscreteActions(eval_env))
 
     model_returns = []
     for model in models:
         all_rewards = run_model_for_evaluation(model, n_episodes, eval_env)['rewards']
         model_returns.append(np.sum(all_rewards, axis=1))
 
-    data = [offline_returns, random_returns] + model_returns
-    labels = ['', 'offline', 'random']
+    data = [offline_returns, follow_offline_returns, random_returns, discrete_random_returns] + model_returns
+    labels = ['', 'offline', 'follow offline', 'random', 'discrete random']
     labels.extend(model_labels)
 
     ax.violinplot(data, showmedians=True)
@@ -350,7 +408,7 @@ def plot_reward_over_episode(model: Any, env: ElectricityMarketEnv, axs: Sequenc
     times = []
 
     for _ in range(env.MAX_STEPS_PER_EPISODE):
-        times.append(curr_time.strftime('%H:%M:%S'))
+        times.append(curr_time.strftime('%H:%M'))
         curr_time += delta_time
 
     ppo_results = run_model_for_evaluation(model, 1, env)

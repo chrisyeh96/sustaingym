@@ -21,8 +21,8 @@ print("Training PPO model on 2019-05")
 print("----- ----- ----- -----")
 print("----- ----- ----- -----")
 
-save_path = os.path.join(os.getcwd(), 'discrete_logs_PPO/')
-model_save_path = os.path.join(os.getcwd(), 'discrete_model_PPO_2019_5')
+save_path = os.path.join(os.getcwd(), 'logs_PPO/')
+model_save_path = os.path.join(os.getcwd(), 'model_PPO_2019_5')
 
 save_path_in_dist = os.path.join(save_path, 'in_dist/')
 save_path_out_dist = os.path.join(save_path, 'out_dist/')
@@ -35,8 +35,8 @@ wrapped_env_2019 = gym.wrappers.RescaleAction(env_2019, min_action=0, max_action
 wrapped_env_2021 = gym.wrappers.RescaleAction(env_2021, min_action=0, max_action=1)
 
 # wrap environments to have discrete action space
-wrapped_env_2019 = DiscreteActions(wrapped_env_2019)
-wrapped_env_2021 = DiscreteActions(wrapped_env_2021)
+# wrapped_env_2019 = DiscreteActions(wrapped_env_2019)
+# wrapped_env_2021 = DiscreteActions(wrapped_env_2021)
 
 steps_per_ep = wrapped_env_2019.MAX_STEPS_PER_EPISODE
 
@@ -54,7 +54,7 @@ callback_list = CallbackList([log_actions_callback, eval_callback_in_dist, eval_
 
 model = PPO("MultiInputPolicy", wrapped_env_2019, gamma=0.995, verbose=1)
 print("Training model")
-model.learn(int(1e6), callback=callback_list)
+model.learn(1000*steps_per_ep, callback=callback_list)
 print("\nTraining finished. \n")
 print("----- ----- ----- -----")
 print("----- ----- ----- -----")
