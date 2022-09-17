@@ -35,39 +35,45 @@ def training_eval_results(model: str, dist: str):
 def run_model_for_evaluation(
         model: Any,
         episodes: int,
-        env: gym.Env):
-    """
-    Run a model for a number of episodes and return results.
+        env: gym.Env,
+        discrete: bool):
+    """Run a model for a number of episodes and return results.
 
     Args:
         model: (BaseRLModel object) the model to evaluate
         episodes: (int) number of episodes to evaluate for
-        env: (Gym Environment) the environment to evaluate the model on
+        env: environment to evaluate the model on
+        discrete: flag for whether actions are discrete
 
-    Returns: results dict, keys ['rewards', 'energies', 'prices', 'carbon rewards', 'bids'],
-        values are arrays of shape [episodes, num_steps]
-        except bids which is [episodes, num_steps, 2]
+    Returns: results dict, keys contain ['rewards', 'energies', 'prices', 'carbon rewards', 'actions'],
+        values are arrays of shape [episodes, num_steps].
+        If discrete, then contains key
+            'actions' has shape [episodes, num_steps], type int32
+        Otherwise, contains key
+            'actions' has shape [episodes, num_steps, 2], type float64
     """
     rewards = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     energies = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     prices = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
     carbon_rewards = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
-    bids = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE, 2))
+
+    if discrete:
+        actions = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE), dtype=np.int32)
+    else:
+        actions = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE, 2))
 
     for i in range(episodes):
         obs = env.reset(seed=i*10)
         energies[i, 0] = env.battery_charge[-1]
-        prices[i, 0] = env.price
+        prices[i, 0] = obs['price previous']
         done = False
 
         while not done:
-            if 'price previous' in obs.keys():
-                del obs['price previous']
             action, _ = model.predict(obs)
-            bids[i, env.count, :] = action * env.action_space.high[0]
+            actions[i, env.count] = action
             obs, reward, done, info = env.step(action)
             rewards[i, env.count] = reward
-            prices[i, env.count] = env.price
+            prices[i, env.count] = obs['price previous']
             energies[i, env.count] = env.battery_charge[-1]
             carbon_rewards[i, env.count] = info['carbon reward']
 
@@ -76,8 +82,9 @@ def run_model_for_evaluation(
         'prices': prices,
         'energies': energies,
         'carbon rewards': carbon_rewards,
-        'bids': bids
+        'actions': actions
     }
+
 
 def get_follow_offline_optimal(seeds: Sequence[int], env: gym.Env,
                     optimal_dispatches: np.ndarray, optimal_eng_lvl

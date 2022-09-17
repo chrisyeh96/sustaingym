@@ -458,7 +458,7 @@ class ElectricityMarketEnv(Env):
         done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
 
         if done:
-            terminal_cost = self._calculate_terminal_cost(self.battery_charge[-1])
+            terminal_cost = 100 * self._calculate_terminal_cost(self.battery_charge[-1])
             reward -= terminal_cost
         else:
             terminal_cost = None
