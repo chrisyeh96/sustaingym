@@ -1,7 +1,7 @@
 """Script to train RL models on ElectricityMarketEnv.
 
 Usage:
-    python train_DQN.py -y YEAR -m MODEL_NAME [-d] -g GAMMA -l LR [-e EVAL_EPISODES]
+    python train_DQN.py -y YEAR -m MODEL_NAME [-d] -g GAMMA -l LR [-e EVAL_EPISODES] [-o LOG_DIR]
 
 Arguments:
     -y YEAR, --year YEAR  year of environment data for training
@@ -15,10 +15,12 @@ Arguments:
         discount factor, between 0 and 1 (default: 0.9999)
     -e EVAL_EPISODES, --eval-episodes EVAL_EPISODES
         # of episodes between eval/saving model during training (default: 10)
+    -o LOG_DIR, --log-dir LOG_DIR
+        directory for saving logs and models
 
 Example:
     # for DQN
-    python train.py -y 2021 -m DQN -d -l 0.0001
+    python train.py -y 2021 -m DQN -d -l 0.0001 --log-dir eta1
 
     # for SAC
     python train.py -y 2021 -m SAC -l 0.0003
@@ -62,14 +64,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '-e', '--eval-episodes', type=int, default=10,
         help='# of episodes between eval/saving model during training')
+    parser.add_argument(
+        '-o', '--log-dir', default='.',
+        help='directory for saving logs and models')
     return parser.parse_args()
 
 
 def build_save_path(args: argparse.Namespace) -> str:
+    if not os.path.exists(args.log_dir):
+        print('Creating log directory at:', args.log_dir)
+        os.makedirs(args.log_dir)
+
     discrete_tag = ''
     if args.discrete:
         discrete_tag = '_discrete'
-    save_path = f'{args.model_name}{discrete_tag}_{args.year}_g{args.gamma}_lr{args.lr}'
+
+    save_path = f'{args.log_dir}/{args.model_name}{discrete_tag}_{args.year}_g{args.gamma}_lr{args.lr}'
     if os.path.exists(save_path):
         print(f'save path {save_path} already exists! Aborting')
         exit()
@@ -98,7 +108,7 @@ def setup_envs(save_path: str, discrete: bool, year: int, eval_episodes: int
     # rescale action spaces to normalized [0,1] interval
     # wrap environments to have discrete action space
 
-    env_2021 = ElectricityMarketEnv(month='2021-05', seed=215)
+    env_2021 = ElectricityMarketEnv(month='2021-05', seed=215, use_intermediate_rewards=False)
     wrapped_env_2021 = gym.wrappers.RescaleAction(env_2021, min_action=0, max_action=1)
     if discrete:
         wrapped_env_2021 = DiscreteActions(wrapped_env_2021)
@@ -119,12 +129,13 @@ def setup_envs(save_path: str, discrete: bool, year: int, eval_episodes: int
             wrapped_env_2021, best_model_save_path=save_path_2021,
             log_path=save_path_2021, eval_freq=eval_freq,
             callback_after_eval=stop_train_callback)
+        callbacks.extend([eval_callback_2021])
     else:
         eval_callback_2021 = EvalCallback(
             wrapped_env_2021, best_model_save_path=save_path_2021,
             log_path=save_path_2021, eval_freq=eval_freq)
 
-        env_2019 = ElectricityMarketEnv(month='2019-05', seed=195)
+        env_2019 = ElectricityMarketEnv(month='2019-05', seed=195, use_intermediate_rewards=False)
         wrapped_env_2019 = gym.wrappers.RescaleAction(env_2019, min_action=0, max_action=1)
         if discrete:
             wrapped_env_2019 = DiscreteActions(wrapped_env_2019)

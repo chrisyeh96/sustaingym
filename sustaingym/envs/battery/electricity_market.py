@@ -152,6 +152,7 @@ class ElectricityMarketEnv(Env):
                  bats_max_rates: Sequence[Sequence[float]] = DEFAULT_BAT_MAX_RATES,
                  bats_costs: np.ndarray | None = None,
                  randomize_costs: Sequence[str] = (),
+                 use_intermediate_rewards: bool = True,
                  month: str = '2019-05',
                  moer_forecast_steps: int = 36,
                  seed: int | None = None,
@@ -179,6 +180,7 @@ class ElectricityMarketEnv(Env):
         self.num_bats = len(bats_capacity)
 
         self.randomize_costs = randomize_costs
+        self.use_intermediate_rewards = use_intermediate_rewards
         self.month = month
         self.moer_forecast_steps = moer_forecast_steps
         self.LOCAL_PATH = LOCAL_FILE_PATH
@@ -386,6 +388,13 @@ class ElectricityMarketEnv(Env):
             'price previous': self.price
         }
 
+        self.intermediate_rewards = {
+            'net': np.zeros(self.MAX_STEPS_PER_EPISODE),
+            'energy': np.zeros(self.MAX_STEPS_PER_EPISODE),
+            'carbon': np.zeros(self.MAX_STEPS_PER_EPISODE),
+            'terminal': None
+        }
+
         info = {
             'energy reward': None,
             'carbon reward': None,
@@ -455,12 +464,25 @@ class ElectricityMarketEnv(Env):
         energy_reward = price * x_agent
         carbon_reward = self.CARBON_PRICE * self.moer[0] * x_agent
         reward = energy_reward + carbon_reward
+
+        self.intermediate_rewards['energy'][self.count] = energy_reward
+        self.intermediate_rewards['carbon'][self.count] = carbon_reward
+        self.intermediate_rewards['net'][self.count] = reward
+
         done = (self.count + 1 >= self.MAX_STEPS_PER_EPISODE)
 
         if done:
-            terminal_cost = 100 * self._calculate_terminal_cost(self.battery_charge[-1])
+            terminal_cost = self._calculate_terminal_cost(self.battery_charge[-1])
             reward -= terminal_cost
+
+            self.intermediate_rewards['terminal'] = terminal_cost
+            self.intermediate_rewards['net'][self.count] = reward
+
+            if not self.use_intermediate_rewards:
+                reward = np.sum(self.intermediate_rewards['net'])
         else:
+            if not self.use_intermediate_rewards:
+                reward = 0
             terminal_cost = None
 
         info = {
@@ -593,8 +615,11 @@ class ElectricityMarketEnv(Env):
             terminal cost for the current episode's reward function,
                 always nonnegative
         """
-        prices = self._calculate_prices_without_agent()
         desired_charge = self.bats_init_energy[-1]
+        if agent_energy_level >= desired_charge:
+            return 0
+
+        prices = self._calculate_prices_without_agent()
         future_rewards = self._calculate_price_taking_optimal(
             prices, init_charge=agent_energy_level, final_charge=desired_charge)['rewards']
         potential_rewards = self._calculate_price_taking_optimal(

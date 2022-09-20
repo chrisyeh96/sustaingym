@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from typing import Any
+from tqdm.auto import tqdm
 
 import gym
 import matplotlib.dates as mdates
@@ -35,7 +36,7 @@ def training_eval_results(model: str, dist: str):
 
 def run_model_for_evaluation(
         model: Any,
-        episodes: int,
+        seeds: Sequence[int],
         env: gym.Env,
         discrete: bool):
     """Run a model for a number of episodes and return results.
@@ -53,95 +54,92 @@ def run_model_for_evaluation(
         Otherwise, contains key
             'actions' has shape [episodes, num_steps, 2], type float64
     """
-    rewards = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
-    energies = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
-    prices = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
-    carbon_rewards = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE))
+    num_eps = len(seeds)
+    rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    energies = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    prices = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    carbon_rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
 
     if discrete:
-        actions = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE), dtype=np.int32)
+        actions = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE), dtype=np.int32)
     else:
-        actions = np.zeros((episodes, env.MAX_STEPS_PER_EPISODE, 2))
+        actions = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE, 2))
 
-    for i in range(episodes):
-        obs = env.reset(seed=i*10)
-        energies[i, 0] = env.battery_charge[-1]
-        prices[i, 0] = obs['price previous']
-        done = False
+    for ep, seed in enumerate(seeds):
+        obs = env.reset(seed=ep*10)
+        energies[ep, 0] = env.battery_charge[-1]
+        prices[ep, 0] = obs['price previous'][0]
 
-        while not done:
+        for step in tqdm(range(1, env.MAX_STEPS_PER_EPISODE)):
             action, _ = model.predict(obs)
             if discrete:
-                actions[i, env.count] = action
-            else:
-                actions[i, env.count, :] = action
+                action = action.item()
+            actions[ep, step] = action
             obs, reward, done, info = env.step(action)
-            rewards[i, env.count] = reward
-            prices[i, env.count] = obs['price previous']
-            energies[i, env.count] = env.battery_charge[-1]
-            carbon_rewards[i, env.count] = info['carbon reward']
+            rewards[ep, step] = reward
+            prices[ep, step] = obs['price previous'][0]
+            energies[ep, step] = env.battery_charge[-1]
+            carbon_rewards[ep, step] = info['carbon reward']
+        assert done
 
     return {
         'rewards': rewards,
         'prices': prices,
-        'energies': energies,
+        'energy': energies,
         'carbon rewards': carbon_rewards,
         'actions': actions
     }
 
 
-def get_follow_offline_optimal(seeds: Sequence[int], env: gym.Env,
-                    optimal_dispatches: np.ndarray, optimal_eng_lvl
-                    ) -> tuple[list[np.ndarray], list[np.ndarray], list[np.ndarray]]:
+def get_follow_offline_optimal(
+        seeds: Sequence[int], env: gym.Env,
+        opt_dispatches: np.ndarray,
+        opt_energies: np.ndarray
+        ) -> dict[str, np.ndarray]:
     """Get offline optimal reward for a number of episodes.
 
     Args:
         seeds: seeds for environment reset, length is number of episodes to evaluate for
         env: environment to evaluate the model on
-        optimal_dispatches: array of dispatches from the optimal agent, shape [len(seeds), num_steps]
-        optimal_eng_lvl: array of energy levels from the optimal agent, shape [len(seeds), num_steps]
+        opt_dispatches: array of dispatches from the optimal agent, shape [len(seeds), num_steps]
+        opt_energies: array of energy levels from the optimal agent, shape [len(seeds), num_steps]
 
     Returns:
-        all_rewards: list of array, array is rewards from each episode, shape [len(seeds), num_steps]
-        energies: list of array, array is energy level from each episode, shape [len(seeds), num_steps]
-        all_prices: list of array, array is market clearing prices from each episode, shape [len(seeds), num_steps]
+        results dict, keys are ['rewards', 'prices', 'energy'],
+            values are arrays of shape [num_episodes, num_steps]
     """
+    num_eps = len(seeds)
+    rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    energy = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    prices = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+
     max_price = env.action_space.high[0]
     charge_action = (max_price, max_price)
     discharge_action = (0.01*max_price, 0.01*max_price)
     no_action = (0, max_price)
 
-    all_rewards = []
-    energies = []
-    all_prices = []
+    for ep, seed in enumerate(seeds):
+        obs = env.reset(seed=seed)
+        energy[ep, 0] = obs['energy'][0]
+        prices[ep, 0] = obs['price previous'][0]
 
-    curr_ep = 0
-    for seed in seeds:
-        energy = np.zeros(env.MAX_STEPS_PER_EPISODE)
-        rewards = np.zeros(env.MAX_STEPS_PER_EPISODE)
-        prices = np.zeros(env.MAX_STEPS_PER_EPISODE)
-
-        obs, _ = env.reset(seed=seed, return_info=True)
-        energy[0] = obs['energy'][0]
-
-        for i in range(287):
+        for i in range(1, 288):
             action = no_action
-            if (optimal_dispatches[curr_ep, i] < -0.1) and (energy[i] < optimal_eng_lvl[curr_ep, i+1]):
+            if (opt_dispatches[ep, i] < -0.1) and (energy[ep, i-1] < opt_energies[ep, i]):
                 action = charge_action
-            elif (optimal_dispatches[curr_ep, i] > 0.1) and (energy[i] > optimal_eng_lvl[curr_ep, i+1]):
+            elif (opt_dispatches[ep, i] > 0.1) and (energy[ep, i-1] > opt_energies[ep, i]):
                 action = discharge_action
             obs, reward, _, _ = env.step(action)
-            rewards[i+1] = reward
-            energy[i+1] = obs['energy'][0]
-            prices[i+1] = env.price
-        
-        prices[0] = prices[1]
-        all_prices.append(prices)
-        all_rewards.append(rewards)
-        energies.append(energy)
-        curr_ep += 1
-    
-    return all_rewards, energies, all_prices
+            rewards[ep, i] = reward
+            energy[ep, i] = obs['energy'][0]
+            prices[ep, i] = obs['price previous'][0]
+
+    return {
+        'rewards': rewards,
+        'prices': prices,
+        'energy': energy
+    }
+
 
 def get_offline_optimal(seeds: Sequence[int], env: gym.Env
                         ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -175,18 +173,32 @@ def get_offline_optimal(seeds: Sequence[int], env: gym.Env
     return all_results
 
 
-def get_random_action_returns(episodes: int, env: ElectricityMarketEnv) -> list[float]:
-    returns = []
-    for i in range(episodes):
-        env.reset(seed=i*10)
-        done = False
-        rewards = np.zeros(env.MAX_STEPS_PER_EPISODE)
-        while not done:
+def get_random(seeds: Sequence[int], env: gym.Env, discrete: bool) -> list[float]:
+    num_eps = len(seeds)
+    rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    energy = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    prices = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+
+    if discrete:
+        actions = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE), dtype=np.int32)
+    else:
+        actions = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE, 2))
+
+    for ep, seed in enumerate(seeds):
+        env.reset(seed=seed)
+        for i in tqdm(range(1, env.MAX_STEPS_PER_EPISODE)):
             action = env.action_space.sample()
-            _, reward, done, _ = env.step(action)
-            rewards[env.count] = reward
-        returns.append(np.sum(rewards))
-    return returns
+            obs, reward, _, _ = env.step(action)
+            rewards[ep, i] = reward
+            energy[ep, i] = obs['energy'][0]
+            prices[ep, i] = obs['price previous'][0]
+            actions[ep, i] = action
+    return {
+        'rewards': rewards,
+        'prices': prices,
+        'energy': energy,
+        'actions': actions
+    }
 
 
 def get_offline_time_step_rewards(env: ElectricityMarketEnv) -> tuple[np.ndarray, np.ndarray]:
@@ -227,20 +239,22 @@ def plot_model_training_reward_curves(
     return ax
 
 
-def plot_reward_distribution(
-        ax: plt.Axes,
-        eval_env: gym.Env,
+def get_returns(
+        env: gym.Env,
+        discrete_env: gym.Env | None,
         models: Sequence,
         model_labels: Sequence[str],
-        year: str,
-        n_episodes: int = 10) -> plt.Axes:
-    """"
+        n_episodes: int = 10,
+        run_base: Sequence[str] = ('offline', 'follow', 'random', 'random_discrete'),
+        ) -> plt.Axes:
+    """"Get returns.
+
     Plot reward distributions for a given evaluation and training month where year is
     variable and month is fixed at May (for now).
 
     Args:
         ax: plt axes object to capture resulting reward distribution in a plot
-        eval_env: gym environment representing the env to evaluate models on
+        env: gym environment representing the env to evaluate models on
         models: RL models trained on electricity market gym
         model_labels: corresponding labels for the "models" arg
         n_episodes: integer for number of episodes to evaluate over
@@ -252,43 +266,60 @@ def plot_reward_distribution(
         Use "plt.xticks(rotation=30)" to rotate x axis labels for a more appealing
         orientation
     """
-    if ax is None:
-        fig, ax = plt.subplots()
+    seeds = np.arange(n_episodes)
+    data, labels = [], []
 
-    results = get_offline_optimal(seeds=list(range(n_episodes)), env=eval_env)
-    offline_rewards = results['rewards']
-    offline_dispatch = results['dispatch']
-    offline_energy = results['energy']
-    offline_returns = np.sum(offline_rewards, axis=1)
-    follow_offline_rewards, _, _ = get_follow_offline_optimal(seeds=list(range(n_episodes)), env=eval_env,
-                            optimal_dispatches=offline_dispatch, optimal_eng_lvl=offline_energy)
-    follow_offline_returns = np.sum(follow_offline_rewards, axis=1)
-    random_returns = get_random_action_returns(n_episodes, eval_env)
-    discrete_random_returns = get_random_action_returns(n_episodes, DiscreteActions(eval_env))
+    if 'offline' in run_base:
+        print('Running offline optimal')
+        opt_results = get_offline_optimal(seeds=seeds, env=env)
+        opt_returns = np.sum(opt_results['rewards'], axis=1)
+        data.append(opt_returns)
+        labels.append('offline')
 
-    model_returns = []
-    for model in models:
-        if isinstance(model, DQN):
-            all_rewards = run_model_for_evaluation(model, n_episodes, DiscreteActions(eval_env), True)['rewards']
-            model_returns.append(np.sum(all_rewards, axis=1))
+    if 'follow' in run_base:
+        print('Running follow offline optimal')
+        follow_results = get_follow_offline_optimal(
+            seeds=seeds, env=env,
+            opt_dispatches=opt_results['dispatch'],
+            opt_energies=opt_results['energy'])
+        follow_returns = np.sum(follow_results['rewards'], axis=1)
+        data.append(follow_returns)
+        labels.append('follow offline')
+
+    if 'random' in run_base:
+        print('Running random')
+        random_results = get_random(seeds, env, discrete=False)
+        random_returns = np.sum(random_results['rewards'], axis=1)
+        data.append(random_returns)
+        labels.append('random')
+
+    if 'random_discrete' in run_base:
+        print('Running random (discrete)')
+        discrete_random_results = get_random(seeds, discrete_env, discrete=True)
+        discrete_random_returns = np.sum(discrete_random_results['rewards'], axis=1)
+        data.append(discrete_random_returns)
+        labels.append('random (discrete)')
+
+    for model_label, model in zip(model_labels, models):
+        print(f'Running {model_label}')
+        discrete = isinstance(model.action_space, gym.spaces.Discrete)
+        if discrete:
+            results = run_model_for_evaluation(model, seeds, discrete_env, discrete)
         else:
-            all_rewards = run_model_for_evaluation(model, n_episodes, eval_env, False)['rewards']
-            model_returns.append(np.sum(all_rewards, axis=1))
+            results = run_model_for_evaluation(model, seeds, env, discrete)
+        data.append(np.sum(results['rewards'], axis=1))
+        labels.append(model_label)
 
-    data = [offline_returns, follow_offline_returns, random_returns, discrete_random_returns] + model_returns
-    labels = ['', 'offline', 'follow offline', 'random', 'discrete random']
-    labels.extend(model_labels)
+    return data, labels
 
+
+def plot_returns(data, labels):
+    fig, ax = plt.subplots(figsize=(6, 4), tight_layout=True)
     ax.violinplot(data, showmedians=True)
-
-    ax.set_ylabel('Return ($)')
-    ax.set_title(f'Return Distribution for May {year}')
+    ax.set(ylabel='Return ($)')
     x = np.arange(len(labels))  # the label locations
-
-    ax.set_xticks(x, labels)
-    fig.tight_layout()
-
-    return ax
+    ax.set_xticks(x, labels, rotation=45)
+    return fig, ax
 
 
 def plot_state_of_charge_and_prices(
@@ -361,10 +392,10 @@ def setup_episode_plot(env: ElectricityMarketEnv, month_str: str, include_bids: 
     nrows = 4
     if include_bids:
         nrows += 1
-    fig, axs = plt.subplots(nrows, 1, figsize=(6, 8), dpi=200, sharex=True, tight_layout=True)
+    fig, axs = plt.subplots(nrows, 1, figsize=(6, 1.9 * nrows), dpi=200, sharex=True, tight_layout=True)
 
     day = env.idx + 1
-    fig.suptitle(f'Episode: {month_str}-{day:02d}', y=1.02)
+    fig.suptitle(f'Episode: {month_str}-{day:02d}')
 
     # demand
     ax = axs[0]
@@ -382,7 +413,7 @@ def setup_episode_plot(env: ElectricityMarketEnv, month_str: str, include_bids: 
 
     # energy level
     axs[2].set_ylabel('energy level (MWh)')
-    axs[2].axhline(y=env.battery_capacity[-1]/2, color='grey')
+    axs[2].axhline(y=env.bats_capacity[-1]/2, color='grey')
 
     # return (aka. cumulative reward)
     axs[3].set_ylabel('return ($)')
@@ -392,7 +423,7 @@ def setup_episode_plot(env: ElectricityMarketEnv, month_str: str, include_bids: 
         axs[4].set_ylabel('bid price ($/MWh)')
 
     fmt = mdates.DateFormatter('%H:%M')
-    loc = plticker.MultipleLocator(base=0.2)  # this locator puts ticks at regular intervals
+    loc = plticker.MultipleLocator(base=0.25)  # this locator puts ticks at regular intervals
     for ax in axs:
         ax.xaxis.set_major_formatter(fmt)
         ax.xaxis.set_major_locator(loc)
@@ -406,7 +437,8 @@ def plot_episode(axs: Sequence[plt.Axes],
                  prices: np.ndarray,
                  energy_level: np.ndarray,
                  rewards: np.ndarray,
-                 bids: np.ndarray | None = None) -> None:
+                 bids: np.ndarray | None = None,
+                 **kwargs: Any) -> None:
     """
     Args:
         bids: array of shape [num_steps, 2]
