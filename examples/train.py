@@ -1,26 +1,26 @@
 """Script to train RL models on ElectricityMarketEnv.
 
 Usage:
-    python train_DQN.py -y YEAR -m MODEL_NAME [-d] -g GAMMA -l LR [-e EVAL_EPISODES] [-o LOG_DIR]
+    python train_DQN.py -y YEAR [-d] [-i] -m MODEL_NAME -l LR [-g GAMMA] [-e EVAL_EPISODES] [-o LOG_DIR]
 
 Arguments:
-    -y YEAR, --year YEAR  year of environment data for training
+    -y YEAR, --year YEAR  year of environment data for training (default: None)
+    -d, --discrete        whether to use discretized actions (default: False)
+    -i, --intermediate-rewards
+                          whether to use intermediate rewards (default: False)
     -m MODEL_NAME, --model-name MODEL_NAME
-        type of model. DQN, SAC, PPO, A2C, or DDPG
-    -d, --discrete
-        flag for whether to use discretized actions
-    -l LR, --lr LR
-        learning rate
+                          type of model. DQN, SAC, PPO, A2C, or DDPG (default: None)
+    -l LR, --lr LR        learning rate (default: None)
     -g GAMMA, --gamma GAMMA
-        discount factor, between 0 and 1 (default: 0.9999)
+                          discount factor, between 0 and 1 (default: 0.9999)
     -e EVAL_EPISODES, --eval-episodes EVAL_EPISODES
-        # of episodes between eval/saving model during training (default: 10)
+                          # of episodes between eval/saving model during training (default: 10)
     -o LOG_DIR, --log-dir LOG_DIR
-        directory for saving logs and models
+                          directory for saving logs and models (default: .)
 
 Example:
     # for DQN
-    python train.py -y 2021 -m DQN -d -l 0.0001 --log-dir eta1
+    python train.py -y 2021 -d -m DQN -l 0.0001 --log-dir eta1
 
     # for SAC
     python train.py -y 2021 -m SAC -l 0.0003
@@ -50,11 +50,14 @@ def parse_args() -> argparse.Namespace:
         '-y', '--year', type=int, required=True,
         help='year of environment data for training')
     parser.add_argument(
-        '-m', '--model-name', type=str, required=True,
-        help='type of model. DQN, SAC, PPO, A2C, or DDPG')
-    parser.add_argument(
         '-d', '--discrete', action='store_true',
         help='whether to use discretized actions')
+    parser.add_argument(
+        '-i', '--intermediate-rewards', action='store_true',
+        help='whether to use intermediate rewards')
+    parser.add_argument(
+        '-m', '--model-name', type=str, required=True,
+        help='type of model. DQN, SAC, PPO, A2C, or DDPG')
     parser.add_argument(
         '-l', '--lr', type=float, required=True,
         help='learning rate')
@@ -86,13 +89,15 @@ def build_save_path(args: argparse.Namespace) -> str:
     return save_path
 
 
-def setup_envs(save_path: str, discrete: bool, year: int, eval_episodes: int
+def setup_envs(save_path: str, discrete: bool, year: int,
+               use_intermediate_rewards: bool, eval_episodes: int
                ) -> tuple[gym.Env, list[BaseCallback], str]:
     """
     Args:
         save_path: where to save model and log files
         discrete: whether to use discrete action space
         year: int, either 2019 or 2021
+        use_intermediate_rewards: whether to use intermediate rewards
         eval_episodes: int, # of episodes between eval/saving model
 
     Returns:
@@ -108,7 +113,9 @@ def setup_envs(save_path: str, discrete: bool, year: int, eval_episodes: int
     # rescale action spaces to normalized [0,1] interval
     # wrap environments to have discrete action space
 
-    env_2021 = ElectricityMarketEnv(month='2021-05', seed=215, use_intermediate_rewards=False)
+    env_2021 = ElectricityMarketEnv(
+        month='2021-05', seed=215,
+        use_intermediate_rewards=use_intermediate_rewards)
     wrapped_env_2021 = gym.wrappers.RescaleAction(env_2021, min_action=0, max_action=1)
     if discrete:
         wrapped_env_2021 = DiscreteActions(wrapped_env_2021)
@@ -135,7 +142,9 @@ def setup_envs(save_path: str, discrete: bool, year: int, eval_episodes: int
             wrapped_env_2021, best_model_save_path=save_path_2021,
             log_path=save_path_2021, eval_freq=eval_freq)
 
-        env_2019 = ElectricityMarketEnv(month='2019-05', seed=195, use_intermediate_rewards=False)
+        env_2019 = ElectricityMarketEnv(
+            month='2019-05', seed=195,
+            use_intermediate_rewards=use_intermediate_rewards)
         wrapped_env_2019 = gym.wrappers.RescaleAction(env_2019, min_action=0, max_action=1)
         if discrete:
             wrapped_env_2019 = DiscreteActions(wrapped_env_2019)
@@ -183,6 +192,7 @@ def main():
 
     env, callbacks, save_path_model = setup_envs(
         save_path, discrete=args.discrete, year=args.year,
+        use_intermediate_rewards=args.intermediate_rewards,
         eval_episodes=args.eval_episodes)
     model = setup_model(model_name=args.model_name, env=env, gamma=args.gamma,
                         lr=args.lr, discrete=args.discrete)
