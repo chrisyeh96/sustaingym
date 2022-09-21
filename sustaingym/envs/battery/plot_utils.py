@@ -17,7 +17,7 @@ import seaborn as sns
 from sustaingym.envs import ElectricityMarketEnv
 
 
-def training_eval_results(model: str, dist: str):
+def training_eval_results(model: str, dist: str) -> tuple:
     assert dist in ['in_dist', 'out_dist']
     results = []
     fname = f'examples/discrete_logs_{model}/{dist}/evaluations.npz'
@@ -59,7 +59,8 @@ def plot_model_training_reward_curves(
     return ax
 
 
-def plot_returns(results: Mapping[str, Mapping[str, np.ndarray]]
+def plot_returns(results: Mapping[str, Mapping[str, np.ndarray]],
+                 ylim: tuple[float, float] | None = None
                  ) -> tuple[plt.Figure, plt.Axes]:
     """Creates a violinplot of returns.
 
@@ -75,10 +76,11 @@ def plot_returns(results: Mapping[str, Mapping[str, np.ndarray]]
         alg = ''
         for m in ['DQN', 'PPO', 'A2C', 'SAC']:
             if m in label:
-                alg = m
+                alg = label[:label.index(' (')]
                 break
         if alg == '':
             alg = label
+        alg = '\n'.join(alg.split(' '))
 
         year = 2019 if '2019' in label else 2021
 
@@ -90,22 +92,17 @@ def plot_returns(results: Mapping[str, Mapping[str, np.ndarray]]
     df = pd.DataFrame.from_records(rows, columns=['alg', 'year', 'return'])
     sns.violinplot(data=df, x='alg', y='return', hue='year', ax=ax)
     ax.set(xlabel='Algorithm', ylabel='Return ($)')
+    ax.get_legend().set_title('Trained on')
+
+    if ylim is not None:
+        ax.set_ylim(*ylim)
+
     return fig, ax
-
-
-    # num_results = len(results)
-    # returns = [np.sum(d['rewards'], axis=1) for d in results.values()]
-    # pos = np.arange(num_results)
-    # fig, ax = plt.subplots(figsize=(6, 4), tight_layout=True)
-    # ax.violinplot(returns, positions=pos, showmedians=True)
-    # ax.set(ylabel='Return ($)')
-    # ax.set_xticks(pos, results.keys(), rotation=45)
-    # return fig, ax
 
 
 def setup_episode_plot(env: ElectricityMarketEnv, month_str: str,
                        include_returns: bool, include_bids: bool
-                       ) -> tuple[plt.Figure, list[plt.Axes], list[datetime]]:
+                       ) -> tuple[plt.Figure, dict[str, plt.Axes], list[datetime]]:
     """Sets up main plot. Plots demand + carbon cost curves.
 
     Plots are, in order from top to bottom:
@@ -119,6 +116,12 @@ def setup_episode_plot(env: ElectricityMarketEnv, month_str: str,
         env: already reset to desired day
         month_str: format 'YYYY-MM'
         include_bids: whether to include a final row of bids
+
+    Returns:
+        fig: matplotlib Figure
+        ax_dict: dict, keys are ['demand', 'prices', 'energy'] and optionally
+            include ['rewards', 'bids']. Values are matplotlib Axes
+        times: list of datetime
     """
     nrows = 3 + include_returns + include_bids
     fig, axs = plt.subplots(nrows, 1, figsize=(6, 2 * nrows), dpi=200, sharex=True, tight_layout=True)
@@ -143,7 +146,7 @@ def setup_episode_plot(env: ElectricityMarketEnv, month_str: str,
     # MOER
     ax = ax.twinx()
     ax.set_ylabel('MOER (kg CO$_2$/kWh)')
-    line = ax.plot(times, env.moer_arr[:-1, 0], color='grey', label='MOER')
+    ax.plot(times, env.moer_arr[:-1, 0], color='grey', label='MOER')
     ax.grid(False)
     lines2, labels2 = ax.get_legend_handles_labels()
     ax.legend(lines + lines2, labels + labels2, bbox_to_anchor=(1.2,1))
@@ -195,10 +198,11 @@ def plot_episode(axs: Mapping[str, plt.Axes],
     Args:
         bids: array of shape [num_steps, 2]
     """
-    axs['prices'].plot(times, prices, label=model_name)
+    axs['prices'].plot(times, prices, lw=1, label=model_name)
     axs['energy'].plot(times, energy, label=model_name)
     if 'rewards' in axs and rewards is not None:
-        axs['rewards'].plot(times, np.cumsum(rewards), label=model_name)
+        lines = axs['rewards'].plot(times, np.cumsum(rewards), label=model_name)
+        axs['rewards'].plot(times[-1], np.sum(rewards), '.', markersize=8, c=lines[0].get_color(), zorder=1000)
     if bids is not None:
         axs['bids'].plot(times, bids[:,0], '.', markersize=2, label=f'{model_name}: buy price')
         axs['bids'].plot(times, bids[:,1], '.', markersize=2, label=f'{model_name}: sell price')
