@@ -1,0 +1,29 @@
+title: SustainGym
+description: A Benchmark Suite of Reinforcement Learning for Sustainability Applications
+baseurl: "/sustaingym" # the subpath of your site, e.g. /blog
+
+# use just-the-docs theme
+remote_theme: pmarsceill/just-the-docs@v0.3.3
+plugins:
+  - jekyll-remote-theme
+
+url: https://chrisyeh96.github.io/sustaingym/
+
+aux_links:
+  "SustainGym GitHub":
+    - "https://github.com/chrisyeh96/sustaingym/"
+
+##### BUILD SETTINGS #####
+# incremental: true
+
+exclude:
+  - env.yml
+  - LICENSE
+  - README.md
+  - Gemfile
+  - Gemfile.lock
+
+# strip all unncessary whitespace and comments
+# http://jch.penibelst.de/
+# compress_html:
+#   blanklines: true
