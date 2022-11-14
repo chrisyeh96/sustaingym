@@ -1,5 +1,5 @@
 """
-This module contains utility methods for interacting with ACN-data
+This module implements utility methods for interacting with ACN-data
 and GMMs.
 """
 from __future__ import annotations
@@ -20,29 +20,37 @@ import pytz
 import sklearn.mixture as mixture
 
 
+# API Token for ACN-Data
 API_TOKEN = 'DEMO_TOKEN'
+# Folder name when creating new GMMs
 GMM_DEFAULT_DIR = 'gmms_ev_charging'
 
+# Timezones for converting charging events in ACN-Data
 AM_LA = pytz.timezone('America/Los_Angeles')
 GMT = pytz.timezone('GMT')
+
+# Datetime formatting for printing and API call
 DATE_FORMAT = '%Y-%m-%d'
 DT_STRING_FORMAT = '%a, %d %b %Y %H:%M:%S GMT'  # for API call
+
+# Minutes in a day
 MINS_IN_DAY = 1440
+
+# Normalization constant for while fitting GMMs
 REQ_ENERGY_SCALE = 100
+
+# Start and end dates for real traces usage in simulations
 START_DATE = datetime(2018, 11, 1, tzinfo=AM_LA)
 END_DATE = datetime(2021, 8, 31, tzinfo=AM_LA)
 
-ActionType = Literal['discrete', 'continuous']
-SiteStr = Literal['caltech', 'jpl']
-DefaultPeriodStr = Literal['Summer 2019', 'Fall 2019', 'Spring 2020',
-                           'Summer 2021', 'Pre-COVID-19 Summer',
-                           'Pre-COVID-19 Fall', 'In-COVID-19', 'Post-COVID-19']
+# Default date ranges
 DEFAULT_DATE_RANGES = (
     ('2019-05-01', '2019-08-31'),
     ('2019-09-01', '2019-12-31'),
     ('2020-02-01', '2020-05-31'),
     ('2021-05-01', '2021-08-31'),
 )
+# Mapping between name of default period to dates
 DEFAULT_PERIOD_TO_RANGE = {
     'Summer 2019':         DEFAULT_DATE_RANGES[0],
     'Pre-COVID-19 Summer': DEFAULT_DATE_RANGES[0],
@@ -54,11 +62,18 @@ DEFAULT_PERIOD_TO_RANGE = {
     'Post-COVID-19':       DEFAULT_DATE_RANGES[3],
 }
 
+# String typing definitions
+ActionType = Literal['discrete', 'continuous']
+DefaultPeriodStr = Literal['Summer 2019', 'Fall 2019', 'Spring 2020',
+                           'Summer 2021', 'Pre-COVID-19 Summer',
+                           'Pre-COVID-19 Fall', 'In-COVID-19', 'Post-COVID-19']
+SiteStr = Literal['caltech', 'jpl']
+
+# Constants for storing pickled GMM model
 GMM_KEY = 'gmm'
 COUNT_KEY = 'count'
 STATION_USAGE_KEY = 'station_usage'
 MODEL_NAME = 'model.pkl'
-EV_CHARGING_MODULE = 'sustaingym.envs.evcharging'
 
 
 def to_la_dt(s: str) -> datetime:
