@@ -193,7 +193,7 @@ class AbstractTraceGenerator:
         num_plugin = len(events)  # number of events before adding recompute events
 
         # every timestep has an event - recompute if no EV events
-        for timestep in range(self.MAX_STEPS_OF_TRACE // self.TIME_STEP_DURATION + 1):
+        for timestep in range(self.MAX_STEPS_OF_TRACE + 1):
             # add recompute only if a timestep has no events
             if timestep not in non_recompute_timesteps:
                 event = acns.RecomputeEvent(timestep)
