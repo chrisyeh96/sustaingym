@@ -99,9 +99,7 @@ class AbstractTraceGenerator:
 
     def site__repr__(self) -> str:
         """Returns string representation of site."""
-        if self.site == 'caltech':
-            site = 'Caltech'
-        elif self.site == 'jpl':
+        if self.site == 'jpl':
             site = 'JPL'
         else:
             site = self.site.capitalize()
@@ -302,7 +300,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
         if len(df) == 0:
             return df.copy()
 
-        # remove sessions where estimated departure / departure is not the same day as arrival
+        # remove sessions where estimated departure or departure is not the same day as arrival
         max_depart = np.maximum(df['departure'], df['estimated_departure'])
         mask = (self.day.day == max_depart.dt.day)
         df = df[mask]
