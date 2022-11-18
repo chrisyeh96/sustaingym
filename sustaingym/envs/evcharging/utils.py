@@ -63,7 +63,6 @@ DEFAULT_PERIOD_TO_RANGE = {
 }
 
 # String typing definitions
-ActionType = Literal['discrete', 'continuous']
 DefaultPeriodStr = Literal['Summer 2019', 'Fall 2019', 'Spring 2020',
                            'Summer 2021', 'Pre-COVID-19 Summer',
                            'Pre-COVID-19 Fall', 'In-COVID-19', 'Post-COVID-19']

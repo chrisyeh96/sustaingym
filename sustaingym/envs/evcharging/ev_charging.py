@@ -13,7 +13,7 @@ from gym import Env, spaces
 import numpy as np
 
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
-from sustaingym.envs.evcharging.utils import MINS_IN_DAY, ActionType, site_str_to_site, round
+from sustaingym.envs.evcharging.utils import MINS_IN_DAY, site_str_to_site, round
 
 EV_CHARGING_MODULE = 'sustaingym.envs.evcharging'
 
@@ -28,8 +28,8 @@ class EVChargingEnv(Env):
     model (GMM) fitted on the data (see train_artificial_data_model.py). The
     gym supports the Caltech and JPL sites.
 
-    n = num_stations
-    k = moer_forecast_steps
+    n = number of stations in the EV charging network
+    k = number of steps for the MOER CO2 forecast
 
     Actions:
         Type: Box(n)
@@ -37,7 +37,7 @@ class EVChargingEnv(Env):
         normalized pilot signal               n          0           1
 
     Observations:
-        Type: Dict(Box(n), Box(n), Box(k), Box(1))
+        Type: Dict(Box(n), Box(n), Box(1), Box(k), Box(1))
                                             Shape       Min         Max
         Estimated departures (timesteps)      n        -288         288
         Demands (kWh)                         n          0          Max Allowed Energy Request
@@ -46,35 +46,32 @@ class EVChargingEnv(Env):
         Timestep (fraction of day)            1          0           1
 
     Attributes:
-        data_generator: (AbstractTraceGenerator) a class whose instances can
-            sample events that populate the event queue.
-        site: either 'caltech' or 'jpl' garage to get events from
-        max_timestep: maximum timestep in a day's simulation
-        action_type: either 'continuous' or 'discrete'
-        project_action: flag for whether to project action to the feasible
-            action space.
+        data_generator: (AbstractTraceGenerator) generator for sampling
+            EV charging events and MOER forecasting.
+        max_timestep: maximum timestep in a day's simulation.
+        moer_forecast_steps: number of steps of MOER forecast to include.
+        project_action_in_env: flag for whether gym should project action
+                to obey network constraints and not overcharge vehicles.
         verbose: level of verbosity for print out.
-        cn: charging network in use, either Caltech's or JPL's
-        infrastructure_info: info on the charging network's infrastructure
-        observation_space: the space of available observations
-        action_space: the space of actions for the charging network. Can be
-            set to be either continuous or discrete.
-
-            action_type: either 'continuous' or 'discrete'. If 'discrete', the
-                action space is {0, 1, 2, 3, 4}. If 'continuous', it is [0, 4].
-                See _to_schedule() for more information.
+                0: nothing
+                1: print description of current simulation day
+                2: print warnings from network constraint violations and
+                    convex optimization solver
+        cn: EV charging network.
+        num_stations: number of stations in EV charging network.
+        observation_space: structure of observations returned by environment
+        timestep: current timestep in episode, from 0 to 288
+        action_space: structure of actions expected by environment
     """
     metadata: dict = {"render_modes": []}
 
-    # Action constants
-    ACTION_SCALE_FACTOR = 8 * 4
-    EPS = 1e-3
-    ROUND_UP_THRESH = 0.7
+    # Max charging rate in A for garage EVSEs
+    ACTION_SCALE_FACTOR = 32
 
     # Reward calculation factors
     VOLTAGE = 208  # in volts (V), default value from ACN-Sim
     MARGINAL_REVENUE_PER_KWH = 0.15  # revenue in $ / kWh
-    OPERATING_MARGIN = 0.20  # %
+    OPERATING_MARGIN = 0.20  # profit / revenue as a %
     MARGINAL_PROFIT_PER_KWH = MARGINAL_REVENUE_PER_KWH * OPERATING_MARGIN  # $ / kWh
     CO2_COST_PER_METRIC_TON = 30.85  # carbon cost in $ / 1000 kg CO2
     A_MINS_TO_KWH = (1 / 60) * (VOLTAGE / 1000)  # (kWH / A * mins)
@@ -86,21 +83,23 @@ class EVChargingEnv(Env):
                  verbose: int = 0):
         """
         Args:
-            data_generator: a subclass of AbstractTraceGenerator
+            data_generator: (AbstractTraceGenerator) generator for sampling
+                EV charging events and MOER forecasting.
             moer_forecast_steps: number of steps of MOER forecast to include,
-                minimuum of 1 and maximum of 36. Each step is 5 min, for a
+                minimum of 1 and maximum of 36. Each step is 5 mins, for a
                 maximum of 3 hrs.
+            project_action_in_env: flag for whether gym should project action
+                to obey network constraints and not overcharge vehicles.
             verbose: level of verbosity for print out.
                 0: nothing
                 1: print description of current simulation day
-                2: print current constraint warnings for network constraint
-                    violations
+                2: print warnings from network constraint violations and
+                    convex optimization solver
         """
         assert 1 <= moer_forecast_steps <= 36
 
         # Set arguments
         self.data_generator = data_generator
-        self.site = self.data_generator.site
         self.max_timestep = MINS_IN_DAY // self.data_generator.TIME_STEP_DURATION
         self.moer_forecast_steps = moer_forecast_steps
         self.project_action_in_env = project_action_in_env
@@ -115,9 +114,9 @@ class EVChargingEnv(Env):
         self.CARBON_COST_FACTOR = self.A_PERS_TO_KWH * (self.CO2_COST_PER_METRIC_TON / 1000)  # ($ * kV * hr) / (kg CO2 * period)
 
         # Set up infrastructure info with fake parameters
-        self.cn = site_str_to_site(self.site)
+        self.cn = site_str_to_site(self.data_generator.site)
         self.num_stations = len(self.cn.station_ids)
-        self.evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
+        self._evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
 
         self.observation_space = spaces.Dict({
             'est_departures':  spaces.Box(-288, 288, shape=(self.num_stations,), dtype=np.float32),
@@ -130,22 +129,27 @@ class EVChargingEnv(Env):
         })
 
         # Initialize information-tracking arrays once, always gets zeroed out at each step
-        self.est_departures = np.zeros(self.num_stations, dtype=np.float32)
-        self.demands = np.zeros(self.num_stations, dtype=np.float32)
-        self.prev_moer = np.zeros(1, dtype=np.float32)
-        self.forecasted_moer = np.zeros(self.moer_forecast_steps, dtype=np.float32)
-        self.timestep_obs = np.zeros(1, dtype=np.float32)
-        self.obs = {
-            'est_departures': self.est_departures,
-            'demands': self.demands,
-            'prev_moer': self.prev_moer,
-            'forecasted_moer': self.forecasted_moer,
-            'timestep': self.timestep_obs,
+        self._est_departures = np.zeros(self.num_stations, dtype=np.float32)
+        self._demands = np.zeros(self.num_stations, dtype=np.float32)
+        self._prev_moer = np.zeros(1, dtype=np.float32)
+        self._forecasted_moer = np.zeros(self.moer_forecast_steps, dtype=np.float32)
+        self._timestep_obs = np.zeros(1, dtype=np.float32)
+        self._obs = {
+            'est_departures': self._est_departures,
+            'demands': self._demands,
+            'prev_moer': self._prev_moer,
+            'forecasted_moer': self._forecasted_moer,
+            'timestep': self._timestep_obs,
+        }
+        self._reward_breakdown = {
+            'profit': 0.0,
+            'carbon_cost': 0.0,
+            'excess_charge': 0.0,
         }
 
         # Initialize variables for gym resetting
         self.timestep = 0
-        self.simulator: acns.Simulator = None
+        self._simulator: acns.Simulator = None
 
         # Define action space for the pilot signals
         self.action_space = spaces.Box(low=0, high=1.0,
@@ -157,16 +161,19 @@ class EVChargingEnv(Env):
     
     def _init_action_projection(self) -> None:
         """Initializes optimization problem, parameters, and variables."""
+        # Projected action to be sent as actual pilot signal
         self.projected_action = cp.Variable(self.num_stations, nonneg=True)
 
-        # Aggregate magnitude (ACTION_SCALE_FACTOR*A) must be less than observation magnitude (A)
+        # Aggregate magnitude (A) must be less than observation magnitude (A)
         phase_factor = np.exp(1j * np.deg2rad(self.cn._phase_angles))
         A_tilde = self.cn.constraint_matrix * phase_factor[None, :]
         agg_magnitude = cp.abs(A_tilde @ self.projected_action) * self.ACTION_SCALE_FACTOR  # convert to A
 
+        # Parameters to be set when stepping through environment
         self.agent_action = cp.Parameter((self.num_stations,), nonneg=True)
         self.demands_cvx = cp.Parameter((self.num_stations,), nonneg=True)
 
+        # Action cannot exceed maximum pilot signal or total demand of vehicle
         max_action = cp.minimum(1.,
                                 self.demands_cvx / self.A_PERS_TO_KWH / self.ACTION_SCALE_FACTOR)
 
@@ -191,7 +198,7 @@ class EVChargingEnv(Env):
                 that minimizes the L2 norm between it and the suggested action.
         """
         self.agent_action.value = action
-        self.demands_cvx.value = self.obs['demands']
+        self.demands_cvx.value = self._obs['demands']
         try:
             self.prob.solve(warm_start=True, solver=cp.MOSEK)
         except cp.SolverError:
@@ -209,61 +216,69 @@ class EVChargingEnv(Env):
 
     def __repr__(self) -> str:
         """Returns the string representation of charging gym."""
-        return (f'EVChargingGym (action projection = {self.project_action_in_env}, moer forecast steps = {self.moer_forecast_steps}'
-                f'{self.data_generator.__repr__()}')
+        return (f'EVChargingGym (action projection = {self.project_action_in_env}, moer forecast steps = {self.moer_forecast_steps}) '
+                f'using {self.data_generator.__repr__()}')
 
     def step(self, action: np.ndarray, return_info: bool = False
              ) -> tuple[dict[str, np.ndarray], float, bool, dict[str, Any]]:
         """Steps the environment.
 
-        Calls the step function of the internal simulator and generate the
-        observation, reward, done, info tuple required by OpenAI gym.
+        Calls the step function of the internal simulator and generates the
+        observation, reward, done, info tuple specified by OpenAI gym.
 
         Args:
-            action: action: shape [num_stations], charging rate for each charging station.
+            action: action: shape [num_stations], normalized charging rate
+                for each charging station between 0 and 1.
             return_info: info is always returned, but if return_info is set
-                to False, less information will be present in the dictionary
+                to False, only 'max_profit' and 'reward_breakdown' are
+                returned.
 
         Returns:
             observation: state
-                'est_departures': shape [num_stations], the estimated time
-                    until departure. If there is no EVSE at the index, the
-                    entry is set to ``-self.max_timestep``. Normalized between
-                    0 and 1.
+                'est_departures': shape [num_stations], the estimated number of
+                    periods until departure. If there is no EVSE at the index,
+                    the entry is set to zero.
                 'demands': shape [num_stations], amount of charge demanded by
-                    each EVSE in kWh, normalized by ``requested_energy_cap``
-                    of data generator.
+                    each EVSE in kWh.
+                'prev_moer': shape [1], emissions rate for the current timestep
+                    in kg CO2 per kWh. Between 0 and 1.
                 'forecasted_moer': shape [moer_forecast_steps], forecasted
                     emissions rate for next timestep(s) in kg CO2 per kWh.
                     Between 0 and 1.
-                'timestep': shape [1], simulation's current iteration during
-                    the day, normalized between 0 and 1.
-            reward: scheduler's performance
+                'timestep': shape [1], fraction of day between 0 and 1.
+            reward: scheduler's performance metric per timestep
             done: whether episode is finished
-            info: auxiliary information for debugging
-                'evs': list of all acns.EV's
-                'active_evs': list of all currently charging acns.EV's
-                'pilot_signals': pd.DataFrame, entire history of pilot signals
-                    throughout simulation. Columns are EVSE id, and the index is
-                    the iteration.
-                'reward': dict, str => float
-                    'revenue': revenue from charge delivered ($)
-                    'carbon_cost': marginal CO2 emissions rate ($)
-                    'excess_charge': costs for violating network constraints ($)
+            info: auxiliary useful information
+                'num_evs' (int): number of charging sessions in episode.
+                'avg_plugin_time' (float): average plugin time in periods
+                    (5 mins) across sessions in episode.
+                'max_profit' (float): maximum profit if all EVs were charged
+                    maximally while they are connected to the network. This does
+                    not take into account network constraints or carbon emissions,
+                    and it is a good proxy for info['reward_breakdown']['profit'].
+                'reward_breakdown' (dict[str, float]): breakdown of evaluation
+                    metrics cumulative over the episode.
+                    'profit' ($) : profit over charge delivered to all EVs.
+                    'carbon_cost'($): cost of marginal emissions.
+                    'excess_charge' ($): cost of network violations.
+                'evs' (List[acnm.ev.EV]): list of EVs in the event queue
+                'active_evs' (List[acnm.ev.EV]): list of active EVs at current
+                    timestep
+                'moer': shape [289, 37] emissions rate for entire episode.
+                'pilot_signals' (DataFrame): pilot signals received by simulator
         """
         self.timestep += 1
 
         # Step internal simulator
         schedule = self._to_schedule(action)  # transform action to pilot signals
-        done = self.simulator.step(schedule)  # should be set by calling reset()
-        self.simulator._resolve = False  # work-around to keep iterating
+        done = self._simulator.step(schedule)  # NOTE: call reset() for NoneType AttributeError
+        self._simulator._resolve = False  # work-around to keep iterating
 
         # Retrieve environment information
         observation = self._get_observation()
-        reward, reward_info = self._get_reward(schedule)
-        info = self._get_info() if return_info else {}
-        info['reward'] = reward_info  
-     
+        reward = self._get_reward(schedule)
+        info = self._get_info(return_info)
+
         return observation, reward, done, info
 
     def reset(self, *,
@@ -275,17 +290,18 @@ class EVChargingEnv(Env):
 
         Prepares for the next episode by re-creating the charging network,
         generating new events, creating the simulation and interface,
-        and resetting the timesteps.
+        and resetting information-tracking variables.
 
         Args:
-            seed: random seed for resetting environment
-            return_info: whether information should be returned as well
-            options: dictionary containing options for resetting.
-                'verbose': set verbosity [0-2]
+            seed: seed for resetting the environment. An episode is entirely
+                reproducible no matter the generator used.
+            return_info: flag for whether information should be returned
+            options: resetting options
+                'verbose': set verbosity level [0-2]
 
         Returns:
             obs: state. See step().
-            info: auxiliary information. See step().
+            info: other information (when return_info = True). See step().
         """
         self.rng = np.random.default_rng(seed)
         self.data_generator.set_seed(seed)
@@ -294,14 +310,18 @@ class EVChargingEnv(Env):
             self.verbose = options['verbose']
 
         # Initialize network, events, MOER data, simulator, interface, and timestep
-        self.cn = site_str_to_site(self.site)
+        self.cn = site_str_to_site(self.data_generator.site)
         self.events, self.evs, num_plugs = self.data_generator.get_event_queue()
         self.moer = self.data_generator.get_moer()
-        self.simulator = acns.Simulator(network=self.cn, scheduler=None,
+        self._simulator = acns.Simulator(network=self.cn, scheduler=None,
                                         events=self.events, start=self.data_generator.day,
                                         period=self.data_generator.TIME_STEP_DURATION, verbose=False)
-        self.interface = acns.Interface(self.simulator)
+        self.interface = acns.Interface(self._simulator)
         self.timestep = 0
+
+        # Restart information tracking for reward component
+        for reward_component in self._reward_breakdown:
+            self._reward_breakdown[reward_component] = 0.0
 
         if self.verbose >= 1:
             print(f'Simulating {num_plugs} events using {self.data_generator}')
@@ -314,33 +334,29 @@ class EVChargingEnv(Env):
     def _to_schedule(self, action: np.ndarray) -> dict[str, list[float]]:
         """Returns EVSE pilot signals given a numpy action.
 
-        If the environment uses a discrete action type, actions are expected
-        to be in the set {0, 1, 2, 3, 4}, which are scaled by 8 to generate
-        pilot signals: {0, 8, 16, 24, 32}. For a continuous action type,
-        actions are expected to be in the range [0, 4], which are scaled by
-        8 to generate pilot signals. Since some actions may not reach the
-        minimum pilot signal threshold, those actions are set to zero.
+        Actions are expected to be in the set [0-1], which are scaled by 32
+        to generate pilot signals in [0-32]. 
 
-        Currently, the Caltech and JPL sites have 2 types of EVSEs: AV
-        (AeroVironment) and CC (ClipperCreek). They allow a different set of
-        currents. One type only allows pilot signals in the set {0, 8, 16,
-        24, 32}. The other allows pilot signals in the set {0} U {6, 7, 8,
-        ..., 32}. Continuous actions have to be appropriately rounded.
+        Currently, the gym supports the Caltech and JPL sites with 2 types of
+        EVSEs: AV (AeroVironment) and CC (ClipperCreek), each specific with
+        the pilot signal required. One type only allows pilot signals in the
+        set {0, 8, 16, 24, 32}. The other allows pilot signals in the set
+        {0} U {6, 7, 8, ..., 32}. Pilot signals that do not reach the minimum
+        pilot signal threshold are set to zero, and they have to be
+        appropriately rounded. The gym supports action projection for obeying
+        network constraints.
 
         Args:
-            action: shape [num_stations], charging rate for each charging station.
-                If action_type == 'discrete', entries should be in {0, 1, 2, 3, 4}.
-                If action_type == 'continuous', entries should be in range [0, 4].
+            action: shape [num_stations], normalized charging rate for each
+                charging station.
 
         Returns:
             pilot_signals: dict, str => [int]. Maps station ids to a
                 single-element list of pilot signals in Amps
         """
-        print("Before: ", action)
         if self.project_action_in_env:
-            action = self._project_action(action) * self.ACTION_SCALE_FACTOR
-        print("After: ", action)
-        
+            action = self._project_action(action)
+
         action = np.round(action * self.ACTION_SCALE_FACTOR)
         pilot_signals = {}
         for i in range(self.num_stations):
@@ -353,38 +369,65 @@ class EVChargingEnv(Env):
                 pilot_signals[station_id] = [action[i] if action[i] >= 6 else 0]
             else:
                 # set to {0, 8, 16, 24, 32}
-                pilot_signals[station_id] = [(np.round(action[i] / 8) * 8)]
-            print(str(pilot_signals[station_id][0]) + " ", end='')
-        print('pilot signals', pilot_signals)
+                pilot_signals[station_id] = [(round(action[i] / 8) * 8)]
         return pilot_signals
 
     def _get_observation(self) -> dict[str, Any]:
         """Returns observations for the current state of simulation."""
-        self.est_departures.fill(0)
-        self.demands.fill(0)
+        self._est_departures.fill(0)
+        self._demands.fill(0)
         for session_info in self.interface.active_sessions():
             station_id = session_info.station_id
-            station_idx = self.evse_name_to_idx[station_id]
-            self.est_departures[station_idx] = session_info.estimated_departure - self.timestep
-            self.demands[station_idx] = session_info.remaining_demand  # kWh
+            station_idx = self._evse_name_to_idx[station_id]
+            self._est_departures[station_idx] = session_info.estimated_departure - self.timestep
+            self._demands[station_idx] = session_info.remaining_demand  # kWh
 
-        self.prev_moer[:] = self.moer[self.timestep, 0]
-        self.forecasted_moer[:] = self.moer[self.timestep, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
-        self.timestep_obs[0] = self.timestep / self.max_timestep
+        self._prev_moer[:] = self.moer[self.timestep, 0]
+        self._forecasted_moer[:] = self.moer[self.timestep, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
+        self._timestep_obs[0] = self.timestep / self.max_timestep
 
-        return self.obs
+        return self._obs
     
-    def _get_info(self) -> dict[str, Any]:
-        """Returns info."""
-        return {
-            'evs': self.evs,
-            'moer': self.moer,
-            'active_evs': self.simulator.get_active_evs(),
-            'pilot_signals': self.simulator.pilot_signals_as_df(),
-        }
+    def _get_info(self, all: bool = True) -> dict[str, Any]:
+        """
+        Returns info. See step().
 
-    def _get_reward(self, schedule: Mapping[str, Sequence[float]]) -> tuple[float, dict[str, float]]:
-        """Returns reward for scheduler's performance.
+        Args:
+            all: whether all information should be returned. Otherwise, only
+                'max_profit' and 'reward_breakdown' are returned.
+        """
+        if all:
+            return {
+                'num_evs': len(self.evs),
+                'avg_plugin_time': self._calculate_avg_plugin_time(),
+                'max_profit': self._calculate_max_profit(),
+                'reward_breakdown': self._reward_breakdown,
+                'evs': self.evs,
+                'active_evs': self._simulator.get_active_evs(),
+                'moer': self.moer,
+                'pilot_signals': self._simulator.pilot_signals_as_df(),
+            }
+        else:
+            return {
+                'max_profit': self._calculate_max_profit(),
+                'reward_breakdown': self._reward_breakdown,
+            }
+
+    def _calculate_avg_plugin_time(self) -> float:
+        """Calculate average plug-in times for evs in periods."""
+        return np.mean(np.array([ev.departure - ev.arrival for ev in self.evs]))
+
+    def _calculate_max_profit(self) -> float:
+        """Calculate profits without regards to network constraints."""
+        requested_energy = np.array([ev.requested_energy for ev in self.evs])
+        duration_in_periods = np.array([ev.departure - ev.arrival for ev in self.evs])
+        max_kwh_in_duration = duration_in_periods * 32 * self.A_PERS_TO_KWH
+        max_kwh_to_provide = np.minimum(requested_energy, max_kwh_in_duration)
+        max_profit = np.sum(max_kwh_to_provide * self.MARGINAL_PROFIT_PER_KWH)
+        return max_profit
+
+    def _get_reward(self, schedule: Mapping[str, Sequence[float]]) -> float:
+        """Returns reward for scheduler's performance on timestep.
 
         The reward is a weighted sum of charging rewards, carbon costs,
         and network constraint violation costs.
@@ -395,18 +438,17 @@ class EVChargingEnv(Env):
 
         Returns:
             total_reward: weighted reward awarded to the current timestep
-            info: dictionary containing the individual, unweighted
-                components making up total reward. See step().
+            info: dictionary containing the individual, unweiK
         """
         schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
-        total_charging_rate = np.sum(self.simulator.charging_rates[:, self.timestep-1:self.timestep])
+        total_charging_rate = np.sum(self._simulator.charging_rates[:, self.timestep-1:self.timestep])
 
         # profit calculation (Amp * period) -> (Amp * mins) -> (KWH) -> ($)
         profit = self.PROFIT_FACTOR * total_charging_rate
 
         # Network constraints - amount of charge over maximum allowed rates ($)
-        current_sum = np.abs(self.simulator.network.constraint_current(schedule))
-        excess_current = np.sum(np.maximum(0, current_sum - self.simulator.network.magnitudes))
+        current_sum = np.abs(self._simulator.network.constraint_current(schedule))
+        excess_current = np.sum(np.maximum(0, current_sum - self._simulator.network.magnitudes))
         excess_charge = excess_current * self.VIOLATION_FACTOR
 
         # Carbon cost ($)
@@ -414,12 +456,12 @@ class EVChargingEnv(Env):
 
         total_reward = profit - carbon_cost - excess_charge
 
-        info = {
-            'profit': profit,
-            'carbon_cost': carbon_cost,
-            'excess_charge': excess_charge,
-        }
-        return total_reward, info
+        # Update reward information-tracking
+        self._reward_breakdown['profit'] += profit
+        self._reward_breakdown['carbon_cost'] += carbon_cost
+        self._reward_breakdown['excess_charge'] += excess_charge
+
+        return total_reward
 
     def render(self) -> None:
         """Render environment."""
@@ -427,4 +469,4 @@ class EVChargingEnv(Env):
 
     def close(self) -> None:
         """Close the environment. Delete internal variables."""
-        del self.simulator, self.interface, self.events, self.cn
+        del self._simulator, self.interface, self.events, self.cn
