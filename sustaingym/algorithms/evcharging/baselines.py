@@ -55,6 +55,10 @@ class BaseAlgorithm:
             (np.ndarray) pilot signals for current timestep
         """
         raise NotImplementedError
+    
+    def reset(self) -> None:
+        """Resets the algorithm at the end of each episode."""
+        pass
 
     def run(self, seeds: Sequence[int] | int) -> pd.DataFrame:
         """Runs the scheduling algorithm and returns the resulting rewards.
@@ -83,13 +87,17 @@ class BaseAlgorithm:
             seeds = [i for i in range(seeds)]
 
         reward_breakdown: dict[str, list[float]] = {
-            'reward': [], 'profit': [], 'carbon_cost': [], 'excess_charge': [], 'max_profit': []
+            'reward': [], 'profit': [], 'carbon_cost': [], 'excess_charge': [], 'max_profit': [],
         }
 
         for seed in tqdm(seeds):
+            episode_reward = 0.0
+
             # Reset environment
             obs = self.env.reset(seed=seed)
-            episode_reward = 0.0
+
+            # Reset algorithm
+            self.reset()
 
             # Run episode until finished
             done = False
@@ -125,7 +133,7 @@ class RandomAlgorithm(BaseAlgorithm):
         if self.continuous_action_space:
             action = np.random.random(size=self.env.num_stations)
         else:
-            action = np.random.randint(0, self.D_MAX_ACTION + 1, size=self.env.num_stations)
+            action = np.random.randint(0, self.D_MAX_ACTION + 1, size=self.env.num_stations).astype(float)
         return action
 
 
@@ -209,7 +217,7 @@ class MPC(BaseAlgorithm):
         return self.traj.value[:, 0]  # take first action
 
 
-class OfflineOptimalAlgorithm(BaseAlgorithm):
+class OfflineOptimal(BaseAlgorithm):
     """Calculates best performance of a controller that knows the future.
 
     Attributes:
@@ -228,19 +236,19 @@ class OfflineOptimalAlgorithm(BaseAlgorithm):
 
         # Optimization problem setup similar to MPC
 
-        # Oracle action trajectory 
+        # Oracle action trajectory
         self.traj = cp.Variable((self.env.num_stations, self.TOTAL_TIMESTEPS), nonneg=True)
+
+        # EV charging demands (kWh)
+        self.demands = cp.Variable((self.env.num_stations, self.TOTAL_TIMESTEPS + 1), nonneg=True)
 
         # Aggregate magnitude (A) must be less than observation magnitude (A)
         phase_factor = np.exp(1j * np.deg2rad(self.env.cn._phase_angles))
         A_tilde = self.env.cn.constraint_matrix * phase_factor[None, :]
-        agg_magnitude = cp.abs(A_tilde @ self.traj) * self.env.ACTION_SCALE_FACTOR
-        magnitude_limit = np.tile(np.expand_dims(self.env.cn.magnitudes, axis=1), (1, self.TOTAL_TIMESTEPS))
-        
-        # Parameters
+        self._agg_magnitude = cp.abs(A_tilde @ self.traj) * self.env.ACTION_SCALE_FACTOR
+        self._magnitude_limit = np.tile(np.expand_dims(self.env.cn.magnitudes, axis=1), (1, self.TOTAL_TIMESTEPS))
 
-        # Current timestep demands in kWh
-        self.demands_cvx = cp.Parameter((self.env.num_stations,), nonneg=True)
+        # Parameters
 
         # Forecasted moers
         self.moers = cp.Parameter((self.TOTAL_TIMESTEPS,), nonneg=True)
@@ -251,39 +259,66 @@ class OfflineOptimalAlgorithm(BaseAlgorithm):
         # Maximize profit and minimize carbon cost subject to network constraints
         profit = cp.sum(self.traj) * self.env.PROFIT_FACTOR
         carbon_cost = cp.sum(self.traj @ self.moers) * self.env.CARBON_COST_FACTOR
-        objective = cp.Maximize(profit - carbon_cost)
-        constraints = [
+        self._objective = cp.Maximize(profit - carbon_cost)
+
+        self.reset()
+    
+    def reset(self) -> None:
+        """Reset timestep count."""
+        self._constraints = [
             # Cannot charge after EV leaves using estimation as a proxy
-            self.traj <= self.mask,
-            # Cannot overcharge demand
-            cp.sum(self.traj, axis=1) <= self.demands_cvx / self.env.A_PERS_TO_KWH / self.env.ACTION_SCALE_FACTOR,
+            self.traj <= self.mask[:, :self.TOTAL_TIMESTEPS],
             # Cannot break network constraints
-            agg_magnitude <= magnitude_limit
+            self._agg_magnitude <= self._magnitude_limit
         ]
 
-        # Formulate problem
-        self.prob = cp.Problem(objective, constraints)
-        assert self.prob.is_dpp() and self.prob.is_dcp()
+        self.timestep = 0
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
-        """Returns first action of the MPC trajectory."""
-        # TODO
-        # self.demands_cvx.value = observation['demands']
-        # self.moers.value = observation['forecasted_moer'][:self.lookahead]
+        """
+        On first call, get action for all timesteps (should be directly
+        after environment reset).
+        """
+        if self.timestep == 0:
+            # Set marginal emissions to true future rates
+            self.moers.value = self.env.moer[:self.TOTAL_TIMESTEPS, 0]
 
-        # # If estimated departure has already passed, assume car will stay for 1 timestep
-        # cur_est_dep = np.maximum(1., observation['est_departures']).astype(np.int32)
-        # cur_est_dep = np.where(observation['demands'] > 0, cur_est_dep, 0)
+            # Convert station id to index in charging network
+            station_idx = {evse: i for i, evse in enumerate(self.env.cn.station_ids)}
 
-        # mask = np.zeros((self.env.num_stations, self.lookahead))
-        # for i in range(self.env.num_stations):
-        #     # Max action capped at 1 always
-        #     mask[i, :cur_est_dep[i]] = self.MAX_ACTION
-        # self.mask.value = mask
+            charge_periods = [ev for ev in self.env.evs]
 
-        # solve_optimization_problem(self.prob)
-        # return self.traj.value[:, 0]  # take first action
+            mask = np.zeros((self.env.num_stations, self.TOTAL_TIMESTEPS))
+            for ev in charge_periods:
+                ev_idx = station_idx[ev.station_id]
+                # Set mask using true arrival and departures
+                mask[ev_idx, ev.arrival:ev.departure] = self.MAX_ACTION
 
+                # Set starting demand constraints
+                self._constraints.append(self.demands[ev_idx, ev.arrival] == \
+                    ev.requested_energy / self.env.A_PERS_TO_KWH / self.env.ACTION_SCALE_FACTOR)
+                
+                # Set inter-period charge and remaining demand constraints
+                if ev.arrival + 1 < ev.departure:
+                    self._constraints.append(
+                        self.demands[ev_idx, ev.arrival+1:ev.departure] \
+                            == self.demands[ev_idx, ev.arrival:ev.departure-1] \
+                            - self.traj[ev_idx, ev.arrival:ev.departure-1])
+            self.mask.value = mask
+
+            # Formulate problem
+            self.prob = cp.Problem(self._objective, self._constraints)
+            assert self.prob.is_dpp() and self.prob.is_dcp()
+
+            solve_optimization_problem(self.prob)
+
+        try:
+            action = self.traj.value[:, self.timestep]
+        except IndexError as e:
+            print(self.timestep)
+            action = np.zeros((54,))
+        self.timestep += 1
+        return action
 
 
 class RLAlgorithm(BaseAlgorithm):
