@@ -9,6 +9,7 @@ from typing import Any
 import cvxpy as cp
 from gym import spaces
 import numpy as np
+import pandas as pd
 from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
 from tqdm import tqdm
 
@@ -16,135 +17,141 @@ from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 from sustaingym.envs.evcharging.utils import solve_optimization_problem
 
 
-class BaseOnlineAlgorithm:
-    """Abstract class for online scheduling algorithms for EVChargingEnv.
+class BaseAlgorithm:
+    """Base abstract class for EVChargingGym scheduling algorithms.
 
     Subclasses are expected to implement the get_action() method.
-    """
-    # Continuous maximum action
-    C_MAX_ACTION = 1
 
-    # Discrete maximum action
+    Attributes:
+        env (EVChargingEnv): EV charging environment
+        continuous_action_space (bool): type of action output so the gym's
+            DiscreteActionWrapper may be used.
+    """
+    # Default maximum action for gym (default continuous action space)
+    MAX_ACTION = 1
+
+    # Discrete maximum action for action wrapper
     D_MAX_ACTION = 4
 
     def __init__(self, env: EVChargingEnv):
         """
         Args:
-            env: EV charging environment
+            env (EVChargingEnv): EV charging environment
         """
         self.env = env
         self.continuous_action_space = isinstance(self.env.action_space, spaces.Box)
     
     def _get_max_action(self) -> int:
-        return self.C_MAX_ACTION if self.continuous_action_space else self.D_MAX_ACTION
+        """Returns maximum action depending on type of action space."""
+        return self.MAX_ACTION if self.continuous_action_space else self.D_MAX_ACTION
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """Returns an action based on gym observations.
 
         Args:
-            observation: information concerning the current state of charge
-                in the EV Charging gym.
+            observation: observation from EVChargingEnv.
 
         Returns:
-            (np.ndarray) next action
+            (np.ndarray) pilot signals for current timestep
         """
         raise NotImplementedError
 
-    def run(self, seeds: Sequence[int] | int) -> dict[str, list[float]]:
+    def run(self, seeds: Sequence[int] | int) -> pd.DataFrame:
         """Runs the scheduling algorithm and returns the resulting rewards.
 
-        Runs the scheduling algorithm for the current period and returns the
-        resulting reward.
+        Runs the scheduling algorithm for the date period of event generation
+        and returns the resulting reward.
 
         Args:
-            seeds: list of randoms seeds to set environment to a particular day
-                or an integer for the number of times to evaluate.
+            seeds: if a list, on each episode run, EVChargingEnv is reset using
+                the seed. If an integer, a list is created using np.arange(seeds)
+                and used to reset the gym instead. If the data generator is a
+                RealTraceGenerator with sequential set to True and the input to
+                seeds is an integer, this method runs the algorithm on each day
+                in the period sequentially.
 
         Returns:
-            total_rewards: list of total rewards for each episode
-            dict of list of each individual reward component
+            DataFrame of length len(seeds) or seeds containing reward info.
+                reward                    float64
+                profit                    float64
+                carbon_cost               float64
+                excess_charge             float64
+                max_profit                float64
+            See EVChargingEnv for more info.
         """
         if isinstance(seeds, int):
             seeds = [i for i in range(seeds)]
 
-        reward_breakdown = {
-            'reward': [], 'profit': [], 'carbon_cost': [], 'excess_charge': []
+        reward_breakdown: dict[str, list[float]] = {
+            'reward': [], 'profit': [], 'carbon_cost': [], 'excess_charge': [], 'max_profit': []
         }
 
-        print("Seeds: ", seeds)
         for seed in tqdm(seeds):
             # Reset environment
             obs = self.env.reset(seed=seed)
             episode_reward = 0.0
-            
-            print(repr(self.env))
 
             # Run episode until finished
             done = False
-
             while not done:
                 action = self.get_action(obs)
                 obs, reward, done, info = self.env.step(action)
                 episode_reward += reward
 
+            # Collect reward info from environment
             for rb in info['reward_breakdown']:
-                reward_breakdown[rb] += info['reward_breakdown'][rb]
+                reward_breakdown[rb].append(info['reward_breakdown'][rb])
             reward_breakdown['reward'].append(episode_reward)
+            reward_breakdown['max_profit'].append(info['max_profit'])
 
-        return reward_breakdown
+        return pd.DataFrame(reward_breakdown)
 
 
-class GreedyAlgorithm(BaseOnlineAlgorithm):
-    """Class for greedy charging at each time step."""
+class GreedyAlgorithm(BaseAlgorithm):
+    """
+    Per-time step greedy charging. Whether the action space is continuous or
+    discrete, GreedyAlgorithm outputs the maximum pilot signal allowed.
+    """
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
-        """Returns greedy charging action.
-
-        Args:
-            *See get_action() in BaseOnlineAlgorithm.
-
-        Returns:
-            *See get_action() in BaseOnlineAlgorithm.
-        """
+        """Returns greedy charging action."""
         # Send full charging rate wherever demands are non-zero
         return np.where(observation['demands'] > 0, self._get_max_action(), 0)
 
 
-class RandomAlgorithm(BaseOnlineAlgorithm):
-    """Class for random charging at each time step."""
+class RandomAlgorithm(BaseAlgorithm):
+    """Random action."""
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
-        """Returns random charging action.
-
-        Args:
-            *See get_action() in BaseOnlineAlgorithm.
-
-        Returns:
-            *See get_action() in BaseOnlineAlgorithm.
-        """
+        """Returns random charging action."""
         if self.continuous_action_space:
-            action = np.random.randint(0, 5, size=self.env.num_stations)
-        else:
             action = np.random.random(size=self.env.num_stations)
+        else:
+            action = np.random.randint(0, self.D_MAX_ACTION + 1, size=self.env.num_stations)
         return action
 
 
-class MPC(BaseOnlineAlgorithm):
+class MPC(BaseAlgorithm):
     """Model predictive control.
 
     Attributes:
-
-        first_run: if True, cvxpy needs setting up
-        lookahead: number of timesteps to forecast future trajectory
+        lookahead: number of timesteps to forecast future trajectory. Note that
+            MPC cannot see future car arrivals and does not take them into
+            account.
+        *See BaseAlgorithm for more attributes.
     """
-    def __init__(self, lookahead: int = 12):
+    def __init__(self, env: EVChargingEnv, lookahead: int = 12):
         """
         Args:
+            env (EVChargingEnv): EV charging environment
             lookahead: number of timesteps to forecast future trajectory
-            less than environment's moer_forecast_steps
         """
-        super(BaseOnlineAlgorithm, self).__init__()
+        super().__init__(env)
+        assert self.continuous_action_space, \
+            "MPC only supports continuous action space"
         self.lookahead = lookahead
+        assert self.lookahead <= self.env.moer_forecast_steps, \
+            "MPC lookahead must be less than forecasted timesteps"
 
-        # Optimization problem setup similar to action projection
+        # Optimization problem setup
 
         # MPC action trajectory 
         self.traj = cp.Variable((self.env.num_stations, self.lookahead), nonneg=True)
@@ -183,7 +190,7 @@ class MPC(BaseOnlineAlgorithm):
         self.prob = cp.Problem(objective, constraints)
         assert self.prob.is_dpp() and self.prob.is_dcp()
 
-    def get_action(self, observation: dict[str, Any], env: EVChargingEnv) -> np.ndarray:
+    def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """Returns first action of the MPC trajectory."""
         self.demands_cvx.value = observation['demands']
         self.moers.value = observation['forecasted_moer'][:self.lookahead]
@@ -192,41 +199,39 @@ class MPC(BaseOnlineAlgorithm):
         cur_est_dep = np.maximum(1., observation['est_departures']).astype(np.int32)
         cur_est_dep = np.where(observation['demands'] > 0, cur_est_dep, 0)
 
-        mask = np.zeros((env.num_stations, self.lookahead))
-        for i in range(env.num_stations):
-            mask[i, :cur_est_dep[i]] = self._get_max_action()
+        mask = np.zeros((self.env.num_stations, self.lookahead))
+        for i in range(self.env.num_stations):
+            # Max action capped at 1 always
+            mask[i, :cur_est_dep[i]] = self.MAX_ACTION
         self.mask.value = mask
 
         solve_optimization_problem(self.prob)
         return self.traj.value[:, 0]  # take first action
 
 
-class RLAlgorithm(BaseOnlineAlgorithm):
-    """Uses output of RL algorithm as action.
+class RLAlgorithm(BaseAlgorithm):
+    """RL algorithm wrapper.
 
     Attributes:
-        rl_model: stable baselines RL model
-        project_action: whether environment's action projection should be used
+        env (EVChargingEnv): EV charging environment
+        rl_model (OnPolicyAlgorithm): can be from stable baselines
     """
-    def __init__(self, rl_model: OnPolicyAlgorithm):
+    def __init__(self, env: EVChargingEnv, rl_model: OnPolicyAlgorithm):
         """
         Args:
-            rl_model: stable baselines RL model
-            name: algorithm identifier
+            env (EVChargingEnv): EV charging environment
+            rl_model (OnPolicyAlgorithm): can be from stable baselines
         """
+        super().__init__(env)
         self.rl_model = rl_model
 
-    def get_action(self, observation: dict[str, Any], env: EVChargingEnv) -> np.ndarray:
+    def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """Returns output of RL model.
 
         Args:
-            *See get_action() in BaseOnlineAlgorithm.
+            *See get_action() in BaseAlgorithm.
 
         Returns:
-            *See get_action() in BaseOnlineAlgorithm.
+            *See get_action() in BaseAlgorithm.
         """
-        action = self.rl_model.predict(observation, deterministic=True)[0]
-        if self.project_action:
-            return env.project_action(action)
-        return action
-
+        return self.rl_model.predict(observation, deterministic=True)[0]
