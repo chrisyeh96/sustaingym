@@ -209,6 +209,83 @@ class MPC(BaseAlgorithm):
         return self.traj.value[:, 0]  # take first action
 
 
+class OfflineOptimalAlgorithm(BaseAlgorithm):
+    """Calculates best performance of a controller that knows the future.
+
+    Attributes:
+        *See BaseAlgorithm for more attributes.
+    """
+    TOTAL_TIMESTEPS = 288
+
+    def __init__(self, env: EVChargingEnv):
+        """
+        Args:
+            env (EVChargingEnv): EV charging environment
+        """
+        super().__init__(env)
+        assert self.continuous_action_space, \
+            "Offline optimal only supports continuous action space"
+
+        # Optimization problem setup similar to MPC
+
+        # Oracle action trajectory 
+        self.traj = cp.Variable((self.env.num_stations, self.TOTAL_TIMESTEPS), nonneg=True)
+
+        # Aggregate magnitude (A) must be less than observation magnitude (A)
+        phase_factor = np.exp(1j * np.deg2rad(self.env.cn._phase_angles))
+        A_tilde = self.env.cn.constraint_matrix * phase_factor[None, :]
+        agg_magnitude = cp.abs(A_tilde @ self.traj) * self.env.ACTION_SCALE_FACTOR
+        magnitude_limit = np.tile(np.expand_dims(self.env.cn.magnitudes, axis=1), (1, self.TOTAL_TIMESTEPS))
+        
+        # Parameters
+
+        # Current timestep demands in kWh
+        self.demands_cvx = cp.Parameter((self.env.num_stations,), nonneg=True)
+
+        # Forecasted moers
+        self.moers = cp.Parameter((self.TOTAL_TIMESTEPS,), nonneg=True)
+
+        # Boolean mask for when an EV is expected to leave
+        self.mask = cp.Parameter((self.env.num_stations, self.TOTAL_TIMESTEPS), nonneg=True)
+
+        # Maximize profit and minimize carbon cost subject to network constraints
+        profit = cp.sum(self.traj) * self.env.PROFIT_FACTOR
+        carbon_cost = cp.sum(self.traj @ self.moers) * self.env.CARBON_COST_FACTOR
+        objective = cp.Maximize(profit - carbon_cost)
+        constraints = [
+            # Cannot charge after EV leaves using estimation as a proxy
+            self.traj <= self.mask,
+            # Cannot overcharge demand
+            cp.sum(self.traj, axis=1) <= self.demands_cvx / self.env.A_PERS_TO_KWH / self.env.ACTION_SCALE_FACTOR,
+            # Cannot break network constraints
+            agg_magnitude <= magnitude_limit
+        ]
+
+        # Formulate problem
+        self.prob = cp.Problem(objective, constraints)
+        assert self.prob.is_dpp() and self.prob.is_dcp()
+
+    def get_action(self, observation: dict[str, Any]) -> np.ndarray:
+        """Returns first action of the MPC trajectory."""
+        # TODO
+        # self.demands_cvx.value = observation['demands']
+        # self.moers.value = observation['forecasted_moer'][:self.lookahead]
+
+        # # If estimated departure has already passed, assume car will stay for 1 timestep
+        # cur_est_dep = np.maximum(1., observation['est_departures']).astype(np.int32)
+        # cur_est_dep = np.where(observation['demands'] > 0, cur_est_dep, 0)
+
+        # mask = np.zeros((self.env.num_stations, self.lookahead))
+        # for i in range(self.env.num_stations):
+        #     # Max action capped at 1 always
+        #     mask[i, :cur_est_dep[i]] = self.MAX_ACTION
+        # self.mask.value = mask
+
+        # solve_optimization_problem(self.prob)
+        # return self.traj.value[:, 0]  # take first action
+
+
+
 class RLAlgorithm(BaseAlgorithm):
     """RL algorithm wrapper.
 
