@@ -12,12 +12,12 @@ import pickle
 from typing import Callable
 
 import numpy as np
-from stable_baselines3 import PPO, A2C
+from stable_baselines3 import PPO, A2C, SAC
 from stable_baselines3.common.callbacks import EvalCallback, CallbackList
 from stable_baselines3.common.vec_env import SubprocVecEnv
 
 from sustaingym.envs.evcharging import EVChargingEnv, GMMsTraceGenerator, RealTraceGenerator
-from sustaingym.algorithms.evcharging.base_algorithm import RLAlgorithm
+from sustaingym.algorithms.evcharging.baselines import RLAlgorithm
 
 NUM_SUBPROCESSES = 4
 TIMESTEPS = 250_000
@@ -47,6 +47,19 @@ def num_days_in_period(full: bool, dp: str) -> int:
 
 
 def get_env(full: bool, real_trace: bool, dp: str, site: str, project_action_in_env: bool, seed: int=None) -> Callable:
+    """Return environment.
+
+    Args:
+        full: if True, use full season; otherwise, use sample 2 weeks
+        real_trace: choice of generator
+        dp: 'summer2019', 'fall2019', 'spring2020', 'summer2021'
+        site: 'caltech' or 'jpl'
+        project_action_in_env: whether action projection should be done
+        seed: seed for GMMs generator
+    
+    Returns:
+        Callable of environment
+    """
     d = FULL_PERIODS if full else SAMPLE_EVAL_PERIODS
     date_period = d[dp]
 
@@ -253,7 +266,7 @@ if __name__ == '__main__':
     callbacks = CallbackList(callbacks)
 
     # Create model
-    models = {'ppo': PPO, 'a2c': A2C}
+    models = {'ppo': PPO, 'a2c': A2C, 'sac': SAC }
     model = models[args.model]('MultiInputPolicy', train_envs, seed=args.seed)
 
     # Train model
