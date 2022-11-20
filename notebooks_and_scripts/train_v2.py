@@ -1,7 +1,5 @@
-"""RL training script for training RL agent, periodically evaluating it, and
-testing it on an entire period at the end. Uses 4 subprocesses to collect
-trajectories in parallel.
-"""
+"""RL training script."""
+from __future__ import annotations
 
 import argparse
 from argparse import RawTextHelpFormatter
@@ -9,19 +7,123 @@ from datetime import datetime
 import gc
 import os
 import pickle
-from typing import Callable
+from typing import Callable, Optional, Union
 
+import gym
 import numpy as np
+import pandas as pd
 from stable_baselines3 import PPO, A2C, SAC
-from stable_baselines3.common.callbacks import EvalCallback, CallbackList
-from stable_baselines3.common.vec_env import SubprocVecEnv
+from stable_baselines3.common.callbacks import BaseCallback, EvalCallback, CallbackList
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecEnv, sync_envs_normalization
 
 from sustaingym.envs.evcharging import EVChargingEnv, GMMsTraceGenerator, RealTraceGenerator
 from sustaingym.algorithms.evcharging.baselines import RLAlgorithm
+from sustaingym.envs.evcharging.utils import DATE_FORMAT
+
+
+class EvalCallbackWithBreakdown(EvalCallback):
+    """
+    Modifies EvalCallback's on_step to save reward breakdown during training.
+    """
+    def __init__(
+        self,
+        eval_env: Union[gym.Env, VecEnv],
+        callback_on_new_best: Optional[BaseCallback] = None,
+        callback_after_eval: Optional[BaseCallback] = None,
+        n_eval_episodes: int = 5,
+        eval_freq: int = 10000,
+        log_path: Optional[str] = None,
+        best_model_save_path: Optional[str] = None,
+        verbose: int = 1,
+    ):
+        super().__init__(eval_env, callback_on_new_best, callback_after_eval,
+                         n_eval_episodes, eval_freq, log_path, best_model_save_path,
+                         True, False, verbose, True)
+        self.eval_env = eval_env
+        self.results = pd.DataFrame({})
+
+    def _on_step(self) -> bool:
+
+        continue_training = True
+
+        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+
+            # Sync training and eval env if there is VecNormalize
+            if self.model.get_vec_normalize_env() is not None:
+                try:
+                    sync_envs_normalization(self.training_env, self.eval_env)
+                except AttributeError as e:
+                    raise AssertionError(
+                        "Training and eval env are not wrapped the same way, "
+                        "see https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html#evalcallback "
+                        "and warning above."
+                    ) from e
+
+            # Reset success rate buffer
+            self._is_success_buffer = []
+
+            algorithm = RLAlgorithm(self.eval_env, self.model)
+            results = algorithm.run(self.n_eval_episodes)
+            results['timestep'] = self.num_timesteps
+            self.results = pd.concat([self.results, results])
+
+            if self.log_path is not None:
+                # Save results to csv
+                self.results.to_csv(self.log_path, compression='gzip', index=False)
+
+                # Save success log if present
+                if len(self._is_success_buffer) > 0:
+                    self.evaluations_successes.append(self._is_success_buffer)
+
+            rewards = np.array(results['reward'])
+            mean_reward, std_reward = np.mean(rewards), np.std(rewards)
+            self.last_mean_reward = mean_reward
+
+            if self.verbose > 0:
+                print(f"Eval num_timesteps={self.num_timesteps}, " f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
+            # Add to current Logger
+            self.logger.record("eval/mean_reward", float(mean_reward))
+
+            if len(self._is_success_buffer) > 0:
+                success_rate = np.mean(self._is_success_buffer)
+                if self.verbose > 0:
+                    print(f"Success rate: {100 * success_rate:.2f}%")
+                self.logger.record("eval/success_rate", success_rate)
+
+            # Dump log so the evaluation results are printed with the correct timestep
+            self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
+            self.logger.dump(self.num_timesteps)
+
+            # Handle new best mean reward
+            if mean_reward > self.best_mean_reward:
+                if self.verbose > 0:
+                    print("New best mean reward!")
+                if self.best_model_save_path is not None:
+                    self.model.save(os.path.join(self.best_model_save_path, "best_model"))
+                self.best_mean_reward = mean_reward
+                # Trigger callback on new best model, if needed
+                if self.callback_on_new_best is not None:
+                    continue_training = self.callback_on_new_best.on_step()
+
+            # Trigger callback after every evaluation, if needed
+            if self.callback is not None:
+                continue_training = continue_training and self._on_event()
+
+        return continue_training
+
+
+
+def run_
+
+
+# Run 3x PPO discrete/continuous, A2C discrete/continuous, SAC
+# def run_
+
+
 
 NUM_SUBPROCESSES = 4
 TIMESTEPS = 250_000
-EVAL_FREQ = 10_000 #10_000
+EVAL_FREQ = 10_000
 
 DATE_FORMAT = '%Y-%m-%d'
 FULL_PERIODS = {
@@ -70,131 +172,6 @@ def get_env(full: bool, real_trace: bool, dp: str, site: str, project_action_in_
             gen = GMMsTraceGenerator(site, date_period, seed=seed)
         return EVChargingEnv(gen, action_type='discrete', project_action_in_env=project_action_in_env)
     return _get_env
-
-
-### Copied from stable-baselines3
-import os
-import warnings
-from abc import ABC, abstractmethod
-from typing import Any, Callable, Dict, List, Optional, Union
-
-import gym
-import numpy as np
-
-from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
-from stable_baselines3.common import base_class  # pytype: disable=pyi-error
-from stable_baselines3.common.evaluation import evaluate_policy
-from stable_baselines3.common.vec_env import DummyVecEnv, VecEnv, sync_envs_normalization
-
-
-# class EvalCallbackWithBreakdown(EvalCallback):
-#     """
-#     Modifies EvalCallback's on_step to save reward breakdown during training.
-#     """
-
-#     def __init__(
-#         self,
-#         eval_env: Union[gym.Env, VecEnv],
-#         callback_on_new_best: Optional[BaseCallback] = None,
-#         callback_after_eval: Optional[BaseCallback] = None,
-#         n_eval_episodes: int = 5,
-#         eval_freq: int = 10000,
-#         log_path: Optional[str] = None,
-#         best_model_save_path: Optional[str] = None,
-#         verbose: int = 1,
-#         project_action: bool = True
-#     ):
-#         super().__init__(eval_env, callback_on_new_best, callback_after_eval,
-#                          n_eval_episodes, eval_freq, log_path, best_model_save_path,
-#                          True, False, verbose, True)
-#         self.eval_env = eval_env
-#         self.project_action = project_action
-
-#         self.breakdown_results = {
-#             'profit': [],
-#             'carbon_cost': [],
-#             'excess_charge': [],
-#         }
-
-#     def _on_step(self) -> bool:
-
-#         continue_training = True
-
-#         if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
-
-#             # Sync training and eval env if there is VecNormalize
-#             if self.model.get_vec_normalize_env() is not None:
-#                 try:
-#                     sync_envs_normalization(self.training_env, self.eval_env)
-#                 except AttributeError as e:
-#                     raise AssertionError(
-#                         "Training and eval env are not wrapped the same way, "
-#                         "see https://stable-baselines3.readthedocs.io/en/master/guide/callbacks.html#evalcallback "
-#                         "and warning above."
-#                     ) from e
-
-#             # Reset success rate buffer
-#             self._is_success_buffer = []
-
-#             algorithm = RLAlgorithm(self.model, project_action=self.project_action)
-#             episode_rewards, breakdown = algorithm.run(self.n_eval_episodes, self.eval_env)
-
-#             if self.log_path is not None:
-#                 self.evaluations_timesteps.append(self.num_timesteps)
-#                 self.evaluations_results.append(episode_rewards)
-
-#                 for c in breakdown:
-#                     self.breakdown_results[c].append(breakdown[c])
-
-#                 kwargs = {}
-#                 # Save success log if present
-#                 if len(self._is_success_buffer) > 0:
-#                     self.evaluations_successes.append(self._is_success_buffer)
-#                     kwargs = dict(successes=self.evaluations_successes)
-
-#                 np.savez(
-#                     self.log_path,
-#                     timesteps=self.evaluations_timesteps,
-#                     results=self.evaluations_results,
-#                     profit=self.breakdown_results['profit'],
-#                     carbon_cost=self.breakdown_results['carbon_cost'],
-#                     excess_charge=self.breakdown_results['excess_charge'],
-#                     **kwargs,
-#                 )
-
-#             mean_reward, std_reward = np.mean(episode_rewards), np.std(episode_rewards)
-#             self.last_mean_reward = mean_reward
-
-#             if self.verbose > 0:
-#                 print(f"Eval num_timesteps={self.num_timesteps}, " f"episode_reward={mean_reward:.2f} +/- {std_reward:.2f}")
-#             # Add to current Logger
-#             self.logger.record("eval/mean_reward", float(mean_reward))
-
-#             if len(self._is_success_buffer) > 0:
-#                 success_rate = np.mean(self._is_success_buffer)
-#                 if self.verbose > 0:
-#                     print(f"Success rate: {100 * success_rate:.2f}%")
-#                 self.logger.record("eval/success_rate", success_rate)
-
-#             # Dump log so the evaluation results are printed with the correct timestep
-#             self.logger.record("time/total_timesteps", self.num_timesteps, exclude="tensorboard")
-#             self.logger.dump(self.num_timesteps)
-
-#             if mean_reward > self.best_mean_reward:
-#                 if self.verbose > 0:
-#                     print("New best mean reward!")
-#                 if self.best_model_save_path is not None:
-#                     self.model.save(os.path.join(self.best_model_save_path, "best_model"))
-#                 self.best_mean_reward = mean_reward
-#                 # Trigger callback on new best model, if needed
-#                 if self.callback_on_new_best is not None:
-#                     continue_training = self.callback_on_new_best.on_step()
-
-#             # Trigger callback after every evaluation, if needed
-#             if self.callback is not None:
-#                 continue_training = continue_training and self._on_event()
-
-#         return continue_training
 
 
 if __name__ == '__main__':
