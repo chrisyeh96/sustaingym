@@ -9,12 +9,16 @@ import pytz
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+import seaborn as sns
 
 from sustaingym.envs.evcharging import utils
 from sustaingym.envs.evcharging.train_gmm_model import preprocess
-from sustaingym.envs.evcharging.utils import DATE_FORMAT, AM_LA, DEFAULT_PERIOD_TO_RANGE
+from sustaingym.envs.evcharging.utils import \
+    DATE_FORMAT, AM_LA, DEFAULT_PERIOD_TO_RANGE, SiteStr, DefaultPeriodStr
 
-def plot_gmm_fit(site):
+
+def plot_gmm_fit(site: SiteStr) -> None:
+    """Plot actual arrival/departures against GMM PDF contours."""
     seasons = ['Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer 2021']
     periods, dfs, gmms, pdfs = [], [], [], []
 
@@ -85,7 +89,38 @@ def plot_gmm_fit(site):
     cbar.ax.set_ylabel('log-likelihood', rotation=270)
     fig.savefig(f'plots/gmms_fit_{site}.png', dpi=300, pad_inches=0)
 
+
+def read_baseline(site: SiteStr, period: DefaultPeriodStr, algorithm: str) -> pd.DataFrame:
+    """Read reward results from csv files."""
+    return pd.read_csv(f'logs/baselines/{site}_{period}_{algorithm}.csv', compression='gzip')
+
+
+def plot_violins(site: SiteStr, period: DefaultPeriodStr) -> None:
+    """Plot violin plots for baselines."""
+    algs = ['greedy', 'random_continuous', 'random_discrete']
+    for window in [1, 3, 6, 12, 24]:
+        algs.append(f'mpc_{window}')
+
+    records = []
+    for alg in algs:
+        df = read_baseline(site, period, alg)
+        reward = list(np.array(df.reward))
+        for r in reward:
+            records.append((alg, r))
+
+    fig, ax = plt.subplots(figsize=(6, 4), tight_layout=True)
+    df = pd.DataFrame.from_records(records, columns=['alg', 'reward'])
+    sns.violinplot(data=df, x='alg', y='reward', ax=ax)
+    ax.set(xlabel='Algorithm', ylabel="Reward ($)")
+    ax.set_xticklabels(algs, rotation=30)
+    fig.savefig(f'plots/violins_{site}_{period}.png', dpi=300, pad_inches=0)
+
+
 if __name__ == '__main__':
+    pass
     # # Plot gmm fits
     # plot_gmm_fit('caltech')
     # plot_gmm_fit('jpl')
+
+    # # Plot violin plot
+    # plot_violins('caltech', 'Summer 2021')

@@ -112,9 +112,12 @@ def run_all(site: SiteStr, **kwargs) -> None:
         run_period(period, site, **kwargs)
 
 
+
+
+
 if __name__ == '__main__':
     # Run everything but offline optimal
     run_all('caltech', with_optimal=False, with_everything_else=True)
 
-    # Offline optimal took a while
-    run_all('caltech', with_optimal=True, with_everything_else=False)
+    # # Offline optimal took a while
+    # run_all('caltech', with_optimal=True, with_everything_else=False)
