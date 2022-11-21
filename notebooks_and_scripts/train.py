@@ -1,20 +1,33 @@
 """RL training script.
 
-usage: train_v2.py [-h] -n EXPERIMENT_IDENTIFIER [-s SITE] [-r RANDOM_SEED]
-                   [-p PROJECT_ACTION]
+usage: train.py [-h] -n EXPERIMENT_IDENTIFIER -t TRAIN [TRAIN ...] -e TEST
+                [TEST ...] [-s SITE] [-d | --discrete | --no-discrete] -m
+                MODEL_NAME [-l LR] [-g GAMMA] [-o LOG_DIR] [-r RANDOM_SEED]
 
 train models on EVChargingEnv
 
 optional arguments:
   -h, --help            show this help message and exit
   -n EXPERIMENT_IDENTIFIER, --experiment_identifier EXPERIMENT_IDENTIFIER
+  -t TRAIN [TRAIN ...], --train TRAIN [TRAIN ...]
+                        Season. 'Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer
+                        2021' (default: None)
+  -e TEST [TEST ...], --test TEST [TEST ...]
+                        Season. 'Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer
+                        2021' (default: None)
   -s SITE, --site SITE  site of garage. caltech or jpl (default: caltech)
+  -d, --discrete, --no-discrete
+  -m MODEL_NAME, --model_name MODEL_NAME
+                        type of model. SAC, PPO, or A2C. DQN or DDPG currently not
+                        supported (default: None)
+  -l LR, --lr LR        learning rate (default: 0.0003)
+  -g GAMMA, --gamma GAMMA
+                        discount factor, between 0 and 1 (default: 0.9999)
+  -o LOG_DIR, --log_dir LOG_DIR
+                        directory for saving logs and models (default: ./logs)
   -r RANDOM_SEED, --random_seed RANDOM_SEED
                         random seed (default: 0)
-  -p PROJECT_ACTION, --project_action PROJECT_ACTION
-                        whether to action-project in gym (default: True)
 """
-# Run 3x PPO discrete/continuous, A2C discrete/continuous, SAC
 from __future__ import annotations
 
 import argparse
@@ -41,7 +54,7 @@ from sustaingym.envs.evcharging.utils import \
 
 
 NUM_SUBPROCESSES = 4
-TIMESTEPS = 20_000 # 250_000
+TIMESTEPS = 250_000
 EVAL_FREQ = 10_000
 SAMPLE_EVAL_PERIODS = {
     'Summer 2019':   ('2019-07-01', '2019-07-14'),
@@ -155,9 +168,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         '-s', '--site', type=str, default='caltech',
         help='site of garage. caltech or jpl')
-    parser.add_argument(
-        '-d', '--discrete', type=bool, default=False,
-        help='whether to use discretized actions, default continuous')
+    parser.add_argument('-d', '--discrete', action=argparse.BooleanOptionalAction)
     parser.add_argument(
         '-m', '--model_name', type=str, required=True,  ##
         help='type of model. SAC, PPO, or A2C. DQN or DDPG currently not supported')
@@ -181,7 +192,7 @@ def build_save_path(args: argparse.Namespace) -> str:
     if not os.path.exists(args.log_dir):
         print('Creating log directory at:', args.log_dir)
         os.makedirs(args.log_dir)
-    
+
     discrete_tag = '_discrete' if args.discrete else ''
     save_path = f'{args.log_dir}/{args.model_name}{discrete_tag}/exp{args.experiment_identifier}'
     if not os.path.exists(save_path):
@@ -283,7 +294,7 @@ def setup_envs(args: argparse.Namespace, save_path: str) -> \
 
 def printout_before_train(args: argparse.Namespace,
                           save_path: str,
-                          start: float,
+                          start: datetime,
                           verbose: int = 1) -> None:
     """Print experiment information befure training."""
     if verbose > 0:
