@@ -9,23 +9,8 @@ examples/DQN*
 examples/SAC*
 examples/PPO*
 examples/old
-algo_comp_2019.png
-algo_comp_2021.png
-model_PPO_2019_5.zip
-prices_and_soc_over_episode.png
-reward_over_epsiode.png
-notebooks/.ipynb_checkpoints
-sustaingym/__pycache__
-examples/.ipynb_checkpoints
-sustaingym/envs/battery/.mypy_cache
-sustaingym/envs/battery/__pycache__
-sustaingym/evaluate/__pycache__
-sustaingym/tests/a2c_simple_battery_env.zip
-sustaingym/tests/a2c_single_agent_battery_env.zip
-sustaingym/tests/ddpg_simple_battery_env.zip
-sustaingym/tests/ppo_simple_battery_env.zip
-sustaingym/tests/simple_battery_env_tests.ipynb
-sustaingym/tests/td3_simple_battery_env.zip
+*.png
+sustaingym/tests/*.zip
 ## END CUSTOM EXCLUSIONS
 
 # Byte-compiled / optimized / DLL files
