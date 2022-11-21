@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+from sklearn.mixture import GaussianMixture
 
 from sustaingym.envs.evcharging import utils
 from sustaingym.envs.evcharging.train_gmm_model import preprocess
@@ -39,7 +40,7 @@ def plot_gmm_fit(site: SiteStr) -> None:
         dfs.append(df)
 
         gmm_model = utils.load_gmm_model(site, period[0], period[1], 30)
-        gmm = gmm_model['gmm']
+        gmm: GaussianMixture = gmm_model['gmm']
         gmms.append(gmm)
 
         # Calculate conditional mean for estimated departure, requested energy
@@ -96,6 +97,40 @@ def read_baseline(site: SiteStr, period: DefaultPeriodStr, algorithm: str) -> pd
     return pd.read_csv(f'logs/baselines/{site}_{period}_{algorithm}.csv', compression='gzip')
 
 
+def plot_cross_scores():
+    fig, axes = plt.subplots(1, 2, figsize=(10, 5))
+    fig.suptitle('30-component GMM Average Log-Likelihood Scores')
+
+    for site_number, site in enumerate(['caltech', 'jpl']):
+        seasons = ['Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer 2021']
+        periods, dfs, gmms = [], [], []
+        for season in seasons:
+            period = (datetime.strptime(utils.DEFAULT_PERIOD_TO_RANGE[season][0], DATE_FORMAT).replace(tzinfo=AM_LA),
+                    datetime.strptime(utils.DEFAULT_PERIOD_TO_RANGE[season][1], DATE_FORMAT).replace(tzinfo=AM_LA))
+            periods.append(period)
+
+            df = preprocess(utils.get_real_events(period[0], period[1], site))
+            dfs.append(df)
+
+            gmm = utils.load_gmm_model(site, period[0], period[1], 30)['gmm']
+            gmms.append(gmm)
+
+        train_cols = {season: [] for season in seasons}
+
+        for i, train_season in enumerate(seasons):
+            for j, _ in enumerate(seasons):
+                train_cols[train_season].append(gmms[i].score(dfs[j]))
+
+        cross_scores = pd.DataFrame(train_cols, index=seasons)
+        print(cross_scores)
+        sns.heatmap(cross_scores, cmap='Blues', annot=True, fmt='.3g', ax=axes[site_number])
+        axes[site_number].set_title(site)
+        axes[site_number].set_ylabel('Testing period')
+        axes[site_number].set_xlabel('Training period')
+        axes[site_number].tick_params(axis='x', labelrotation = 20)
+    plt.savefig('plots/gmm_log_likelihoods.png', dpi=300, bbox_inches="tight")
+
+
 def plot_violins(site: SiteStr, period: DefaultPeriodStr) -> None:
     """Plot violin plots for baselines."""
     algs = ['greedy', 'random_continuous', 'random_discrete', 'offline_optimal']
@@ -123,5 +158,6 @@ if __name__ == '__main__':
     # plot_gmm_fit('caltech')
     # plot_gmm_fit('jpl')
 
-    # Plot violin plot
-    plot_violins('caltech', 'Summer 2021')
+    # # Plot violin plot
+    # plot_violins('caltech', 'Summer 2021')
+    plot_cross_scores()
