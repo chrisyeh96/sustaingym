@@ -38,7 +38,8 @@ def plot_gmm_fit(site: SiteStr) -> None:
         df = preprocess(utils.get_real_events(period[0], period[1], site))
         dfs.append(df)
 
-        gmm = utils.load_gmm_model(site, period[0], period[1], 30)['gmm']
+        gmm_model = utils.load_gmm_model(site, period[0], period[1], 30)
+        gmm = gmm_model['gmm']
         gmms.append(gmm)
 
         # Calculate conditional mean for estimated departure, requested energy
@@ -97,7 +98,7 @@ def read_baseline(site: SiteStr, period: DefaultPeriodStr, algorithm: str) -> pd
 
 def plot_violins(site: SiteStr, period: DefaultPeriodStr) -> None:
     """Plot violin plots for baselines."""
-    algs = ['greedy', 'random_continuous', 'random_discrete']
+    algs = ['greedy', 'random_continuous', 'random_discrete', 'offline_optimal']
     for window in [1, 3, 6, 12, 24]:
         algs.append(f'mpc_{window}')
 
@@ -122,5 +123,5 @@ if __name__ == '__main__':
     # plot_gmm_fit('caltech')
     # plot_gmm_fit('jpl')
 
-    # # Plot violin plot
-    # plot_violins('caltech', 'Summer 2021')
+    # Plot violin plot
+    plot_violins('caltech', 'Summer 2021')

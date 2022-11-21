@@ -10,14 +10,14 @@ import cvxpy as cp
 from gym import spaces
 import numpy as np
 import pandas as pd
-from stable_baselines3.common.on_policy_algorithm import OnPolicyAlgorithm
+from stable_baselines3.common.base_class import BaseAlgorithm
 from tqdm import tqdm
 
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 from sustaingym.envs.evcharging.utils import solve_optimization_problem
 
 
-class BaseAlgorithm:
+class BaseEVChargingAlgorithm:
     """Base abstract class for EVChargingGym scheduling algorithms.
 
     Subclasses are expected to implement the get_action() method.
@@ -115,7 +115,7 @@ class BaseAlgorithm:
         return pd.DataFrame(reward_breakdown)
 
 
-class GreedyAlgorithm(BaseAlgorithm):
+class GreedyAlgorithm(BaseEVChargingAlgorithm):
     """
     Per-time step greedy charging. Whether the action space is continuous or
     discrete, GreedyAlgorithm outputs the maximum pilot signal allowed.
@@ -126,7 +126,7 @@ class GreedyAlgorithm(BaseAlgorithm):
         return np.where(observation['demands'] > 0, self._get_max_action(), 0)
 
 
-class RandomAlgorithm(BaseAlgorithm):
+class RandomAlgorithm(BaseEVChargingAlgorithm):
     """Random action."""
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """Returns random charging action."""
@@ -137,14 +137,14 @@ class RandomAlgorithm(BaseAlgorithm):
         return action
 
 
-class MPC(BaseAlgorithm):
+class MPC(BaseEVChargingAlgorithm):
     """Model predictive control.
 
     Attributes:
         lookahead: number of timesteps to forecast future trajectory. Note that
             MPC cannot see future car arrivals and does not take them into
             account.
-        *See BaseAlgorithm for more attributes.
+        *See BaseEVChargingAlgorithm for more attributes.
     """
     def __init__(self, env: EVChargingEnv, lookahead: int = 12):
         """
@@ -217,11 +217,11 @@ class MPC(BaseAlgorithm):
         return self.traj.value[:, 0]  # take first action
 
 
-class OfflineOptimal(BaseAlgorithm):
+class OfflineOptimal(BaseEVChargingAlgorithm):
     """Calculates best performance of a controller that knows the future.
 
     Attributes:
-        *See BaseAlgorithm for more attributes.
+        *See BaseEVChargingAlgorithm for more attributes.
     """
     TOTAL_TIMESTEPS = 288
 
@@ -321,18 +321,18 @@ class OfflineOptimal(BaseAlgorithm):
         return action
 
 
-class RLAlgorithm(BaseAlgorithm):
+class RLAlgorithm(BaseEVChargingAlgorithm):
     """RL algorithm wrapper.
 
     Attributes:
         env (EVChargingEnv): EV charging environment
-        rl_model (OnPolicyAlgorithm): can be from stable baselines
+        rl_model (BaseAlgorithm): can be from stable baselines
     """
-    def __init__(self, env: EVChargingEnv, rl_model: OnPolicyAlgorithm):
+    def __init__(self, env: EVChargingEnv, rl_model: BaseAlgorithm):
         """
         Args:
             env (EVChargingEnv): EV charging environment
-            rl_model (OnPolicyAlgorithm): can be from stable baselines
+            rl_model (BaseAlgorithm): can be from stable baselines
         """
         super().__init__(env)
         self.rl_model = rl_model
@@ -341,9 +341,9 @@ class RLAlgorithm(BaseAlgorithm):
         """Returns output of RL model.
 
         Args:
-            *See get_action() in BaseAlgorithm.
+            *See get_action() in BaseEVChargingAlgorithm.
 
         Returns:
-            *See get_action() in BaseAlgorithm.
+            *See get_action() in BaseEVChargingAlgorithm.
         """
         return self.rl_model.predict(observation, deterministic=True)[0]
