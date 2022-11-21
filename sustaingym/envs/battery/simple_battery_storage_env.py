@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pkgutil
 from io import StringIO
+import os
 import sys
 sys.path.append('../')
 
@@ -98,19 +99,16 @@ class BatteryStorageEnv(gym.Env):
         Returns:
             pandas dataframe containing price data
         """
-        if self.LOCAL_FILE:
-            return pd.read_csv(self.FILE_PATH)
+        if self.LOCAL_PATH is not None:
+            return pd.read_csv(self.LOCAL_PATH)
         else:
-            bytes_data = pkgutil.get_data(__name__, 'data/prices_2022.csv')
+            csv_path = os.path.join('data', 'electricity_price_data', 'prices_2022.csv.gz')
+            bytes_data = pkgutil.get_data('sustaingym', csv_path)
+            assert bytes_data is not None
             s = bytes_data.decode('utf-8')
             data = StringIO(s)
-            return pd.read_csv(data)
-
-    def _get_pricing_data2(self) -> pd.DataFrame:
-        """Return pricing data (for now outputs random floats between 0 and 10"""
-        # arbitrarily made it have length of 30 day
-        return pd.DataFrame(self.np_random.uniform(0, 10, size=(30*self.MAX_STEPS_PER_EPISODE,),
-                            columns=['prices']))
+            df_prices = pd.read_csv(data)
+            return df_prices
 
     def reset(self, *,
               seed: int | None = None,
@@ -157,9 +155,6 @@ class BatteryStorageEnv(gym.Env):
             date = self.df_price_data.iloc[self.idx, 0].to_string()
             idx = date.find('T')
             time_day = date[idx+1:idx+6]
-            # print(time_day)
-            # print(time_day[0:2])
-            # print(time_day[3:5])
             hours = int(time_day[0:2])
             minutes = int(time_day[3:5])
             time = (hours + minutes/60) / 24

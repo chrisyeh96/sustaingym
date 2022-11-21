@@ -75,25 +75,10 @@ class MarketOperator:
         self.bats_discharge_costs.value = self.env.bats_costs[:, 0]
         self.bats_charge_costs.value = self.env.bats_costs[:, 1]
         self.demand.value = self.env.demand[0]
-        # if self.env.count == 287:
-        #     print("battery charge: ", self.env.battery_charge[-1])
-        #     print("gen_max_production: ", self.env.gen_max_production)
-        #     print("gens_costs: ", self.env.gens_costs)
-        #     print("bats_max_charge: ", self.env.bats_max_charge)
-        #     print("bats_max_discharge: ", self.env.bats_max_discharge)
-        #     print("bats_charge_costs: ", self.env.bats_costs[:, 0])
-        #     print("bats_discharge_costs: ", self.env.bats_costs[:, 1])
-        #     print("load: ", self.env.demand)
         solve_mosek(self.prob)
-        # print("status: ", self.prob.status)
-        # print("x value: ", self.x.value)
-        # print("price:", -1*self.prob.constraints[0].dual_value)
         price = -self.prob.constraints[0].dual_value  # negative because of minimizing objective in LP
         x_gens = self.x.value[:self.env.num_gens]
         x_bats = self.x.value[self.env.num_gens:]
-
-        # if self.env.count == 287:
-        #     print("battery dispatch: ", x_bats[-1])
 
         return x_gens, x_bats, price
 
@@ -263,7 +248,7 @@ class ElectricityMarketEnv(Env):
             bytes_data = pkgutil.get_data('sustaingym', csv_path)
             assert bytes_data is not None
             df_demand = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
-            # TODO: assert shape of DataFrame
+            assert df_demand.shape == (31, 289)
             return df_demand / 1800.
 
     def _get_demand_forecast_data(self) -> pd.DataFrame:
@@ -279,10 +264,9 @@ class ElectricityMarketEnv(Env):
         else:
             csv_path = f'data/demand_forecast_data/CAISO-demand-forecast-{self.month}.csv.gz'
             bytes_data = pkgutil.get_data('sustaingym', csv_path)
-            # bytes_data = pkgutil.get_data(__name__, csv_path)
             assert bytes_data is not None
             df_demand_forecast = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
-            # TODO: assert shape of DataFrame
+            assert df_demand_forecast.shape == (31, 289)
             return df_demand_forecast / 1800.
 
     def _generate_load_data(self, count: int) -> float:
@@ -415,17 +399,15 @@ class ElectricityMarketEnv(Env):
             done: whether the episode is done
             info: additional info (currently empty)
         """
-        # print("action: ", action)
-        # print("action space: ", self.action_space)
+
         assert self.init
-        # assert self.action_space.contains(action)
+        assert self.action_space.contains(action)
 
         self.count += 1
 
         # ensure selling cost (discharging) is at least as large as buying cost (charging)
         self.action[:] = action
         if action[1] < action[0]:
-            # print('Warning: selling cost (discharging) is less than buying cost (charging)')
             self.action[1] = action[0]
 
         self.gens_costs = self.all_gens_costs[:, self.count]
@@ -587,8 +569,6 @@ class ElectricityMarketEnv(Env):
             c / self.CHARGE_EFFICIENCY <= -self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION,
             0 <= d,
             d * self.DISCHARGE_EFFICIENCY <= self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION
-            # self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION <= x,
-            # x <= self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION
         ]
         if final_charge > 0:
             constraints.append(final_charge <= init_charge + delta_energy[-1])
