@@ -4,7 +4,6 @@ This module implements utility functions for plotting.
 from __future__ import annotations
 
 from datetime import datetime
-import pytz
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -131,6 +130,26 @@ def plot_cross_scores():
     plt.savefig('plots/gmm_log_likelihoods.png', dpi=300, bbox_inches="tight")
 
 
+def plot_lines(site: SiteStr, period: DefaultPeriodStr) -> None:
+    """Plot line plots for baselines over evaluation period."""
+    algs = ['offline_optimal', 'greedy', 'random_continuous', 'random_discrete', 'mpc_6']
+
+    records = []
+    for alg in algs:
+        df = read_baseline(site, period, alg).rolling(7).median()
+        df['day'] = df.index
+        day = list(np.array(df.day))
+        reward = list(np.array(df.reward))
+        for r, di in zip(reward, day):
+            records.append((alg, r, di))
+    
+    df = pd.DataFrame.from_records(records, columns=['alg', 'reward', 'day'])
+    sns.lineplot(data=df, x="day", y="reward", hue="alg")
+    plt.title('7-Day Rolling Median of Rewards')
+    plt.ylabel("reward ($)")
+    plt.savefig(f'plots/lines_{site}_{period}.png', dpi=300, pad_inches=0)
+
+
 def plot_violins(site: SiteStr, period: DefaultPeriodStr) -> None:
     """Plot violin plots for baselines."""
     algs = ['greedy', 'random_continuous', 'random_discrete', 'offline_optimal']
@@ -160,4 +179,9 @@ if __name__ == '__main__':
 
     # # Plot violin plot
     # plot_violins('caltech', 'Summer 2021')
-    plot_cross_scores()
+
+    # # Plot cross scores
+    # plot_cross_scores()
+
+    # # Plot line plot
+    # plot_lines('caltech', 'Summer 2021')
