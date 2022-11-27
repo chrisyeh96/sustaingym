@@ -90,7 +90,7 @@ def run_period(period: DefaultPeriodStr,
 
     if with_everything_else:
         bls['greedy'] = GreedyAlgorithm(get_env())
-        bls['random_continuous'] = RandomAlgorithm(get_env())
+        bls['random'] = RandomAlgorithm(get_env())
         bls['random_discrete'] = RandomAlgorithm(DiscreteActionWrapper(get_env()))
 
         # Add MPC with different lookahead windows into baseines
