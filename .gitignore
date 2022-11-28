@@ -3,6 +3,15 @@
 .vscode/
 sandbox/
 logs/
+*.zip
+*.code-workspace
+examples/DQN*
+examples/SAC*
+examples/PPO*
+examples/old
+examples/test.ipynb
+*.png
+sustaingym/tests*
 ## END CUSTOM EXCLUSIONS
 
 # Byte-compiled / optimized / DLL files
