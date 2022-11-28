@@ -8,6 +8,7 @@ from io import StringIO
 import os
 import sys
 sys.path.append('../')
+from typing import Union
 
 import numpy as np
 import gym
@@ -28,7 +29,6 @@ class BatteryStorageEnv(gym.Env):
         Current Electricity Price ($/MWh)   -Inf                    Inf
         Time (fraction of day)               0                       1
     """
-    # metadata = {"render_modes": []}
     # Minimum storage level (MWh)
     ENERGY_MIN = 0.0
     # Maximum storage level (MWh)
@@ -54,7 +54,7 @@ class BatteryStorageEnv(gym.Env):
     # indicates whether local file will be used instead
     LOCAL_FILE = False
 
-    def __init__(self, render_mode: str | None = None, env_config: dict | None = None):
+    def __init__(self, render_mode: str | None = None, env_config: dict | None = None, LOCAL_FILE_PATH: str | None = None):
         """
         Constructs instance of BatteryStorageEnv class.
 
@@ -72,6 +72,9 @@ class BatteryStorageEnv(gym.Env):
                     self.__dict__[key] = val
                 except KeyError:
                     raise KeyError(key)
+
+        # store custom file path to data
+        self.LOCAL_PATH = LOCAL_FILE_PATH
         # price dataset
         self.df_price_data = self._get_pricing_data()
         # number of prices in dataset
@@ -84,9 +87,6 @@ class BatteryStorageEnv(gym.Env):
         self.observation_space = spaces.Box(
             -np.inf, np.inf, shape=(3, ), dtype=np.float32
         )
-        # # set seed
-        # self.np_random = None
-        # self.seed()
         # labels if environment starts with a reset to ensure standardization
         self.init = False
 
@@ -113,7 +113,7 @@ class BatteryStorageEnv(gym.Env):
     def reset(self, *,
               seed: int | None = None,
               return_info: bool = False,
-              options: dict | None = None) -> tuple:  # changed from dictionary type
+              options: dict | None = None) -> Union[np.ndarray, tuple]:  # changed from dictionary type
         """
         Initialize or restart an instance of an episode for the BatteryStorageEnv.
 
@@ -137,19 +137,18 @@ class BatteryStorageEnv(gym.Env):
         if options and 'reward' in options.keys():
             if options.get('reward') == 1:
                 self.reward_type = 1
-        # self.reward = 0
         # get random initial starting price position
         self.idx = self.rng.integers(
-            low = 0, high = self.price_data_len - self.MAX_STEPS_PER_EPISODE, size = 1
+            low=0, high=self.price_data_len - self.MAX_STEPS_PER_EPISODE, size=1
         )
         self.count = 1  # counter for the step in current episode
         self.init = True
-        if self.LOCAL_FILE:
+        if self.LOCAL_PATH is not None:
             self.curr_price = self.df_price_data.iloc[self.idx, 1]
         else:
             self.curr_price = float(self.df_price_data.iloc[self.idx, 2])
-        
-        if self.LOCAL_FILE:
+
+        if self.LOCAL_PATH is not None:
             time = self.df_price_data.iloc[self.idx, 0]
         else:
             date = self.df_price_data.iloc[self.idx, 0].to_string()
@@ -173,11 +172,11 @@ class BatteryStorageEnv(gym.Env):
             tuple representing the resulting state from that action
         """
         assert self.init
-        if self.LOCAL_FILE:
+        if self.LOCAL_PATH is not None:
             self.curr_price = self.df_price_data.iloc[self.idx + self.count, 0]
         else:
             self.curr_price = float(self.df_price_data.iloc[self.idx, 2])
-        if self.LOCAL_FILE:
+        if self.LOCAL_PATH is not None:
             time = self.df_price_data.iloc[self.idx, 0]
         else:
             date = self.df_price_data.iloc[self.idx, 0].to_string()
@@ -187,6 +186,7 @@ class BatteryStorageEnv(gym.Env):
             minutes = int(time_day[3:5])
             time = (hours + minutes/60) / 24
         info = self._get_info(self.curr_price)
+        # profit reward function
         if self.reward_type == 0:
             if action < 0:
                 pwr = min(
@@ -202,6 +202,7 @@ class BatteryStorageEnv(gym.Env):
                 self.energy_lvl += (1 / self.CHARGE_EFFICIENCY)*pwr*self.TIME_STEP_DURATION
             else:
                 reward = 0
+        # running average over prices reward function
         else:
             if action < 0:
                 pwr = min(

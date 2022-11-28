@@ -157,8 +157,9 @@ class ElectricityMarketEnv(Env):
             moer_forecast_steps: number of steps of MOER forecast to include,
                 maximum of 36. Each step is 5 min, for a maximum of 3 hrs.
             seed: random seed
+            LOCAL_FILE_PATH: string representing the relative path of personal dataset
         """
-        if LOCAL_FILE_PATH is not None:
+        if LOCAL_FILE_PATH is None:
             assert month in ['2019-05', '2020-05', '2021-05']  # update for future dates
 
         self.num_gens = len(gen_max_production)
@@ -211,17 +212,17 @@ class ElectricityMarketEnv(Env):
         # observation space is current energy level, current time, previous (a, b, x)
         # from dispatch and previous load demand value
         self.observation_space = spaces.Dict({
-            'energy':          spaces.Box(low=0, high=self.bats_capacity[-1], shape=(1,), dtype=float),
-            'time':            spaces.Box(low=0, high=1, shape=(1,), dtype=float),
+            'energy': spaces.Box(low=0, high=self.bats_capacity[-1], shape=(1,), dtype=float),
+            'time': spaces.Box(low=0, high=1, shape=(1,), dtype=float),
             'previous action': spaces.Box(low=0, high=np.inf, shape=(2,), dtype=float),
             'previous agent dispatch': spaces.Box(low=self.bats_max_rates[-1, 0] * self.TIME_STEP_DURATION,
                                                   high=self.bats_max_rates[-1, 1] * self.TIME_STEP_DURATION,
                                                   shape=(1,), dtype=float),
             'demand previous': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
             'demand forecast': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
-            'moer previous':   spaces.Box(low=0, high=1, shape=(1,), dtype=float),
-            'moer forecast':   spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=float),
-            'price previous':  spaces.Box(low=0, high=max_cost, shape=(1,), dtype=float)
+            'moer previous': spaces.Box(low=0, high=1, shape=(1,), dtype=float),
+            'moer forecast': spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=float),
+            'price previous': spaces.Box(low=0, high=max_cost, shape=(1,), dtype=float)
         })
         self.init = False
         self.market_op = MarketOperator(self)
@@ -234,12 +235,10 @@ class ElectricityMarketEnv(Env):
             ba='SGIP_CAISO_SCE', save_dir='sustaingym/data/moer')
 
     def _get_demand_data(self) -> pd.DataFrame:
-        """Get net demand data.
-
-        TODO: verify data is actually net demand
+        """Get demand data.
 
         Returns:
-            DataFrame with net demand, columns are 'HH:MM' at 5-min intervals
+            DataFrame with demand, columns are 'HH:MM' at 5-min intervals
         """
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
@@ -253,8 +252,6 @@ class ElectricityMarketEnv(Env):
 
     def _get_demand_forecast_data(self) -> pd.DataFrame:
         """Get temporal load forecast data.
-
-        TODO: verify data is actually net demand forecast
 
         Returns:
             Dataframe with demand forecast, columns are 'HH:MM' at 5-min intervals

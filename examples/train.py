@@ -108,20 +108,26 @@ def setup_envs(save_path: str, discrete: bool, year: int,
     assert year in (2019, 2021)
 
     save_path_model = os.path.join(save_path, 'model')
-    save_path_2021 = os.path.join(save_path, 'eval2021')
+    save_path = os.path.join(save_path, f'eval{year}-05')
 
     # rescale action spaces to normalized [0,1] interval
     # wrap environments to have discrete action space
 
-    env_2021 = ElectricityMarketEnv(
-        month='2021-05', seed=215,
-        use_intermediate_rewards=use_intermediate_rewards)
-    wrapped_env_2021 = gym.wrappers.RescaleAction(env_2021, min_action=0, max_action=1)
-    if discrete:
-        wrapped_env_2021 = DiscreteActions(wrapped_env_2021)
-    env = wrapped_env_2021
+    if year != 2019:
+        env = ElectricityMarketEnv(
+            month=f'{year}-05', seed=215,
+            use_intermediate_rewards=use_intermediate_rewards)
+    else:
+        env = ElectricityMarketEnv(
+            month=f'{year}-05', seed=195,
+            use_intermediate_rewards=use_intermediate_rewards)
+    
+    wrapped_env = gym.wrappers.RescaleAction(env, min_action=0, max_action=1)
 
-    steps_per_ep = wrapped_env_2021.MAX_STEPS_PER_EPISODE
+    if discrete:
+        wrapped_env = DiscreteActions(wrapped_env)
+
+    steps_per_ep = wrapped_env.MAX_STEPS_PER_EPISODE
     eval_freq = eval_episodes * steps_per_ep
 
     stop_train_callback = StopTrainingOnNoModelImprovement(
@@ -132,30 +138,31 @@ def setup_envs(save_path: str, discrete: bool, year: int,
     callbacks: list[BaseCallback] = [checkpoint_callback]
 
     if year != 2019:
-        eval_callback_2021 = EvalCallback(
-            wrapped_env_2021, best_model_save_path=save_path_2021,
-            log_path=save_path_2021, eval_freq=eval_freq,
+        eval_callback = EvalCallback(
+            wrapped_env, best_model_save_path=save_path,
+            log_path=save_path, eval_freq=eval_freq,
             callback_after_eval=stop_train_callback)
-        callbacks.extend([eval_callback_2021])
+        callbacks.extend([eval_callback])
     else:
-        eval_callback_2021 = EvalCallback(
-            wrapped_env_2021, best_model_save_path=save_path_2021,
-            log_path=save_path_2021, eval_freq=eval_freq)
+        eval_callback = EvalCallback(
+            wrapped_env, best_model_save_path=save_path,
+            log_path=save_path, eval_freq=eval_freq)
+
+        save_path_2019 = os.path.join(save_path, 'eval2019')
 
         env_2019 = ElectricityMarketEnv(
             month='2019-05', seed=195,
             use_intermediate_rewards=use_intermediate_rewards)
         wrapped_env_2019 = gym.wrappers.RescaleAction(env_2019, min_action=0, max_action=1)
+
         if discrete:
             wrapped_env_2019 = DiscreteActions(wrapped_env_2019)
-        env = wrapped_env_2019
 
-        save_path_2019 = os.path.join(save_path, 'eval2019')
         eval_callback_2019 = EvalCallback(
             wrapped_env_2019, best_model_save_path=save_path_2019,
             log_path=save_path_2019, eval_freq=10 * steps_per_ep,
             callback_after_eval=stop_train_callback)
-        callbacks.extend([eval_callback_2019, eval_callback_2021])
+        callbacks.extend([eval_callback_2019, eval_callback])
 
     return env, callbacks, save_path_model
 

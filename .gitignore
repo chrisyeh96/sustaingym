@@ -9,8 +9,9 @@ examples/DQN*
 examples/SAC*
 examples/PPO*
 examples/old
+examples/test.ipynb
 *.png
-sustaingym/tests/*.zip
+sustaingym/tests*
 ## END CUSTOM EXCLUSIONS
 
 # Byte-compiled / optimized / DLL files

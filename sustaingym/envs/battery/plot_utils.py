@@ -20,7 +20,7 @@ from sustaingym.envs import ElectricityMarketEnv
 def training_eval_results(model: str, dist: str) -> tuple:
     assert dist in ['in_dist', 'out_dist']
     results = []
-    fname = f'examples/discrete_logs_{model}/{dist}/evaluations.npz'
+    fname = f'examples/{model}/{dist}/evaluations.npz'
     x = np.load(fname, allow_pickle=True)
     results.append(x['results'])
 
