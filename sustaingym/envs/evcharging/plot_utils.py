@@ -216,7 +216,7 @@ def plot_violins(site: SiteStr, period: DefaultPeriodStr) -> None:
     print(df.head())
     print(df.tail())
     sns.violinplot(data=df, x='alg', y='reward', hue='in_dist', ax=ax)
-    ax.set(xlabel='Algorithm', ylabel="Reward ($)")
+    ax.set(xlabel='Algorithm', ylabel="Daily Return ($)")
     # ax.set_xticklabels(algs, rotation=30)
     print(f"Save to: 'plots/violins_{site}_{period}.png'")
     fig.savefig(f'plots/violins_{site}_{period}.png', dpi=300, pad_inches=0)
@@ -225,13 +225,15 @@ def plot_violins(site: SiteStr, period: DefaultPeriodStr) -> None:
 def reward_curve_separate() -> None:
     """Plot reward curves separately for 'caltech' site in Summer 2021."""
     # reward curve w/o action projection on 2-week sample in period
-    fig, axes = plt.subplots(1, 4, figsize=(12, 3), sharey=True)
+    fig, axes = plt.subplots(2, 3, figsize=(12, 8), sharey=True)
 
     algs = {
         ('A2C', 'out of dist'): [1000, 1001, 1002],
-        ('A2C', 'in dist'):     [1003, 1004, 1005],
         ('PPO', 'out of dist'): [1000, 1001, 1002],
+        ('SAC', 'out of dist'): [1000, 1001, 1002],
+        ('A2C', 'in dist'):     [1003, 1004, 1005],
         ('PPO', 'in dist'):     [1003, 1004, 1005],
+        ('SAC', 'in dist'):     [1003, 1004, 1005],
     }
     best = {}
 
@@ -258,16 +260,20 @@ def reward_curve_separate() -> None:
         cc_means = np.array(cc_means)
         cc_stds = np.array(cc_stds)
 
-        axes[i].plot(timesteps, profit_means, label='profit')
-        axes[i].fill_between(timesteps, profit_means-profit_stds, profit_means+profit_stds, alpha=0.2)
-        axes[i].plot(timesteps, cc_means, label='carbon cost')
-        axes[i].fill_between(timesteps, cc_means-cc_stds, cc_means+cc_stds, alpha=0.2)
-        axes[i].set_xlabel('timesteps')
-        axes[0].set_ylabel('reward')
-        axes[i].legend()
-        axes[i].set_title(f'{group[1]} {group[0]}')
+        r = i // 3
+        c = i % 3
+        axes[0][0].set_ylabel('reward')
+        axes[1][0].set_ylabel('reward')
+        axes[r][c].plot(timesteps, profit_means, label='profit')
+        axes[r][c].fill_between(timesteps, profit_means-profit_stds, profit_means+profit_stds, alpha=0.2)
+        axes[r][c].plot(timesteps, cc_means, label='carbon cost')
+        axes[r][c].fill_between(timesteps, cc_means-cc_stds, cc_means+cc_stds, alpha=0.2)
+        axes[r][c].set_xlabel('timesteps')
+        axes[r][c].legend()
+        axes[r][c].set_title(f'{group[1]} {group[0]}')
 
-    fig.suptitle(f'Reward Breakdown on 07/05/2021-07/18/2021 During Training', y=1.07)
+    fig.suptitle(f'Reward Breakdown on 07/05/2021-07/18/2021 During Training')
+    fig.tight_layout()
     print(f"Save to: 'plots/training_curves_separate.png'")
     fig.savefig('plots/training_curves_separate.png', dpi=300, bbox_inches='tight')
 
@@ -327,8 +333,8 @@ if __name__ == '__main__':
     # # Plot line plot
     # plot_lines('caltech', 'Summer 2021')
 
-    # Plot training curves in one place
-    reward_curve_all()
+    # # Plot training curves in one place
+    # reward_curve_all()
 
-    # # Plot training curves separately
-    # reward_curve_separate()
+    # Plot training curves separately
+    reward_curve_separate()
