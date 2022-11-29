@@ -249,16 +249,20 @@ def reward_curve_separate() -> None:
     for i, group in enumerate(best):
         evals = read_rl(best[group], group[0], csv_file='evaluations')
         timesteps = evals.timestep.unique()
-        profit_means, profit_stds, cc_means, cc_stds = [], [], [], []
+        profit_means, profit_stds, cc_means, cc_stds, rew_means, rew_stds = [], [], [], [], [], []
         for timestep in timesteps:
             profit_means.append(evals[evals.timestep == timestep].profit.mean())
             profit_stds.append(evals[evals.timestep == timestep].profit.std())
             cc_means.append(evals[evals.timestep == timestep].carbon_cost.mean())
             cc_stds.append(evals[evals.timestep == timestep].carbon_cost.std())
+            rew_means.append(evals[evals.timestep == timestep].reward.mean())
+            rew_stds.append(evals[evals.timestep == timestep].reward.std())
         profit_means = np.array(profit_means)
         profit_stds = np.array(profit_stds)
         cc_means = np.array(cc_means)
         cc_stds = np.array(cc_stds)
+        rew_means = np.array(rew_means)
+        rew_stds = np.array(rew_stds)
 
         r = i // 3
         c = i % 3
@@ -268,6 +272,8 @@ def reward_curve_separate() -> None:
         axes[r][c].fill_between(timesteps, profit_means-profit_stds, profit_means+profit_stds, alpha=0.2)
         axes[r][c].plot(timesteps, cc_means, label='carbon cost')
         axes[r][c].fill_between(timesteps, cc_means-cc_stds, cc_means+cc_stds, alpha=0.2)
+        axes[r][c].plot(timesteps, rew_means, label='reward')
+        axes[r][c].fill_between(timesteps, rew_means-rew_stds, rew_means+rew_stds, alpha=0.2)
         axes[r][c].set_xlabel('timesteps')
         axes[r][c].legend()
         axes[r][c].set_title(f'{group[1]} {group[0]}')
