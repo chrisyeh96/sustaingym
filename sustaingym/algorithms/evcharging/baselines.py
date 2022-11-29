@@ -14,7 +14,7 @@ from stable_baselines3.common.base_class import BaseAlgorithm
 from tqdm import tqdm
 
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
-from sustaingym.envs.evcharging.utils import solve_optimization_problem
+from sustaingym.envs.utils import solve_mosek
 
 
 class BaseEVChargingAlgorithm:
@@ -213,7 +213,7 @@ class MPC(BaseEVChargingAlgorithm):
             mask[i, :cur_est_dep[i]] = self.MAX_ACTION
         self.mask.value = mask
 
-        solve_optimization_problem(self.prob)
+        solve_mosek(self.prob)
         return self.traj.value[:, 0]  # take first action
 
 
@@ -286,10 +286,8 @@ class OfflineOptimal(BaseEVChargingAlgorithm):
             # Convert station id to index in charging network
             station_idx = {evse: i for i, evse in enumerate(self.env.cn.station_ids)}
 
-            charge_periods = [ev for ev in self.env.evs]
-
             mask = np.zeros((self.env.num_stations, self.TOTAL_TIMESTEPS))
-            for ev in charge_periods:
+            for ev in self.env.evs:
                 ev_idx = station_idx[ev.station_id]
                 # Set mask using true arrival and departures
                 mask[ev_idx, ev.arrival:ev.departure] = self.MAX_ACTION
@@ -310,7 +308,7 @@ class OfflineOptimal(BaseEVChargingAlgorithm):
             self.prob = cp.Problem(self._objective, self._constraints)
             assert self.prob.is_dpp() and self.prob.is_dcp()
 
-            solve_optimization_problem(self.prob)
+            solve_mosek(self.prob)
 
         try:
             action = self.traj.value[:, self.timestep]

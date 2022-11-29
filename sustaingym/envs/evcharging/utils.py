@@ -297,24 +297,3 @@ def round(arr: np.ndarray, thresh: float = 0.7) -> np.ndarray:
     dec = np.modf(arr)[0]
     roundup = dec > thresh
     return np.where(roundup, np.ceil(arr), np.floor(arr))
-
-
-def solve_optimization_problem(prob: cp.Problem, verbose: int = 0) -> None:
-    """Uses cvxpy solvers to solve optimization problem.
-    
-    Args:
-        prob: optimization problem
-        verbose: if >= 2, prints if MOSEK solver failed
-    """
-    try:
-        prob.solve(warm_start=True, solver=cp.MOSEK)
-    except cp.SolverError:
-        prob.solve(solver=cp.ECOS)
-        if verbose >= 2:
-            print('Default MOSEK solver failed in action projection. Trying ECOS. ')
-            if prob.status != 'optimal':
-                print(f'prob.status = {prob.status}')
-        if 'infeasible' in prob.status:
-            # your problem should never be infeasible. So now go debug
-            import pdb
-            pdb.set_trace()  # :)

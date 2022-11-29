@@ -14,7 +14,8 @@ import numpy as np
 
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
 from sustaingym.envs.evcharging.utils import \
-    MINS_IN_DAY, site_str_to_site, round, solve_optimization_problem
+    MINS_IN_DAY, site_str_to_site, round
+from sustaingym.envs.utils import solve_mosek
 
 EV_CHARGING_MODULE = 'sustaingym.envs.evcharging'
 
@@ -200,7 +201,7 @@ class EVChargingEnv(Env):
         """
         self.agent_action.value = action
         self.demands_cvx.value = self._obs['demands']
-        solve_optimization_problem(self.prob, self.verbose)
+        solve_mosek(self.prob, self.verbose)
         action = self.projected_action.value
         return action
 
