@@ -17,10 +17,9 @@ import seaborn as sns
 from sustaingym.envs import ElectricityMarketEnv
 
 
-def training_eval_results(model: str, dist: str) -> tuple:
-    assert dist in ['in_dist', 'out_dist']
+def training_eval_results(root_folder: str, relative_path: str) -> tuple:
     results = []
-    fname = f'examples/{model}/{dist}/evaluations.npz'
+    fname = f'{root_folder}/{relative_path}/evaluations.npz'
     x = np.load(fname, allow_pickle=True)
     results.append(x['results'])
 
@@ -32,24 +31,35 @@ def training_eval_results(model: str, dist: str) -> tuple:
 
 
 def plot_model_training_reward_curves(
-        ax: plt.Axes, model: str, dists: Sequence[str]) -> plt.Axes:
+        ax: plt.Axes, model: str, paths: Sequence[str], dists: Sequence[str], in_dist_year: int, out_dist_year: int | None = None) -> plt.Axes:
     if ax is None:
         fig, ax = plt.subplots()
 
     evals_lst = []
     err_lst = []
 
-    for dist in dists:
-        timesteps, y, err = training_eval_results(model, dist)
+    if "in_dist" in dists:
+        timesteps, y, err = training_eval_results(paths[0], f"eval{in_dist_year}-05")
         evals_lst.append(y)
         err_lst.append(err)
+    
+    min_len = len(timesteps)
 
-    ax.plot(timesteps, evals_lst[0], label='train on May 2019, evaluate on May 2019')  # too specific!!!
-    ax.fill_between(timesteps, evals_lst[0]-err_lst[0], evals_lst[0]+err_lst[0], alpha=0.2)
+    if "out_dist" in dists:
+        timesteps, y, err = training_eval_results(paths[1], f"eval{in_dist_year}-05")
+        evals_lst.append(y)
+        err_lst.append(err)
+    
+    if len(timesteps) < min_len:
+        min_len = len(timesteps)
+
+    ax.plot(timesteps[:min_len], evals_lst[0][:min_len], label=f'train on May {in_dist_year}, evaluate on May {in_dist_year}')
+    ax.fill_between(timesteps[:min_len], evals_lst[0][:min_len]-err_lst[0][:min_len], evals_lst[0][:min_len]+err_lst[0][:min_len], alpha=0.2)
 
     if len(dists) == 2:
-        ax.plot(timesteps, evals_lst[1], label='train on May 2019, evaluate on May 2021')  # too specific!!!
-        ax.fill_between(timesteps, evals_lst[1]-err_lst[1], evals_lst[1]+err_lst[1], alpha=0.2)
+        ax.plot(timesteps[:min_len], evals_lst[1][:min_len], label=f'train on May {out_dist_year}, evaluate on May {in_dist_year}')
+        ax.fill_between(timesteps[:min_len], evals_lst[1][:min_len]-err_lst[1][:min_len],
+                evals_lst[1][:min_len]+err_lst[1][:min_len], alpha=0.2)
 
     ax.set_title(f'{model} Training Reward Curves')
     ax.set_ylabel('reward ($)')

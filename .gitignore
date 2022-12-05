@@ -8,7 +8,9 @@ logs/
 examples/DQN*
 examples/SAC*
 examples/PPO*
+examples/A2C*
 examples/old
+examples/train_DQN.py
 examples/test.ipynb
 *.png
 sustaingym/tests*

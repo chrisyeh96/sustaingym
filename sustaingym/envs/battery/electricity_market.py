@@ -385,6 +385,7 @@ class ElectricityMarketEnv(Env):
 
     def step(self, action: Sequence[float]) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
         """Executes a single time step in the environments current trajectory.
+        Assumes action is in environment's action space.
 
         Args:
             action: array of shape [2], two float values representing
@@ -398,7 +399,6 @@ class ElectricityMarketEnv(Env):
         """
 
         assert self.init
-        assert self.action_space.contains(action)
 
         self.count += 1
 

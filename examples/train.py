@@ -1,11 +1,14 @@
 """Script to train RL models on ElectricityMarketEnv.
 
 Usage:
-    python train_DQN.py -y YEAR [-d] [-i] -m MODEL_NAME -l LR [-g GAMMA] [-e EVAL_EPISODES] [-o LOG_DIR]
+    python train_DQN.py -y YEAR [-v EVAL_YEAR] [-d] [-a] [-i] -m MODEL_NAME -l LR [-g GAMMA] [-e EVAL_EPISODES] [-o LOG_DIR]
 
 Arguments:
     -y YEAR, --year YEAR  year of environment data for training (default: None)
+    -v EVAL_YEAR, --eval-year EVAL_YEAR year of environment data for out of
+                distribution evaluation (default: None))
     -d, --discrete        whether to use discretized actions (default: False)
+    -a, --save-actions    whether to save actions experienced (default: False)
     -i, --intermediate-rewards
                           whether to use intermediate rewards (default: False)
     -m MODEL_NAME, --model-name MODEL_NAME
@@ -20,7 +23,7 @@ Arguments:
 
 Example:
     # for DQN
-    python train.py -y 2021 -d -m DQN -l 0.0001 --log-dir eta1
+    python train.py -y 2021 -d -a -m DQN -l 0.0001 -o eta1
 
     # for SAC
     python train.py -y 2021 -m SAC -l 0.0003
@@ -40,6 +43,7 @@ from stable_baselines3.common.callbacks import (
 
 from sustaingym.envs import ElectricityMarketEnv
 from sustaingym.envs.battery.wrapped import DiscreteActions
+from utils import SaveActionsExperienced
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,8 +54,14 @@ def parse_args() -> argparse.Namespace:
         '-y', '--year', type=int, required=True,
         help='year of environment data for training')
     parser.add_argument(
+        '-v', '--eval-year', type=int, default=None,
+        help='year of environment data for out of dist evaluation')
+    parser.add_argument(
         '-d', '--discrete', action='store_true',
         help='whether to use discretized actions')
+    parser.add_argument(
+        '-a', '--save-actions', action='store_true',
+        help='whether to save actions experienced')
     parser.add_argument(
         '-i', '--intermediate-rewards', action='store_true',
         help='whether to use intermediate rewards')
@@ -85,18 +95,21 @@ def build_save_path(args: argparse.Namespace) -> str:
     save_path = f'{args.log_dir}/{args.model_name}{discrete_tag}_{args.year}_g{args.gamma}_lr{args.lr}'
     if os.path.exists(save_path):
         print(f'save path {save_path} already exists! Aborting')
-        exit()
+        sys.exit()
     return save_path
 
 
-def setup_envs(save_path: str, discrete: bool, year: int,
+def setup_envs(save_path: str, discrete: bool, save_actions: bool,
+               year: int, eval_year: int,
                use_intermediate_rewards: bool, eval_episodes: int
                ) -> tuple[gym.Env, list[BaseCallback], str]:
     """
     Args:
         save_path: where to save model and log files
         discrete: whether to use discrete action space
-        year: int, either 2019 or 2021
+        save_actions: whether to save actions experienced
+        year: int, year of environment data for training
+        eval_year: int, year of environment data for out of distribution evaluation
         use_intermediate_rewards: whether to use intermediate rewards
         eval_episodes: int, # of episodes between eval/saving model
 
@@ -105,14 +118,14 @@ def setup_envs(save_path: str, discrete: bool, year: int,
         callbacks: list of callbacks
         str: path for saving models
     """
-    assert year in (2019, 2021)
 
     save_path_model = os.path.join(save_path, 'model')
-    save_path = os.path.join(save_path, f'eval{year}-05')
+    eval_in_save_path = os.path.join(save_path, f'eval{year}-05')
 
     # rescale action spaces to normalized [0,1] interval
     # wrap environments to have discrete action space
 
+    # setting random seeds for comparison's sake
     if year != 2019:
         env = ElectricityMarketEnv(
             month=f'{year}-05', seed=215,
@@ -135,36 +148,48 @@ def setup_envs(save_path: str, discrete: bool, year: int,
     checkpoint_callback = CheckpointCallback(
         save_freq=eval_freq,
         save_path=save_path_model)
-    callbacks: list[BaseCallback] = [checkpoint_callback]
+    
+    if save_actions:
+        log_actions_callback = SaveActionsExperienced(log_dir=save_path)
+        callbacks: list[BaseCallback] = [log_actions_callback, checkpoint_callback]
+    else:
+        callbacks: list[BaseCallback] = [checkpoint_callback]
 
-    if year != 2019:
+    if eval_year is None or eval_year == year:
         eval_callback = EvalCallback(
-            wrapped_env, best_model_save_path=save_path,
-            log_path=save_path, eval_freq=eval_freq,
+            wrapped_env, best_model_save_path=eval_in_save_path,
+            log_path=eval_in_save_path, eval_freq=eval_freq,
             callback_after_eval=stop_train_callback)
         callbacks.extend([eval_callback])
     else:
         eval_callback = EvalCallback(
-            wrapped_env, best_model_save_path=save_path,
-            log_path=save_path, eval_freq=eval_freq)
+            wrapped_env, best_model_save_path=eval_in_save_path,
+            log_path=eval_in_save_path, eval_freq=eval_freq,
+            callback_after_eval=stop_train_callback)
 
-        save_path_2019 = os.path.join(save_path, 'eval2019')
+        eval_out_save_path = os.path.join(save_path, f'eval{eval_year}-05')
 
-        env_2019 = ElectricityMarketEnv(
-            month='2019-05', seed=195,
-            use_intermediate_rewards=use_intermediate_rewards)
-        wrapped_env_2019 = gym.wrappers.RescaleAction(env_2019, min_action=0, max_action=1)
+        # setting random seeds for comparison's sake
+        if year == 2019:
+            eval_env = ElectricityMarketEnv(
+                month='2019-05', seed=195,
+                use_intermediate_rewards=use_intermediate_rewards)
+        else:
+            eval_env = ElectricityMarketEnv(
+                month=f'{eval_year}-05', seed=215,
+                use_intermediate_rewards=use_intermediate_rewards)
+        
+        wrapped_eval_env = gym.wrappers.RescaleAction(eval_env, min_action=0, max_action=1)
 
         if discrete:
-            wrapped_env_2019 = DiscreteActions(wrapped_env_2019)
+            wrapped_eval_env = DiscreteActions(wrapped_eval_env)
 
-        eval_callback_2019 = EvalCallback(
-            wrapped_env_2019, best_model_save_path=save_path_2019,
-            log_path=save_path_2019, eval_freq=10 * steps_per_ep,
-            callback_after_eval=stop_train_callback)
-        callbacks.extend([eval_callback_2019, eval_callback])
+        eval_out_callback = EvalCallback(
+            wrapped_eval_env, best_model_save_path=eval_out_save_path,
+            log_path=eval_out_save_path, eval_freq=eval_freq)
+        callbacks.extend([eval_callback, eval_out_callback])
 
-    return env, callbacks, save_path_model
+    return wrapped_env, callbacks, save_path_model
 
 
 def setup_model(model_name: str, env: gym.Env, gamma: float, lr: float, discrete: bool) -> BaseAlgorithm:
@@ -180,6 +205,8 @@ def setup_model(model_name: str, env: gym.Env, gamma: float, lr: float, discrete
     elif model_name == 'DDPG':
         assert not discrete
         model_class = sb3.DDPG
+    elif model_name == 'A2C':
+        model_class = sb3.A2C
     else:
         raise ValueError
 
@@ -198,7 +225,8 @@ def main():
     print(f'Saving model and logs to {save_path}')
 
     env, callbacks, save_path_model = setup_envs(
-        save_path, discrete=args.discrete, year=args.year,
+        save_path, discrete=args.discrete, save_actions=args.save_actions,
+        year=args.year, eval_year=args.eval_year,
         use_intermediate_rewards=args.intermediate_rewards,
         eval_episodes=args.eval_episodes)
     model = setup_model(model_name=args.model_name, env=env, gamma=args.gamma,
