@@ -2,8 +2,8 @@
 GMM training script.
 
 Example command line usage
-python -m sustaingym.envs.evcharging.train_gmm_model --site caltech --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
-python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
+python -m sustaingym.envs.evcharging.train_gmm_model --site caltech --gmm_n_components 10 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
+python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 10 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
 
 usage: train_gmm_model.py [-h] [--site SITE] [--gmm_n_components GMM_N_COMPONENTS]
                           [--date_ranges DATE_RANGES [DATE_RANGES ...]]
@@ -22,10 +22,8 @@ optional arguments:
 from __future__ import annotations
 
 import argparse
-from argparse import RawTextHelpFormatter
 from collections.abc import Sequence
 from datetime import datetime
-import os
 
 import numpy as np
 import pandas as pd
@@ -181,7 +179,7 @@ def create_gmms(site: SiteStr, n_components: int,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="GMM Training Script", formatter_class=RawTextHelpFormatter)
+        description="GMM Training Script", formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(
         "--site", default="caltech",
         help="Name of site: 'caltech' or 'jpl'")

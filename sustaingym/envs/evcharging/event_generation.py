@@ -1,9 +1,10 @@
 """
-This module contains classes that generate charging events and load
-carbon data. It defines the abstract class AbstractTraceGenerator, which is
-implemented by the RealTraceGenerator and ArtificialTraceGenerator. These
-classes generate traces by simulating real data and sampling from an artificial
-data model, respectively.
+This module implements trace generation for the EVCharging class.
+
+Traces consist of EV plug-in and unplug events and marginal carbon emissions.
+The module implements trace generation through the RealTraceGenerator and
+ArtificialTraceGenerator classes, which generate traces either from real data
+or from sampling from an artificial data model, respectively.
 """
 from __future__ import annotations
 
@@ -17,15 +18,10 @@ import sklearn.mixture as mixture
 
 from .train_gmm_model import create_gmms
 from .utils import (COUNT_KEY, DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, GMM_KEY,
-                    MINS_IN_DAY, REQ_ENERGY_SCALE, STATION_USAGE_KEY, AM_LA,
+                    REQ_ENERGY_SCALE, STATION_USAGE_KEY, AM_LA,
                     DefaultPeriodStr, SiteStr, load_gmm_model,
                     site_str_to_site, get_real_events)
 from sustaingym.data.load_moer import MOERLoader
-
-ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
-MIN_BATTERY_CAPACITY, BATTERY_CAPACITY, MAX_POWER = 0, 100, 100
-BA_CALTECH_JPL = 'SGIP_CAISO_SCE'
-MOER_SAVE_DIR = 'sustaingym/data/moer'
 
 
 class AbstractTraceGenerator:
@@ -35,62 +31,93 @@ class AbstractTraceGenerator:
 
     Attributes:
         site: either 'caltech' or 'jpl'
-        period: number of minutes of each simulation timestep
         date_range_str: a 2-tuple of string elements describing date range to
             generate from.
         date_range: a 2-tuple of timezone-aware datetimes.
-        requested_energy_cap: largest amount of requested energy allowed (kWh)
+        requested_energy_cap: maximum amount of requested energy allowed (kWh)
         station_ids: list of strings of station identifiers
         num_stations: number of charging stations at site
-        day: "day" of simulation, can be fake
+        day: "day" of simulation, can be artificial
         moer_loader: class for loading carbon emission rates data
         rng: random number generator
     """
+    # Time step duration in minutes
+    TIME_STEP_DURATION = 5
+    # Each trace is one day (1440 minutes)
+    MAX_STEPS_OF_TRACE = 288
+
+    # Maximum storage capacity of battery (kWh)
+    BATTERY_CAPACITY = 100
+    # Maximum charging power of battery (kWh)
+    MAX_POWER = 100
+
+    # CAISO Southern California Edison as balancing authority
+    BA_CALTECH_JPL = 'SGIP_CAISO_SCE'
+    # Directory to MOER data
+    MOER_DATA_DIR = 'sustaingym/data/moer'
+
     def __init__(self,
                  site: SiteStr,
-                 period: int,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42):
+                 seed: int = None):
         """
         Args:
             site: garage to get events from, either 'caltech' or 'jpl'
-            period: number of minutes of each simulation timestep
             date_period: either a pre-defined date period or a
                 custom date period. If custom, the input must be a 2-tuple
                 of strings with both strings in the format YYYY-MM-DD.
                 Otherwise, should be a default period string.
-            requested_energy_cap: largest amount of requested energy allowed (kWh)
-            random_seed: seed for random sampling
+            requested_energy_cap: maximum amount of requested energy allowed (kWh)
+            seed: seed for random sampling
         """
-        if MINS_IN_DAY % period != 0:
-            raise ValueError(f'Expected period to divide evenly in day, found {MINS_IN_DAY} % {period} = {MINS_IN_DAY % period} != 0')
+        # Name of site, name of stations on site, and the number of stations on site 
+        self.site = site
+        self.station_ids = site_str_to_site(site).station_ids
+        self.num_stations = len(self.station_ids)
+
         if isinstance(date_period, str):
             self.date_range_str = DEFAULT_PERIOD_TO_RANGE[date_period]  # convert literal to actual date range
         else:
             self.date_range_str = date_period
 
-        self.site = site
-        self.period = period
-        self.date_range = tuple(datetime.strptime(x, DATE_FORMAT).replace(tzinfo=AM_LA) for x in self.date_range_str)  # convert strings to datetime objects
-        self.interval_length = (self.date_range[1] - self.date_range[0]).days + 1  # make inclusive
+        # Convert strings to datetime objects
+        self.date_range = tuple(datetime.strptime(x, DATE_FORMAT).replace(tzinfo=AM_LA)
+                                for x in self.date_range_str)
+
+        # Number of days in date range used for sekecting random day
+        self.num_days_in_date_range = (self.date_range[1] - self.date_range[0]).days + 1
+
+        # Cap requested energy if it exceeds the maximum allowed
         self.requested_energy_cap = requested_energy_cap
-        self.station_ids = site_str_to_site(site).station_ids
-        self.num_stations = len(self.station_ids)
-        self.moer_loader = MOERLoader(self.date_range[0], self.date_range[1], BA_CALTECH_JPL, MOER_SAVE_DIR)
-        self.rng = np.random.default_rng(seed=random_seed)
+
+        # Loader for marginal emissions data at the Caltech and JPL sites
+        self.moer_loader = MOERLoader(self.date_range[0], self.date_range[1], self.BA_CALTECH_JPL, self.MOER_DATA_DIR)
+
+        # Internal random number generator
+        self.rng = np.random.default_rng(seed=seed)
+
+    def site__repr__(self) -> str:
+        """Returns string representation of site."""
+        if self.site == 'jpl':
+            site = 'JPL'
+        else:
+            site = self.site.capitalize()
+        return site + ' garage'
+    
+    def date_range__repr__(self) -> str:
+        """Returns string representation of date range."""
+        return f'({self.date_range_str[0]} to {self.date_range_str[1]})\n'
 
     def __repr__(self) -> str:
         """Returns string representation of generator object."""
-        site = f'{self.site.capitalize()} site'
-        dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
-        return f'AbstractTraceGenerator from the {site} {dr}. '
+        raise NotImplementedError
 
     def _update_day(self) -> None:
         """Randomly sets ``self.day`` to a day in the date range."""
-        self.day = self.date_range[0] + timedelta(days=self.rng.choice(self.interval_length))
+        self.day = self.date_range[0] + timedelta(days=self.rng.choice(self.num_days_in_date_range))
 
-    def set_random_seed(self, seed: int | None) -> None:
+    def set_seed(self, seed: int | None) -> None:
         """Sets random seed to make sampling reproducible."""
         self.rng = np.random.default_rng(seed=seed)
 
@@ -130,14 +157,21 @@ class AbstractTraceGenerator:
             (int) number of plug in events (not counting recompute events)
         """
         samples = self._create_events()
-
-        non_recompute_timestamps = set()
+        non_recompute_timesteps = set()
         events, evs = [], []
+
         for i in range(len(samples)):
+            # Cap maximum requested energy
             requested_energy = min(samples['requested_energy (kWh)'].iloc[i], self.requested_energy_cap)
+
+            # Create battery with initial charge at a minimum zero
             battery = acns.Linear2StageBattery(
-                capacity=BATTERY_CAPACITY, init_charge=max(MIN_BATTERY_CAPACITY, BATTERY_CAPACITY-requested_energy),
-                max_power=MAX_POWER)
+                capacity=self.BATTERY_CAPACITY,
+                init_charge=max(0, self.BATTERY_CAPACITY - requested_energy),
+                max_power=self.MAX_POWER
+            )
+
+            # Create electric vehicle
             ev = acns.EV(
                 arrival=samples['arrival'].iloc[i],
                 departure=samples['departure'].iloc[i],
@@ -147,19 +181,22 @@ class AbstractTraceGenerator:
                 battery=battery,
                 estimated_departure=samples['estimated_departure'].iloc[i]
             )
+
+            # Add PluginEvent and let the simulator take care of UnplugEvent
             event = acns.PluginEvent(samples['arrival'].iloc[i], ev)
-            # no need for UnplugEvent as the simulator takes care of it
             events.append(event)
             evs.append(ev)
 
-            non_recompute_timestamps.add(samples['arrival'].iloc[i])
+            # Find timesteps where a recompute event is not necessary
+            non_recompute_timesteps.add(samples['arrival'].iloc[i])
 
-        num_plugin = len(events)
+        num_plugin = len(events)  # number of events before adding recompute events
 
-        # every timestamp has an event - recompute if no EV events
-        for timestamp in range(MINS_IN_DAY // self.period + 1):
-            if timestamp not in non_recompute_timestamps:  # add recompute only if a timestamp has no events
-                event = acns.RecomputeEvent(timestamp)
+        # every timestep has an event - recompute if no EV events
+        for timestep in range(self.MAX_STEPS_OF_TRACE + 1):
+            # add recompute only if a timestep has no events
+            if timestep not in non_recompute_timesteps:
+                event = acns.RecomputeEvent(timestep)
                 events.append(event)
         events = acns.EventQueue(events)
         return events, evs, num_plugin
@@ -173,60 +210,66 @@ class AbstractTraceGenerator:
                 five-min time steps. Units kg CO2 per kWh. Rows are sorted
                 chronologically.
         """
-        dt = self.day.replace(tzinfo=AM_LA)
-        return self.moer_loader.retrieve(dt)
+        return self.moer_loader.retrieve(self.day.replace(tzinfo=AM_LA))
 
 
 class RealTraceGenerator(AbstractTraceGenerator):
     """Class for EventQueue generator using real traces from ACNData.
 
     Attributes:
+        sequential: whether to draw simulated days sequentially from date
+            range or randomly
         use_unclaimed: whether to use unclaimed sessions, which do not have
             the "requested energy" or "estimated departure" attributes. If
             True, the generator uses the energy delivered in the session and
-            the disconnect time in place of those attributes.
-        sequential: whether to draw simulated days sequentially from date
-            range or randomly
+            the disconnect time in place of those attributes, eliminating
+            real-world uncertainty in user requests.
         *See AbstractTraceGenerator for more attributes
     """
     def __init__(self,
                  site: SiteStr,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  sequential: bool = True,
-                 period: int = 5,
                  use_unclaimed: bool = False,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42):
+                 seed: int = None):
         """
         Args:
+            sequential: whether to draw simulated days sequentially from date
+                range or randomly
             use_unclaimed: whether to use unclaimed sessions, which do not have
                 the "requested energy" or "estimated departure" attributes. If
                 True, the generator uses the energy delivered in the session and
-                the disconnect time in place of those attributes.
-            sequential: whether to draw simulated days sequentially from date
-                range or randomly
+                the disconnect time in place of those attributes, eliminating
+                real-world uncertainty in user requests.
             *See AbstractTraceGenerator for more arguments
         """
-        super().__init__(site, period, date_period, requested_energy_cap, random_seed)
-        self.use_unclaimed = use_unclaimed
+        super().__init__(site, date_period, requested_energy_cap, seed)
+
         self.sequential = sequential
         if sequential:  # seed day before first update
             self.day = self.date_range[0] - timedelta(days=1)
         else:
             self._update_day()
+
+        self.use_unclaimed = use_unclaimed
+
+        # DataFrame of all events in date range
         self.events_df = get_real_events(self.date_range[0], self.date_range[1], site)
 
     def __repr__(self) -> str:
         """Returns string representation of RealTracesGenerator."""
-        site = f'{self.site.capitalize()} site'
-        dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
-        day = f'{self.day.strftime(DATE_FORMAT)}'
-        return f'RealTracesGenerator from the {site} {dr}. Current day {day}. '
+        return (f'Real trace generator for {self.site__repr__()} {self.date_range__repr__()}'
+                f'Sequential = {self.sequential}, Use unclaimed = {self.use_unclaimed}\n'
+                f'Current day: {self.day.strftime(DATE_FORMAT)}')
 
-    def set_random_seed(self, seed: int | None) -> None:
-        """Override parent method, instead set day."""
-        if seed is not None:
-            self.day = self.date_range[0] + timedelta(days=seed % self.interval_length)
+    def set_seed(self, seed: int | None) -> None:
+        """If days are sequential, sets the day. Otherwise, sets the random number generator."""
+        if self.sequential:
+            if seed:
+                self.day = self.date_range[0] + timedelta(days=seed % self.num_days_in_date_range)
+        else:
+            super().set_seed(seed)
 
     def _update_day(self) -> None:
         """Either increments day or randomly samples from date range."""
@@ -246,27 +289,29 @@ class RealTraceGenerator(AbstractTraceGenerator):
         """
         self._update_day()
         df = self.events_df[(self.day <= self.events_df.arrival) &
-                            (self.events_df.arrival <= self.day + timedelta(days=1))]
+                            (self.events_df.arrival < self.day + timedelta(days=1))]
         if not self.use_unclaimed:
             df = df[df['claimed']]
 
         # remove sessions that are not in the set of station ids
         df = df[df['station_id'].isin(self.station_ids)]
 
-        if len(df) == 0:  # if dataframe is empty, return before using dt attribute
+        # if dataframe is empty, return before using dt attribute
+        if len(df) == 0:
             return df.copy()
 
-        # remove sessions where estimated departure / departure is not the same day as arrival
+        # remove sessions where estimated departure or departure is not the same day as arrival
         max_depart = np.maximum(df['departure'], df['estimated_departure'])
-        mask = (df['arrival'].dt.day == max_depart.dt.day)
+        mask = (self.day.day == max_depart.dt.day)
         df = df[mask]
 
-        if len(df) == 0:  # if dataframe is empty, return before using dt attribute
+         # if dataframe is empty, return before using dt attribute
+        if len(df) == 0:
             return df.copy()
 
         # convert arrival, departure, estimated departure to timestamps
         for col in ['arrival', 'departure', 'estimated_departure']:
-            df[col] = (df[col].dt.hour * 60 + df[col].dt.minute) // self.period
+            df[col] = (df[col].dt.hour * 60 + df[col].dt.minute) // self.TIME_STEP_DURATION
 
         # remove sessions with estimated departure before connection
         df = df[df['estimated_departure'] > df['arrival']]
@@ -306,13 +351,14 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             'gmms_ev_charging' relative to the current working directory. See
             train_gmm_model.py for how to train GMMs from the command line.
     """
+    ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
+
     def __init__(self,
                  site: SiteStr,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  n_components: int = 30,
-                 period: int = 5,
                  requested_energy_cap: float = 100,
-                 random_seed: int = 42):
+                 seed: int = None):
         """
         Args:
             n_components: number of components in GMM
@@ -320,9 +366,9 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
 
         Notes:
             The generator first searches for a matching GMM directory. If
-            unfound, it creates one.
+                unfound, it creates one.
         """
-        super().__init__(site, period, date_period, requested_energy_cap, random_seed)
+        super().__init__(site, date_period, requested_energy_cap, seed)
         self.n_components = n_components
 
         try:
@@ -336,18 +382,19 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         self.station_usage: np.ndarray = data[STATION_USAGE_KEY]
 
     def __repr__(self) -> str:
-        """Returns string representation of GMMsTracesGenerator."""
-        site = f'{self.site.capitalize()} site'
-        dr = f'from {self.date_range[0].strftime(DATE_FORMAT)} to {self.date_range[1].strftime(DATE_FORMAT)}'
-        return f'GMMsTracesGenerator from the {site} {dr}. Sampler is GMM with {self.n_components} components. '
+        """Returns string representation of GMMsTraceGenerator."""
+        return f'{self.n_components}-component GMM-based trace generator for {self.site__repr__()} {self.date_range__repr__()}'
 
-    def set_random_seed(self, seed: int | None) -> None:
+    def set_seed(self, seed: int | None) -> None:
         """Sets random seed to make GMM sampling reproducible."""
-        super().set_random_seed(seed)
+        super().set_seed(seed)
         self.gmm.set_params(random_state=seed)
 
     def _sample(self, n: int, oversample_factor: float = 0.2) -> np.ndarray:
         """Returns samples from GMM.
+
+        This function over-generates samples and discard those that are not in
+        bounds (i.e. arrival >= departure).
 
         Args:
             n: number of samples to generate.
@@ -358,33 +405,35 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                 departure time in minutes, estimated departure time in
                 minutes, and requested energy in kWh.
         """
+        if n == 0:
+            return np.empty((0, 4))
         # use while loop for quality check
         all_samples: list[np.ndarray] = []
-        while len(all_samples) < n:
-            samples = self.gmm.sample(int(n * (1 + oversample_factor)))[0]  # shape (1.2n, 4)
+        num_samples: int = 0
+        while num_samples < n:
+            samples = self.gmm.sample(int(n * (1 + oversample_factor)))[0]  # shape (1.2*n, 4)
 
             # discard sample if arrival, departure, estimated departure or
             # requested energy not in bound
             samples = samples[
-                (0 <= samples[:, ARRCOL]) &
-                (samples[:, DEPCOL] < 1) &
-                (samples[:, ESTCOL] < 1) &
-                (samples[:, EREQCOL] >= 0)
+                (0 <= samples[:, self.ARRCOL]) & (samples[:, self.DEPCOL] < 1) &
+                (samples[:, self.ESTCOL] < 1)  & (samples[:, self.EREQCOL] >= 0)
             ]
 
             # rescale arrival, departure, estimated departure
-            samples[:, [ARRCOL,DEPCOL,ESTCOL]] = MINS_IN_DAY * samples[:, [ARRCOL,DEPCOL,ESTCOL]] // self.period
+            samples[:, [self.ARRCOL,self.DEPCOL,self.ESTCOL]] = self.MAX_STEPS_OF_TRACE * samples[:, [self.ARRCOL,self.DEPCOL,self.ESTCOL]] // self.TIME_STEP_DURATION
 
             # discard sample if arrival >= departure or arrival >= estimated_departure
             samples = samples[
-                (samples[:, ARRCOL] < samples[:, DEPCOL]) &
-                (samples[:, ARRCOL] < samples[:, ESTCOL])
+                (samples[:, self.ARRCOL] < samples[:, self.DEPCOL]) &
+                (samples[:, self.ARRCOL] < samples[:, self.ESTCOL])
             ]
 
             # rescale requested energy
-            samples[:, EREQCOL] *= REQ_ENERGY_SCALE
+            samples[:, self.EREQCOL] *= REQ_ENERGY_SCALE
 
             all_samples.append(samples)
+            num_samples += len(samples)
 
         return np.concatenate(all_samples, axis=0)[:n]
 
@@ -402,23 +451,24 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             DataFrame of artificial sessions.
         """
         self._update_day()
-        # generate samples from empirical pdf, capping maximum at the number of stations
+        # number of events from empirical pdf
         n = int(self.rng.choice(self.cnt))
         samples = self._sample(n)
 
         events = pd.DataFrame({
-            'arrival': samples[:, ARRCOL].astype(int),
-            'departure': samples[:, DEPCOL].astype(int),
-            'estimated_departure': samples[:, ESTCOL].astype(int),
-            'requested_energy (kWh)': np.clip(samples[:, EREQCOL], 0, self.requested_energy_cap),
+            'arrival': samples[:, self.ARRCOL].astype(int),
+            'departure': samples[:, self.DEPCOL].astype(int),
+            'estimated_departure': samples[:, self.ESTCOL].astype(int),
+            'requested_energy (kWh)': np.clip(samples[:, self.EREQCOL], 0, self.requested_energy_cap),
             'session_id': [str(uuid.uuid4()) for _ in range(n)]
         })
         # sort by arrival time for probabilistic sampling of stations
         events.sort_values('arrival', inplace=True)
 
-        # sample stations according their popularity
+        # empirical distribution on stations
         station_cnts = self.station_usage / self.station_usage.sum()
 
+        # array for last departure time of stations
         station_dep = np.full(len(self.station_ids), -1, dtype=np.int32)
 
         station_ids = []
@@ -431,9 +481,11 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                 if station_cnts_sum <= 1e-5:  # if probability distribution is too small, sample uniformly
                     idx = self.rng.choice(avail)
                 else:
-                    idx = self.rng.choice(avail, p=station_cnts[avail] / station_cnts_sum)  # sample according to probability distribution
+                    # sample according to probability distribution
+                    idx = self.rng.choice(avail, p=station_cnts[avail] / station_cnts_sum)
                 station_dep[idx] = max(events['departure'].iloc[i], station_dep[idx])
                 station_ids.append(self.station_ids[idx])
         events['station_id'] = station_ids
+        # toss out EV if all stations are taken
         events = events[events['station_id'] != 'NOT_AVAIL']
         return events.reset_index()
