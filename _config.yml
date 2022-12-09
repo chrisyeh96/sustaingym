@@ -7,7 +7,7 @@ remote_theme: pmarsceill/just-the-docs@v0.3.3
 plugins:
   - jekyll-remote-theme
 
-url: https://chrisyeh96.github.io/sustaingym/
+url: https://chrisyeh96.github.io
 
 aux_links:
   "SustainGym GitHub":
@@ -25,5 +25,5 @@ exclude:
 
 # strip all unncessary whitespace and comments
 # http://jch.penibelst.de/
-# compress_html:
-#   blanklines: true
+compress_html:
+  blanklines: true
