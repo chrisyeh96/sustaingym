@@ -1,4 +1,6 @@
 ## CUSTOM EXCLUSIONS
+.ipynb_checkpoints
+*/.ipynb_checkpoints/*
 .DS_STORE
 .vscode/
 sandbox/
