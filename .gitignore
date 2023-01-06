@@ -12,6 +12,8 @@ examples/A2C*
 examples/old
 examples/train_DQN.py
 examples/test.ipynb
+examples/intermreward
+examples/model_analysis.ipynb
 *.png
 sustaingym/tests*
 ## END CUSTOM EXCLUSIONS

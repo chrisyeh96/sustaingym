@@ -93,8 +93,8 @@ def plot_returns(results: Mapping[str, Mapping[str, np.ndarray]],
         alg = '\n'.join(alg.split(' '))
 
         year = 2019 if '2019' in label else 2021
-
-        returns = np.sum(d['rewards'], axis=1)
+        # returns = np.sum(d['rewards'], axis=1)
+        returns = np.sum(d['results'], axis=1) # check to make sure this makes sense!
         rows.extend([
             (alg, year, r) for r in returns
         ])
