@@ -1,5 +1,5 @@
 """
-The module implements the BatteryStorageInGridEnv class.
+The module implements the ElectricityMarketEnv class.
 """
 from __future__ import annotations
 
