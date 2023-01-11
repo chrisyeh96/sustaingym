@@ -14,6 +14,8 @@ import cvxpy as cp
 from gym import Env, spaces
 import numpy as np
 import pandas as pd
+import pandapower.networks as pn
+from pandapower.auxiliary import pandapowerNet
 import pytz
 
 from sustaingym.data.load_moer import MOERLoader
@@ -21,15 +23,76 @@ from sustaingym.envs.utils import solve_mosek
 
 BATTERY_STORAGE_MODULE = 'sustaingym.envs.battery'
 
+class CongestedNetwork:
+    """CongestedNetwork class."""
+    def __init__(self, network: pandapowerNet = None, slack_dist: np.ndarray = None):
+        if network is not None:
+            self.network = network
+        else:
+            self.network = pn.case39()
+        
+        if slack_dist is not None and slack_dist.shape == self.network['bus']['name'].shape:
+            self.slack_dist = slack_dist
+        else:
+            self.slack_dist = np.full((self.network['bus']['name'].shape[0],), 1/self.network['bus']['name'].shape[0])
+
+        self.n_b = self.network['bus']['name'].shape[0]
+        self.n_l = self.network['line']['df'].shape[0]
+    
+    def get_PTDF(self) -> np.ndarray:
+        net = self.network
+        # calculate susceptance for all lines/branches in the network
+        b_lines = np.array(
+                            1/(net['line']['x_ohm_per_km']*net['line']['length_km']*net['sn_mva']/net['line']['parallel'])
+                        ) * net['bus'].loc[net['line']['from_bus'].values, "vn_kv"].values ** 2
+
+        # convert the susceptances for all branches into matrix representation
+        d_lines = np.zeros((self.n_l, self.n_l))
+
+        for i in range(self.n_l):
+            d_lines[i,i] = -b_lines[i]
+
+        # construct node-arc incidence matrix
+        incidence_mat = np.zeros((self.n_l, self.n_b))
+        # connection matrices
+        C_f = np.zeros((self.n_l, self.n_b))
+        C_t = np.zeros((self.n_l, self.n_b))
+
+        for i in range(self.n_l):
+            source = self.network['line']['from_bus'][i]
+            sink = self.network['line']['to_bus'][i]
+
+            incidence_mat[i][source] = 1
+            incidence_mat[i][sink] = -1
+            C_f[i][source] = 1
+            C_t[i][sink] = 1
+
+        # calculate B_f and B_bus according to MATPOWER defs
+        B_f = d_lines @ incidence_mat
+        B_bus = (C_f - C_t).T @ B_f
+
+        # assume slack dist w_k where bus k=1 (or 0 in zero-indexing) has all power injection
+        B_f_tilda = B_f[:][1:]
+        B_dc = B_bus[1:][:]
+
+        H_tilda = B_f_tilda @ np.linalg.inv(B_dc)
+        H_w = H_tilda - H_tilda @ self.slack_dist.reshape((self.n_b, 1))
+
+        # ensure proper dimensionality
+        assert H_w.shape == (self.n_l, self.n_b)
+        return H_w
+    
+    
 
 class MarketOperator:
     """MarketOperator class."""
-    def __init__(self, env: ElectricityMarketEnv):
+    def __init__(self, env: ElectricityMarketEnv, network: pandapowerNet = None):
         """
         Args:
             env: instance of ElectricityMarketEnv class
         """
         self.env = env
+        self.network = CongestedNetwork()
 
         # x: energy in MWh, positive means generation, negative (for battery) means charging
         self.x = cp.Variable(env.num_gens + env.num_bats)
