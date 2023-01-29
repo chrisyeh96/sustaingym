@@ -15,7 +15,7 @@ dependencies:
 - flake8
 - ipympl
 - jupyterlab
-- matplotlib
+- matplotlib=3.5.1  # version necessary for Networkx plotting
 - mypy=0.961
 - nodejs
 - numpy
@@ -25,6 +25,7 @@ dependencies:
 - scikit-learn
 - scipy
 - tqdm
+- cvxpy
 
 - pip:
   - acnportal==0.3.2
