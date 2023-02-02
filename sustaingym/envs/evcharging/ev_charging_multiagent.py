@@ -3,9 +3,12 @@ The module implements a multi-agent version of the EVChargingEnv.
 """
 from __future__ import annotations
 
+import functools
 from typing import Any
 
-from gym import Env, spaces
+import gymnasium
+from gymnasium import Env, spaces
+
 import numpy as np
 
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
@@ -29,28 +32,27 @@ class MultiAgentEVChargingEnv(Env):
             project_action_in_env=project_action_in_env,
             verbose=verbose)
         
-        self.num_agents = self.single_env.num_stations
         self.agents = self.single_env.cn.station_ids[:]
+        self.agent_idx = {agent: i for i, agent in enumerate(self.agents)}
+        self.num_agents = self.single_env.num_stations
+        self.possible_agents = self.agents
+        self.max_num_agents = self.num_agents
 
-        # each agent has control over its own EVSE
-        self.action_spaces = {
-            agent: spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32)
+        self.observation_spaces = {agent: spaces.Dict({
+            'est_departures':  spaces.Box(-288, 288, shape=(1,), dtype=np.float32),
+            'demands':         spaces.Box(0,
+                                        self.single_env.data_generator.requested_energy_cap,
+                                        shape=(1,), dtype=np.float32),
+            'prev_moer':       spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+            'forecasted_moer': spaces.Box(0, 1.0, shape=(self.single_env.moer_forecast_steps,), dtype=np.float32),
+            'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+        }) for agent in self.agents}
+
+        self.action_spaces = {agent: 
+            spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32)
             for agent in self.agents
         }
 
-        self.observation_spaces = {
-            agent: spaces.Dict({
-                'est_departures':  spaces.Box(-288, 288, shape=(1,), dtype=np.float32),
-                'demands':         spaces.Box(0,
-                                            self.single_env.data_generator.requested_energy_cap,
-                                            shape=(1,), dtype=np.float32),
-                'prev_moer':       spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-                'forecasted_moer': spaces.Box(0, 1.0, shape=(self.single_env.moer_forecast_steps,), dtype=np.float32),
-                'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-            })
-            for agent in self.agents
-        }
-    
     def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any]) -> dict[str, dict[str, Any]]:
         """Spread observation across agents."""
         obs = {}
@@ -63,6 +65,7 @@ class MultiAgentEVChargingEnv(Env):
                 'timestep': obs_agg['timestep'],
             }
             obs[agent] = ob
+        self.state = obs
         return obs
  
     def _create_dict_from_infos_agg(self, infos_agg: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -73,7 +76,8 @@ class MultiAgentEVChargingEnv(Env):
         return infos
 
     def step(self, action: dict[str, np.ndarray], return_info: bool = False
-             ) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, float], bool, dict[str, dict[str, Any]]]:
+             ) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, float],
+                        dict[str, bool], dict[str, bool], dict[str, dict[str, Any]]]:
         """Made everything dictionaries w/ agent as key. "done" is scalar b/c all agents end at same time."""
 
         # create action
@@ -82,7 +86,7 @@ class MultiAgentEVChargingEnv(Env):
             actions_agg[i] = action[agent]
 
         # feed action
-        obs_agg, rews_agg, dones_agg, infos_agg = self.single_env.step(actions_agg, return_info=return_info)
+        obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(actions_agg, return_info=return_info)
         obs = self._create_dict_from_obs_agg(obs_agg)
 
         reward = {}
@@ -90,8 +94,13 @@ class MultiAgentEVChargingEnv(Env):
         for agent in self.agents:
             reward[agent] = rews_agg  # every agent gets same global reward signal
             infos[agent] = infos_agg  # same as info
+
+        terminations = {agent: terminated for agent in self.agents}
+        truncations = {agent: truncated for agent in self.agents}
+        if terminated or truncated:
+            self.agents = []
         
-        return obs, reward, dones_agg, infos
+        return obs, reward, terminations, truncations, infos
 
     def reset(self, *,
               seed: int | None = None,
@@ -103,11 +112,15 @@ class MultiAgentEVChargingEnv(Env):
         obs_and_info = self.single_env.reset(seed=seed, return_info=True, options=options)
         obs_agg: dict[str, Any] = obs_and_info[0]
         infos_agg: dict[str, Any] = obs_and_info[1]
+        self.agents = self.possible_agents[:]
 
         if return_info:
             return self._create_dict_from_obs_agg(obs_agg), self._create_dict_from_infos_agg(infos_agg)
         else:
             return self._create_dict_from_obs_agg(obs_agg)
+        
+    def seed(self, seed: int = None) -> None:
+        self.reset(seed=seed)
 
     def render(self) -> None:
         """Render environment."""
@@ -116,3 +129,9 @@ class MultiAgentEVChargingEnv(Env):
     def close(self) -> None:
         """Close the environment. Delete internal variables."""
         self.single_env.close()
+
+    def observation_space(self, agent):
+        return self.observation_spaces[agent]
+
+    def action_space(self, agent):
+        return self.action_spaces[agent]

@@ -3,14 +3,16 @@ This module implements a wrapper supporting discrete actions in EVChargingEnv.
 """
 from __future__ import annotations
 
-import gym
-from gym import spaces, Env
+# import gym
+# from gym import spaces, Env
+from gymnasium import ActionWrapper, spaces
+
 import numpy as np
 
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 
 
-class DiscreteActionWrapper(gym.ActionWrapper):
+class DiscreteActionWrapper(ActionWrapper):
     """Discrete action wrapper.
     
     This wrapper maps discrete actions to normalized continuous actions on the

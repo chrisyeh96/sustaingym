@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from typing import Any
 
 import cvxpy as cp
-from gym import spaces
+from gymnasium import spaces
 import numpy as np
 import pandas as pd
 from stable_baselines3.common.base_class import BaseAlgorithm

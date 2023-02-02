@@ -9,7 +9,7 @@ import warnings
 
 import acnportal.acnsim as acns
 import cvxpy as cp
-from gym import Env, spaces
+from gymnasium import Env, spaces
 import numpy as np
 
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
@@ -211,7 +211,7 @@ class EVChargingEnv(Env):
                 f'using {self.data_generator.__repr__()}')
 
     def step(self, action: np.ndarray, return_info: bool = False
-             ) -> tuple[dict[str, np.ndarray], float, bool, dict[str, Any]]:
+             ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         """Steps the environment.
 
         Calls the step function of the internal simulator and generates the
@@ -270,7 +270,8 @@ class EVChargingEnv(Env):
         reward = self._get_reward(schedule)
         info = self._get_info(return_info)
 
-        return observation, reward, done, info
+        terminated, truncated = done, done
+        return observation, reward, terminated, truncated, info
 
     def reset(self, *,
               seed: int | None = None,

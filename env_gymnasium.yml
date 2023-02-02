@@ -1,0 +1,43 @@
+# Install or update environment
+# conda env update --file env.yml --prune
+#
+# Remove environment
+# conda remove --name sustaingym --all
+#
+# Notes
+# - multi-agent RL requires 
+# - stable-baselines3 (v1.6.0) only supports gym==0.21, which only supports up to Python 3.9
+# - last updated: Aug 12, 2022
+name: sustaingymnasium
+channels:
+- pytorch  # torch (PyTorch)
+- mosek
+- conda-forge
+dependencies:
+- python=3.9
+- cudatoolkit=11.3
+- cvxpy
+- flake8
+- ipympl
+- jupyterlab
+- matplotlib
+- mosek=9.3.21
+- mypy=0.961
+- nodejs
+- numpy
+- pandas=1.1
+- pip
+- pytorch=1.11
+- pytz
+- scikit-learn
+- scipy
+- seaborn
+- tensorboard
+- tqdm
+
+- pip:
+  - acnportal==0.3.2
+  - gym==0.21  # for compatibility w/ sustaingym
+  - gymnasium
+  - pettingzoo
+  - git+https://github.com/WillDudley/tianshou.git
