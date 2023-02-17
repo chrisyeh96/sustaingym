@@ -18,6 +18,8 @@ import pandapower.networks as pn
 from pandapower.auxiliary import pandapowerNet
 import pytz
 
+from load_network import network
+from load_network import load_data
 from sustaingym.data.load_moer import MOERLoader
 from sustaingym.envs.utils import solve_mosek
 
@@ -25,105 +27,120 @@ BATTERY_STORAGE_MODULE = 'sustaingym.envs.battery'
 
 class CongestedNetwork:
     """CongestedNetwork class."""
-    def __init__(self, network: pandapowerNet = None, slack_dist: np.ndarray = None):
+    def __init__(self, market_network: dict):
         if network is not None:
+            self.network = market_network
+        else:
             self.network = network
-        else:
-            self.network = pn.case39()
         
-        if slack_dist is not None and slack_dist.shape == self.network['bus']['name'].shape:
-            self.slack_dist = slack_dist
-        else:
-            self.slack_dist = np.full((self.network['bus']['name'].shape[0],), 1/self.network['bus']['name'].shape[0])
+        self.default_load_split = load_data / np.sum(load_data)
+        self.load_split = self.default_load_split.copy()
 
-        self.n_b = self.network['bus']['name'].shape[0]
-        self.n_l = self.network['line']['df'].shape[0]
+        self.N = self.network['N'] # number of nodes
+        self.L = self.network['L'] # number of lines
+        self.G = self.network['G'] # number of generators
+        self.D = self.network['D'] # number of loads
+        self.J = self.network['J'] # pow_inject_to_bus_injection_matrix
+        self.H = self.network['H'] # generation_shift_factor_matrix
+        self.pmin = self.network['p_min'] # minimum power for participants
+        self.pmax = self.network['p_max'] # maximum power for participants
+        self.cgen = self.network['cgen'] # cost of generation
+        self.fmax = self.network['f_max']
     
-    def get_PTDF(self) -> np.ndarray:
-        net = self.network
-        # calculate susceptance for all lines/branches in the network
-        b_lines = np.array(
-                            1/(net['line']['x_ohm_per_km']*net['line']['length_km']*net['sn_mva']/net['line']['parallel'])
-                        ) * net['bus'].loc[net['line']['from_bus'].values, "vn_kv"].values ** 2
+    def update_load_split(self):
+        # shift each +/- 10% of default load_split
 
-        # convert the susceptances for all branches into matrix representation
-        d_lines = np.zeros((self.n_l, self.n_l))
+        load_split = np.zeros(self.D)
+        
+        for i in range(self.D-1):
+            load_split[i] = np.random.uniform(low=0.9*self.default_load_split[i], high=1.1*self.default_load_split[i])
 
-        for i in range(self.n_l):
-            d_lines[i,i] = -b_lines[i]
-
-        # construct node-arc incidence matrix
-        incidence_mat = np.zeros((self.n_l, self.n_b))
-        # connection matrices
-        C_f = np.zeros((self.n_l, self.n_b))
-        C_t = np.zeros((self.n_l, self.n_b))
-
-        for i in range(self.n_l):
-            source = self.network['line']['from_bus'][i]
-            sink = self.network['line']['to_bus'][i]
-
-            incidence_mat[i][source] = 1
-            incidence_mat[i][sink] = -1
-            C_f[i][source] = 1
-            C_t[i][sink] = 1
-
-        # calculate B_f and B_bus according to MATPOWER defs
-        B_f = d_lines @ incidence_mat
-        B_bus = (C_f - C_t).T @ B_f
-
-        # assume slack dist w_k where bus k=1 (or 0 in zero-indexing) has all power injection
-        B_f_tilda = B_f[:][1:]
-        B_dc = B_bus[1:][:]
-
-        H_tilda = B_f_tilda @ np.linalg.inv(B_dc)
-        H_w = H_tilda - H_tilda @ self.slack_dist.reshape((self.n_b, 1))
-
-        # ensure proper dimensionality
-        assert H_w.shape == (self.n_l, self.n_b)
-        return H_w
-    
-    
+        load_split[-1] = 1 - np.sum(load_split)
+        self.load_split[:] = load_split
 
 class MarketOperator:
     """MarketOperator class."""
-    def __init__(self, env: ElectricityMarketEnv, network: pandapowerNet = None):
+    def __init__(self, env: ElectricityMarketEnv, congestion: bool = True):
         """
         Args:
             env: instance of ElectricityMarketEnv class
         """
+
         self.env = env
-        self.network = CongestedNetwork()
+        
+        if not congestion:
+            # x: energy in MWh, positive means generation, negative (for battery) means charging
+            self.x = cp.Variable(env.num_gens + env.num_bats)
+            x_gens = self.x[:env.num_gens]
+            x_bats = self.x[env.num_gens:]
 
-        # x: energy in MWh, positive means generation, negative (for battery) means charging
-        self.x = cp.Variable(env.num_gens + env.num_bats)
-        x_gens = self.x[:env.num_gens]
-        x_bats = self.x[env.num_gens:]
+            # time-dependent parameters
+            self.gen_max_production = cp.Parameter(env.num_gens, nonneg=True)  # rate in MW
+            self.bats_max_charge = cp.Parameter(env.num_bats, nonpos=True)  # rate in MW
+            self.bats_max_discharge = cp.Parameter(env.num_bats, nonneg=True)
+            self.bats_charge_costs = cp.Parameter(env.num_bats, nonneg=True)
+            self.bats_discharge_costs = cp.Parameter(env.num_bats, nonneg=True)
+            self.gens_costs = cp.Parameter(env.num_gens, nonneg=True)
+            self.demand = cp.Parameter()  # net demand: usually +, but could be -
 
-        # time-dependent parameters
-        self.gen_max_production = cp.Parameter(env.num_gens, nonneg=True)  # rate in MW
-        self.bats_max_charge = cp.Parameter(env.num_bats, nonpos=True)  # rate in MW
-        self.bats_max_discharge = cp.Parameter(env.num_bats, nonneg=True)
-        self.bats_charge_costs = cp.Parameter(env.num_bats, nonneg=True)
-        self.bats_discharge_costs = cp.Parameter(env.num_bats, nonneg=True)
-        self.gens_costs = cp.Parameter(env.num_gens, nonneg=True)
-        self.demand = cp.Parameter()  # net demand: usually +, but could be -
+            constraints = [
+                cp.sum(self.x) == self.demand,  # supply = demand
 
-        constraints = [
-            cp.sum(self.x) == self.demand,  # supply = demand
+                0 <= x_gens,
+                x_gens <= self.gen_max_production * env.TIME_STEP_DURATION,
 
-            0 <= x_gens,
-            x_gens <= self.gen_max_production * env.TIME_STEP_DURATION,
+                self.bats_max_charge * env.TIME_STEP_DURATION <= x_bats,
+                x_bats <= self.bats_max_discharge * env.TIME_STEP_DURATION,
+            ]
 
-            self.bats_max_charge * env.TIME_STEP_DURATION <= x_bats,
-            x_bats <= self.bats_max_discharge * env.TIME_STEP_DURATION,
-        ]
+            obj = self.gens_costs @ x_gens
+            obj += cp.sum(cp.maximum(cp.multiply(self.bats_discharge_costs, x_bats), cp.multiply(self.bats_charge_costs, x_bats)))
+            self.prob = cp.Problem(objective=cp.Minimize(obj), constraints=constraints)
+            assert self.prob.is_dcp() and self.prob.is_dpp()
 
-        obj = self.gens_costs @ x_gens
-        obj += cp.sum(cp.maximum(cp.multiply(self.bats_discharge_costs, x_bats), cp.multiply(self.bats_charge_costs, x_bats)))
-        self.prob = cp.Problem(objective=cp.Minimize(obj), constraints=constraints)
-        assert self.prob.is_dcp() and self.prob.is_dpp()
+        else:
+            self.network = CongestedNetwork()
 
-    def get_dispatch(self) -> tuple[np.ndarray, np.ndarray, float]:
+            # dispatch for participants (loads is trivially fixed by constraints)
+            self.out = cp.Variable(shape=self.network.D+self.network.G)
+            self.x = self.out[self.network.D:]
+
+            # Parameters
+            self.pmin = cp.Parameter(self.network.D+self.network.G)
+            self.pmax = cp.Parameter(self.network.D+self.network.G, nonneg=True)
+            self.cgen = cp.Parameter((self.network.G,2), nonneg=True) # needs to be parameter for battery action
+
+            # Constraints
+            constraints = []
+
+            # power balance
+            constraints.append(np.ones(self.network.N) @ self.network.J @ self.out == 0)
+
+            # power flow and line flow limits
+            constraints.extend([
+                self.network.H @ self.network.J @ self.out <= self.network.fmax,
+                self.network.H @ self.network.J @ self.out >= -self.network.fmax
+            ])
+
+            # generation limits
+            constraints.extend([
+                self.out <= self.pmax,
+                self.out >= self.pmin,
+            ])
+
+            # Objective function
+            obj = 0
+            for g in range(self.network.G-1): # add up all generator costs
+                obj += self.cgen[g][0] + self.cgen[g][1] * self.out[g]
+            
+            for g in range(1): # assume discharge cost (positive domain) is first in array
+                obj += cp.maximum(cp.multiply(self.cgen[-g][0], self.out[-g]), cp.multiply(self.cgen[-g][1], self.out[-g]))
+
+            # Solve problem
+            self.prob = cp.Problem(cp.Minimize(obj), constraints)
+            assert self.prob.is_dcp() and self.prob.is_dpp()
+
+    def get_dispatch(self, congestion: bool = True) -> tuple[np.ndarray, np.ndarray, float]:
         """Determines dispatch values.
 
         Returns:
@@ -131,17 +148,31 @@ class MarketOperator:
             x_bats: array of shape [num_bats], battery dispatch values
             price: float
         """
-        self.gen_max_production.value = self.env.gen_max_production
-        self.gens_costs.value = self.env.gens_costs
-        self.bats_max_charge.value = self.env.bats_max_charge
-        self.bats_max_discharge.value = self.env.bats_max_discharge
-        self.bats_discharge_costs.value = self.env.bats_costs[:, 0]
-        self.bats_charge_costs.value = self.env.bats_costs[:, 1]
-        self.demand.value = self.env.demand[0]
-        solve_mosek(self.prob)
-        price = -self.prob.constraints[0].dual_value  # negative because of minimizing objective in LP
-        x_gens = self.x.value[:self.env.num_gens]
-        x_bats = self.x.value[self.env.num_gens:]
+
+        if not congestion:
+            self.gen_max_production.value = self.env.gen_max_production
+            self.gens_costs.value = self.env.gens_costs
+            self.bats_max_charge.value = self.env.bats_max_charge
+            self.bats_max_discharge.value = self.env.bats_max_discharge
+            self.bats_discharge_costs.value = self.env.bats_costs[:, 0]
+            self.bats_charge_costs.value = self.env.bats_costs[:, 1]
+            self.demand.value = self.env.demand[0]
+            solve_mosek(self.prob)
+            price = -self.prob.constraints[0].dual_value  # negative because of minimizing objective in LP
+            x_gens = self.x.value[:self.env.num_gens]
+            x_bats = self.x.value[self.env.num_gens:]
+        
+        else:
+            self.network.update_load_split() # update load split for randomness
+            load_pows = self.env.demand[0] * self.network.load_split
+            self.pmin[:self.network.D].value = load_pows
+            self.pmin[self.network.D:].value = self.network.pmin[self.network.D:]
+            self.pmax[:self.network.D].value = load_pows
+            self.pmax[self.network.D:].value = self.network.pmax[self.network.D:]
+            costs = self.network.cgen
+            costs[-1, 0] = self.env.action[0]
+            costs[-1, 1] = self.env.action[1]
+            self.cgen.value = costs
 
         return x_gens, x_bats, price
 
@@ -193,6 +224,7 @@ class ElectricityMarketEnv(Env):
     CARBON_PRICE = 30.85
 
     def __init__(self,
+                 congestion: bool = True,
                  gen_max_production: Sequence[float] = DEFAULT_GEN_MAX_RATES,
                  gens_costs: np.ndarray | None = None,
                  bats_capacity: Sequence[float] = DEFAULT_BAT_CAPACITY,
@@ -207,6 +239,7 @@ class ElectricityMarketEnv(Env):
                  LOCAL_FILE_PATH: str | None = None):
         """
         Args:
+            congestion: bool, whether or not to incorporate network structure on energy market
             gen_max_production: shape [num_gens], maximum production of each generator (MW)
             gens_costs: shape [num_gens], costs of each generator ($/MWh)
             bats_capacity: shape [num_bats], capacity of each battery (MWh)
@@ -216,6 +249,7 @@ class ElectricityMarketEnv(Env):
                 for each battery, excluding the agent-controlled battery ($/MWh)
             randomize_costs: list of str, chosen from ['gens', 'bats'], which
                 costs should be randomly scaled
+            use_intermediate_rewards: bool, whether or not to calculate intermediate rewards
             month: year and month to load moer and net demand data from, format YYYY-MM
             moer_forecast_steps: number of steps of MOER forecast to include,
                 maximum of 36. Each step is 5 min, for a maximum of 3 hrs.
@@ -288,7 +322,8 @@ class ElectricityMarketEnv(Env):
             'price previous': spaces.Box(low=0, high=max_cost, shape=(1,), dtype=float)
         })
         self.init = False
-        self.market_op = MarketOperator(self)
+        self.congestion = congestion
+        self.market_op = MarketOperator(self, self.congestion)
         self.df_demand = self._get_demand_data()
         self.df_demand_forecast = self._get_demand_forecast_data()
 
@@ -487,7 +522,7 @@ class ElectricityMarketEnv(Env):
             self.bats_max_rates[:, 1],
             self.battery_charge * self.DISCHARGE_EFFICIENCY / self.TIME_STEP_DURATION)
 
-        _, x_bats, price = self.market_op.get_dispatch()
+        _, x_bats, price = self.market_op.get_dispatch(self.congestion)
         x_agent = x_bats[-1]
         self.dispatch[:] = x_agent
         self.price[:] = price
@@ -565,7 +600,7 @@ class ElectricityMarketEnv(Env):
         self.bats_max_discharge[-1] = 0
 
         self.demand[:] = self._generate_load_data(count)
-        x_gens, x_bats, price = self.market_op.get_dispatch()
+        x_gens, x_bats, price = self.market_op.get_dispatch(self.congestion)
 
         # sanity checks
         assert np.isclose(x_bats[-1], 0) and 0 <= price
