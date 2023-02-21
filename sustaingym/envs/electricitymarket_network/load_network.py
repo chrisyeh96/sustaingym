@@ -11,16 +11,23 @@ Params to load:
 Description of matpower case format: https://matpower.org/docs/ref/matpower5.0/caseformat.html
 IEEE24RTS voltages already have magnitude 1
 '''
-from case24_ieee_rts import case24_ieee_rts
+from case24_ieee_rts_modified import case24_ieee_rts
 import numpy as np
 import networkx as nx
 from matplotlib import pyplot as plt
+import pandas as pd
 
 test_case = case24_ieee_rts()
 N = len(test_case['bus'])
 M = len(test_case['branch'])
 
-# load injection data
+# load injection data (year is 2020 with 366 days)
+# need to change this to RT 5min load data from https://github.com/GridMod/RTS-GMLC/tree/master/RTS_Data
+load_data = pd.read_csv('DAY_AHEAD_regional_Load.csv')
+
+# scale load data up to a max of 4000 to trigger very high prices
+load_ts = load_data['1'].values * (4000/max(load_data['1']))
+
 p_l = []
 # test_case['bus'][:, 2]
 for i in range(N):
@@ -75,21 +82,24 @@ for g in range(G):
     J[bus_idx, D + g] = 1
 
 # p_min, p_max for gen and loads
-p_min = np.concatenate([load_data[:, 1], gen_data[:, 0]])
-p_max = np.concatenate([load_data[:, 1], gen_data[:, 1]])
+#p_min = gen_data[:, 0]]  # non-zero p_min
+p_min = np.zeros_like(gen_data[:, 1])
+p_max = gen_data[:, 1]
+d_min = load_data[:, 1]
+d_max = load_data[:, 1]
 
 c_gen = [(gen_data[g, 3], gen_data[g, 4]) for g in range(G)]
 
 # Plot network
-graph = nx.Graph()
-graph.add_nodes_from(nodes)
-graph.add_edges_from(edges)
-
-# Draw the graph
-nx.draw(graph, pos=nx.fruchterman_reingold_layout(graph, seed=42), node_size=20, with_labels=True)
-
-# Show the plot
-plt.show()
+# graph = nx.Graph()
+# graph.add_nodes_from(nodes)
+# graph.add_edges_from(edges)
+#
+# # Draw the graph
+# nx.draw(graph, pos=nx.fruchterman_reingold_layout(graph, seed=42), node_size=20, with_labels=True)
+#
+# # Show the plot
+# plt.show()
 
 
 # Network data dict
@@ -102,6 +112,9 @@ network = {'name': 'IEE24RTS',
            'J': J,
            'p_min': p_min,
            'p_max': p_max,
+           'd_min': d_min,
+           'd_max': d_max,
            'f_max': f_max,
-           'c_gen': c_gen
+           'c_gen': c_gen,
+           'load_timeseries': load_ts,
            }
