@@ -6,7 +6,6 @@ from __future__ import annotations
 from collections import deque
 from typing import Any
 
-import gymnasium
 from gymnasium import Env, spaces
 
 import numpy as np
@@ -57,7 +56,7 @@ class MultiAgentEVChargingEnv(Env):
             for agent in self.agents
         }
 
-    def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any], init: bool = True) -> dict[str, dict[str, Any]]:
+    def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any], init: bool = False) -> dict[str, dict[str, Any]]:
         """Spread observation across agents."""
         obs = {}
         for i, agent in enumerate(self.agents):
@@ -130,15 +129,13 @@ class MultiAgentEVChargingEnv(Env):
               ) -> dict[str, dict[str, Any]] | tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
         """dict 2 layers: agent -> obs_type
         """
-        obs_and_info = self.single_env.reset(seed=seed, return_info=True, options=options)
-        obs_agg: dict[str, Any] = obs_and_info[0]
-        infos_agg: dict[str, Any] = obs_and_info[1]
+        obs_agg, infos_agg = self.single_env.reset(seed=seed, return_info=True, options=options)
         self.agents = self.possible_agents[:]
 
         if return_info:
-            return self._create_dict_from_obs_agg(obs_agg), self._create_dict_from_infos_agg(infos_agg)
+            return self._create_dict_from_obs_agg(obs_agg, init=True), self._create_dict_from_infos_agg(infos_agg)
         else:
-            return self._create_dict_from_obs_agg(obs_agg)
+            return self._create_dict_from_obs_agg(obs_agg, init=True)
         
     def seed(self, seed: int = None) -> None:
         self.reset(seed=seed)
