@@ -22,7 +22,7 @@ class Cluster:
         self.max_capacity = 0
 
         # daily_capacity_req[d] = "total daily capacity required by all tasks in day 'd'"
-        self.daily_capacity_req = [0 for _ in range(simulation_length // HOURS_PER_DAY)]
+        self.daily_capacity_req = [0 for _ in range(30)]  # 30 days
 
         self.t = 0
 

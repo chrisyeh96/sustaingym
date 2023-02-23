@@ -55,7 +55,7 @@ class DatacenterGym:  # TODO: inherit from Gym
             return
 
         current_day = self.datacenter.t // HOURS_PER_DAY
-        capacity_requirement = self.daily_capacity_requirement[current_day]
+        capacity_requirement = self.datacenter.daily_capacity_req[current_day]
         total_allocated_capacity = sum(self.datacenter.VCC_hist)
 
         reward = max(0, 0.97*capacity_requirement - total_allocated_capacity)
