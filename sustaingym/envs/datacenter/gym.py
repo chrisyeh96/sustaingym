@@ -1,5 +1,6 @@
 from sustaingym.envs.datacenter.cluster import *
 import pandas as pd
+import gym
 
 
 TASK_DATA_PATH = "sustaingym/data/datacenter/task_durations.csv"
@@ -8,11 +9,15 @@ HOURS_PER_DAY = 24
 MICROSEC_PER_HOUR = 60*60*1000000
 START_DELAY = 600  # trace period starts at 600 seconds
 START_DELAY_H = 600 / 3600  # measured in hours
+SIM_START_TIME = datetime(2019, 5, 1)
+SIM_END_TIME = datetime(2019, 6, 1)
+BALANCING_AUTHORITY = "SGIP_CAISO_PGE"
 
 
-class DatacenterGym:  # TODO: inherit from Gym
+class DatacenterGym(gym.Env):  # TODO: inherit from Gym
     def __init__(self):
-        self.datacenter = Cluster(SIMULATION_LENGTH)
+        self.datacenter = Cluster(SIMULATION_LENGTH, SIM_START_TIME,
+                                  SIM_END_TIME, BALANCING_AUTHORITY)
 
         # initialize task data
         self.task_data = pd.read_csv(TASK_DATA_PATH)
@@ -26,6 +31,17 @@ class DatacenterGym:  # TODO: inherit from Gym
         self.time_window = MICROSEC_PER_HOUR
         self.episode_len = SIMULATION_LENGTH
     
+    def make(self):
+        # TODO
+        return
+
+    def reset(self):
+        # TODO
+        return super().reset()
+    
+    def render(self):
+        print(self.datacenter.get_state())
+
     def step(self, VCC):
         """
         Returns 3-tuple (state, reward, terminal)
@@ -38,30 +54,23 @@ class DatacenterGym:  # TODO: inherit from Gym
         self.datacenter.enqueue_tasks(new_tasks)
         self.datacenter.schedule_tasks()
 
-        # TODO: make it a member function self.datacenter.get_state()
-        obs = DatacenterState(self.datacenter)
+        obs = self.datacenter.get_state()
         reward = self.compute_reward()
 
         self.datacenter.t += 1
 
         return (obs, reward, self.datacenter.t >= self.episode_len)
 
+    def close(self):
+        # TODO
+        return super().close()
+
     def compute_reward(self) -> float:
-        """
-        r = max(0, 0.97*[day capacity requirement] - [total allocated capacity from VCCs over previous day])
-        """
-        # penalty for under-allocating VCC is only computed at EOD only
-        if self.datacenter.t % HOURS_PER_DAY != 23:
-            return
+        """Times -1 to make it reward"""
+        SLO_violation_cost = self.datacenter.compute_SLO_violation_cost()
+        carbon_cost = self.datacenter.compute_carbon_cost()
 
-        current_day = self.datacenter.t // HOURS_PER_DAY
-        capacity_requirement = self.datacenter.daily_capacity_req[current_day]
-        total_allocated_capacity = sum(self.datacenter.VCC_hist)
-
-        reward = max(0, 0.97*capacity_requirement - total_allocated_capacity)
-        self.datacenter.VCC_hist = [0 for _ in range(HOURS_PER_DAY)]  # reset VCC history for next day
-        
-        return reward
+        return -1*(SLO_violation_cost + carbon_cost)
 
     def update_daily_capacity_req(self, task_start_time : int, task : Task):
         """
@@ -105,14 +114,14 @@ class DatacenterGym:  # TODO: inherit from Gym
         return tasks
 
 
-class DatacenterState:
-    def __init__(self, datacenter: Cluster):
-        self.VCC = datacenter.VCC
-        self.capacity = datacenter.capacity
-        self.n_ready_tasks = len(datacenter.task_q)
+# class DatacenterState:
+#     def __init__(self, datacenter: Cluster):
+#         self.VCC = datacenter.VCC
+#         self.capacity = datacenter.capacity
+#         self.n_ready_tasks = len(datacenter.task_q)
     
-    def display(self):
-        print("Datacenter state:")
-        print(f"\t- VCC: {self.VCC}")
-        print(f"\t- Used capacity: {self.capacity}")
-        print(f"\t- # queued tasks: {self.n_ready_tasks}")
+#     def display(self):
+#         print("Datacenter state:")
+#         print(f"\t- VCC: {self.VCC}")
+#         print(f"\t- Used capacity: {self.capacity}")
+#         print(f"\t- # queued tasks: {self.n_ready_tasks}")
