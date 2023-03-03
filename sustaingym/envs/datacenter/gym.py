@@ -14,7 +14,7 @@ SIM_END_TIME = datetime(2019, 6, 1)
 BALANCING_AUTHORITY = "SGIP_CAISO_PGE"
 
 
-class DatacenterGym(gym.Env):  # TODO: inherit from Gym
+class DatacenterGym(gym.Env):
     def __init__(self):
         self.datacenter = Cluster(SIMULATION_LENGTH, SIM_START_TIME,
                                   SIM_END_TIME, BALANCING_AUTHORITY)
