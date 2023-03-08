@@ -9,7 +9,7 @@ import warnings
 
 import acnportal.acnsim as acns
 import cvxpy as cp
-from gymnasium import Env, spaces
+from gym import Env, spaces
 import numpy as np
 
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
@@ -136,6 +136,10 @@ class EVChargingEnv(Env):
         self._prev_moer = np.zeros(1, dtype=np.float32)
         self._forecasted_moer = np.zeros(self.moer_forecast_steps, dtype=np.float32)
         self._timestep_obs = np.zeros(1, dtype=np.float32)
+        self._vectorized_obs = [
+            self._est_departures, self._demands, self._prev_moer, 
+            self._prev_moer, self._forecasted_moer, self._timestep_obs]
+        self._vectorized_shape = np.concatenate(self._vectorized_obs).shape
         self._obs = {
             'est_departures': self._est_departures,
             'demands': self._demands,
@@ -148,11 +152,6 @@ class EVChargingEnv(Env):
             'carbon_cost': 0.0,
             'excess_charge': 0.0,
         }
-
-        self._vectorized_obs = [
-            self._est_departures, self._demands, self._prev_moer, 
-            self._prev_moer, self._forecasted_moer, self._timestep_obs]
-        self._vectorized_shape = np.concatenate(self._vectorized_obs).shape
 
         # Initialize variables for gym resetting
         self.timestep = 0
@@ -275,12 +274,11 @@ class EVChargingEnv(Env):
         reward = self._get_reward(schedule)
         info = self._get_info(return_info)
 
-        terminated, truncated = done, done
-        return observation, reward, terminated, truncated, {}  # info
+        return observation, reward, done, info
 
     def reset(self, *,
               seed: int | None = None,
-              return_info: bool = True,
+              return_info: bool = False,
               options: dict | None = None,
               vectorize_obs: bool = True
               ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
@@ -325,7 +323,7 @@ class EVChargingEnv(Env):
             print(f'Simulating {num_plugs} events using {self.data_generator}')
 
         if return_info:
-            return self._get_observation(vectorize_obs=vectorize_obs), {}  # self._get_info()
+            return self._get_observation(vectorize_obs=vectorize_obs), self._get_info()
         else:
             return self._get_observation(vectorize_obs=vectorize_obs)
 
@@ -388,7 +386,7 @@ class EVChargingEnv(Env):
             return np.concatenate(self._vectorized_obs)
         else:
             return self._obs
-    
+
     def _get_info(self, all: bool = True) -> dict[str, Any]:
         """
         Returns info. See step().

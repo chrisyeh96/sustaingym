@@ -1,8 +1,8 @@
 # Install or update environment
-# conda env update --file env.yml --prune
+# conda env update --file env_gymnasium.yml --prune
 #
 # Remove environment
-# conda remove --name sustaingym --all
+# conda remove --name sustaingymnasium --all
 #
 # Notes
 # - multi-agent RL requires 
@@ -18,6 +18,7 @@ dependencies:
 - cudatoolkit=11.3
 - cvxpy
 - flake8
+- gymnasium=0.27.1
 - ipympl
 - jupyterlab
 - matplotlib
@@ -37,7 +38,5 @@ dependencies:
 
 - pip:
   - acnportal==0.3.2
-  - gym==0.21  # for compatibility w/ sustaingym
-  - gymnasium
-  - pettingzoo
-  - git+https://github.com/WillDudley/tianshou.git
+  - pettingzoo==1.22.3
+  - git+https://github.com/thu-ml/tianshou.git@bc222e87a636f13575d65b5603ad43af5e39090e
