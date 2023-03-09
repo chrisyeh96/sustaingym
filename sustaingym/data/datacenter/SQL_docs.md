@@ -3,7 +3,7 @@
 LOAD DATA OVERWRITE cluster_a.instance_events
 FROM FILES (
   format='JSON',
-  uris=['gs://clusterdata_2019_a/instance_events-*.json.gz']
+  uris=['gs://clusterdata_2019_a/instance_events-000000000000.json.gz']
 )
 ```
 
