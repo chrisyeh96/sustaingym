@@ -1,6 +1,6 @@
 ### STEP 1: Load Instance Events table
 ```
-LOAD DATA OVERWRITE cluster_a.OD_instance_events
+LOAD DATA OVERWRITE cluster_a.instance_events
 FROM FILES (
   format='JSON',
   uris=['gs://clusterdata_2019_a/instance_events-*.json.gz']
