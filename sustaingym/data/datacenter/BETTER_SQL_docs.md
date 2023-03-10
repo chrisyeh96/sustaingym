@@ -76,4 +76,5 @@ ON
 ALTER TABLE cluster_a.sample_instance_events
 DROP COLUMN collection_id,
 DROP COLUMN instance_index;
+DROP COLUMN task_id_1;
 ```
