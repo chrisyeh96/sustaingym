@@ -5,30 +5,30 @@
 # conda remove --name sustaingymnasium --all
 #
 # Notes
-# - multi-agent RL requires 
-# - stable-baselines3 (v1.6.0) only supports gym==0.21, which only supports up to Python 3.9
-# - last updated: Aug 12, 2022
+# - PyTorch 1.13 only supports up to Python 3.10
+# - last updated: March 10, 2023
 name: sustaingymnasium
 channels:
-- pytorch  # torch (PyTorch)
+- pytorch      # for pytorch
+- nvidia       # for pytorch-cuda
 - mosek
 - conda-forge
 dependencies:
-- python=3.9
-- cudatoolkit=11.3
+- python=3.10
 - cvxpy
 - flake8
 - gymnasium=0.27.1
 - ipympl
 - jupyterlab
 - matplotlib
-- mosek=9.3.21
+- mosek=10.0.38
 - mypy=0.961
 - nodejs
 - numpy
-- pandas=1.1
+- pandas=1.1          # acnportal doesn't work with later versions
 - pip
-- pytorch=1.11
+- pytorch-cuda=11.6
+- pytorch=1.13
 - pytz
 - scikit-learn
 - scipy
