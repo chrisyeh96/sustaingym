@@ -153,6 +153,7 @@ class EVChargingEnv(Env):
             self._est_departures, self._demands, self._prev_moer, 
             self._prev_moer, self._forecasted_moer, self._timestep_obs]
         self._vectorized_shape = np.concatenate(self._vectorized_obs).shape
+        self.vectorize_obs = False
 
         # Initialize variables for gym resetting
         self.timestep = 0
@@ -215,7 +216,7 @@ class EVChargingEnv(Env):
         return (f'EVChargingGym (action projection = {self.project_action_in_env}, moer forecast steps = {self.moer_forecast_steps}) '
                 f'using {self.data_generator.__repr__()}')
 
-    def step(self, action: np.ndarray, return_info: bool = False, vectorize_obs: bool = True
+    def step(self, action: np.ndarray, return_info: bool = False
              ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         """Steps the environment.
 
@@ -271,18 +272,17 @@ class EVChargingEnv(Env):
         self._simulator._resolve = False  # work-around to keep iterating
 
         # Retrieve environment information
-        observation = self._get_observation(vectorize_obs=vectorize_obs)
+        observation = self._get_observation()
         reward = self._get_reward(schedule)
         info = self._get_info(return_info)
 
-        terminated, truncated = done, done
-        return observation, reward, terminated, truncated, {}  # info
+        # terminated, truncated at end of day
+        return observation, reward, done, done, info
 
     def reset(self, *,
               seed: int | None = None,
               return_info: bool = True,
               options: dict | None = None,
-              vectorize_obs: bool = True
               ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
         """Resets the environment.
 
@@ -325,9 +325,9 @@ class EVChargingEnv(Env):
             print(f'Simulating {num_plugs} events using {self.data_generator}')
 
         if return_info:
-            return self._get_observation(vectorize_obs=vectorize_obs), {}  # self._get_info()
+            return self._get_observation(), self._get_info()
         else:
-            return self._get_observation(vectorize_obs=vectorize_obs)
+            return self._get_observation()
 
     def _to_schedule(self, action: np.ndarray) -> dict[str, list[float]]:
         """Returns EVSE pilot signals given a numpy action.
@@ -367,16 +367,15 @@ class EVChargingEnv(Env):
                 pilot_signals[station_id] = [action[i] if action[i] >= 6 else 0]
             else:
                 # set to {0, 8, 16, 24, 32}
-                pilot_signals[station_id] = [(round(action[i] / 8) * 8)]
+                pilot_signals[station_id] = [round(action[i] / 8) * 8]
         return pilot_signals
 
-    def _get_observation(self, vectorize_obs: bool = True) -> dict[str, Any]:
+    def _get_observation(self) -> dict[str, Any]:
         """Returns observations for the current state of simulation."""
         self._est_departures.fill(0)
         self._demands.fill(0)
         for session_info in self.interface.active_sessions():
-            station_id = session_info.station_id
-            station_idx = self._evse_name_to_idx[station_id]
+            station_idx = self._evse_name_to_idx[session_info.station_id]
             self._est_departures[station_idx] = session_info.estimated_departure - self.timestep
             self._demands[station_idx] = session_info.remaining_demand  # kWh
 
@@ -384,12 +383,12 @@ class EVChargingEnv(Env):
         self._forecasted_moer[:] = self.moer[self.timestep, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
         self._timestep_obs[0] = self.timestep / self.max_timestep
 
-        if vectorize_obs:
+        if self.vectorize_obs:
             return np.concatenate(self._vectorized_obs)
         else:
             return self._obs
     
-    def _get_info(self, all: bool = True) -> dict[str, Any]:
+    def _get_info(self, all: bool = False) -> dict[str, Any]:
         """
         Returns info. See step().
 
@@ -471,3 +470,37 @@ class EVChargingEnv(Env):
     def close(self) -> None:
         """Close the environment. Delete internal variables."""
         del self._simulator, self.interface, self.events, self.cn
+
+
+if __name__ == '__main__':
+    from sustaingym.envs.evcharging import RealTraceGenerator
+    import cProfile, pstats
+
+    test_ranges = (
+    ('2019-05-01', '2019-08-31'),
+    ('2019-09-01', '2019-12-31'),
+    ('2020-02-01', '2020-05-31'),
+    ('2021-05-01', '2021-08-31'),
+    )
+
+    with cProfile.Profile() as profile:
+        env = EVChargingEnv(RealTraceGenerator('caltech', test_ranges[0]))
+
+        for i in range(10):
+            done = False
+            obs, episode_info = env.reset(seed=i, return_info=True)
+            steps = 0
+            while not done:
+                action = np.ones((54,))
+                obs, reward, terminated, truncated, info = env.step(action, return_info=False)
+                done = terminated or truncated
+                steps += 1
+            print(f"Iteration: {i + 1}, steps {steps}")
+
+        print(steps)
+        print(info.keys())
+        print(info['reward_breakdown'])
+
+    results = pstats.Stats(profile)
+    results.sort_stats(pstats.SortKey.CUMULATIVE)
+    results.print_stats(20)
