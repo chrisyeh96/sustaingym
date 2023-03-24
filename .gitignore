@@ -3,6 +3,7 @@
 .vscode/
 sandbox/
 logs/
+log/
 plots/
 ## END CUSTOM EXCLUSIONS
 
