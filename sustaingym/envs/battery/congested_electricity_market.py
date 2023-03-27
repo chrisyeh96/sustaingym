@@ -456,15 +456,24 @@ class CongestedMarketOperator:
         # print(self.env.demand_forecast.shape)
         # print((self.env.demand_forecast[0, 1] * self.network.load_split).shape)
 
-        loads = []
 
-        loads.append([self.env.demand[0] * self.network.load_split])
+        # shape [h+1, D]
+        loads = np.empty([self.env.settlement_interval + 1, self.network.D])
+        loads[0, :] = self.env.demand[0] * self.network.load_split
+        loads[1:, :] = (self.env.demand_forecast[0, :self.env.settlement_interval] * self.network.load_split.reshape(-1, 1)).T
 
-        for i in range(self.env.settlement_interval+1):
-            if i != 0: # current time step
-                loads.append([self.env.demand_forecast[0, i-1] * self.network.load_split])
+        # for debugging purposes
+        # loads[-1, :] = 0 * self.network.load_split
 
-        load_pows = np.array(loads)
+        # loads will have shape [h+1, D]
+        # loads = []
+        # loads.append([self.env.demand[0] * self.network.load_split])
+
+        # for i in range(self.env.settlement_interval+1):
+        #     if i != 0: # current time step
+        #         loads.append([self.env.demand_forecast[0, i-1] * self.network.load_split])
+
+        # load_pows = np.array(loads)
 
         # self.p_min[:self.network.D].value = load_pows
 
@@ -477,15 +486,20 @@ class CongestedMarketOperator:
         #     print("gen and bat max: ", self.network.pmax[self.network.D:])
         #     print("gen and bat min: ", self.network.pmax[self.network.D:])
 
-        p_min = np.array([np.concatenate([load_pows[i, 0, :], self.network.pmin[self.network.D:]]) for i in range(self.env.settlement_interval + 1)])
-        p_max = np.array([np.concatenate([load_pows[i, 0, :], self.network.pmax[self.network.D:]]) for i in range(self.env.settlement_interval + 1)])
+        # p_min shape: [N, h+1] = [D + G + 2*L, h+1]
+        # p_min = np.empty([self.network.N, self.env.settlement_interval + 1])
+        # p_min[:self.network.D, :] = loads
+        # p_min[self.network.D:, :] = np.tile(self.network.pmin[self.network.D:], (1, self.env.settlement_interval + 1))
+
+        p_min = np.array([np.concatenate([loads[i, :], self.network.pmin[self.network.D:]]) for i in range(self.env.settlement_interval + 1)])
+        p_max = np.array([np.concatenate([loads[i, :], self.network.pmax[self.network.D:]]) for i in range(self.env.settlement_interval + 1)])
 
         # p_min = np.concatenate([load_pows, self.network.pmin[self.network.D:]])
         # p_max = np.concatenate([load_pows, self.network.pmax[self.network.D:]])
 
         if not agent_control:
-            p_min[:, -self.network.L*2:] = np.zeros((self.env.settlement_interval + 1, 2*self.network.L))
-            p_max[:, -self.network.L*2:] = np.zeros((self.env.settlement_interval + 1, 2*self.network.L))
+            p_min[:, -self.network.L*2:] = 0
+            p_max[:, -self.network.L*2:] = 0
 
         # sanity checks
         assert np.array_equal(p_min[:, :self.network.D], p_max[:, :self.network.D])
@@ -503,11 +517,14 @@ class CongestedMarketOperator:
         self.bat_final_charge.value = self.env.bats_capacity / 2.
         self.bat_max_charge.value = self.env.bats_capacity
 
+        # print("battery charge: ", self.env.battery_charge)
+        # print("final charge: ", self.bat_final_charge.value)
+
         # print("demand: ", self.env.demand[0])
         # print("total gen: ", np.sum(self.network.pmax))
 
-        # print("power max:", self.p_max.value)
-        # print("power min: ", self.p_min.value)
+        # print("power max:", self.p_max.value[-1, :])
+        # print("power min: ", self.p_min.value[-1, :])
 
         solve_mosek(self.prob)
         
@@ -521,6 +538,10 @@ class CongestedMarketOperator:
         gen_dis = self.out.value[:, self.network.D:self.network.D+self.network.G]
         bat_d = self.out.value[:, self.network.D+self.network.G:self.network.D+self.network.G+self.network.L] # discharge
         bat_c = self.out.value[:, self.network.D+self.network.G+self.network.L:] # charge
+
+        print("gen dispatch: ", gen_dis)
+        print("battery discharge: ", bat_d[0])
+        print("battery charge: ", bat_c[0])
 
         return gen_dis, bat_d[0], bat_c[0], prices
 
@@ -586,8 +607,8 @@ class CongestedElectricityMarketEnv(Env):
                  month: str = '2020-05',
                  moer_forecast_steps: int = 36,
                  load_forecast_steps: int = 36,
-                #  settlement_interval: int = 36,
-                 settlement_interval: int = 1,
+                 # settlement_interval: int = 36,
+                 settlement_interval: int = 22,
                  seed: int | None = None,
                  LOCAL_FILE_PATH: str | None = None):
         """
@@ -655,6 +676,11 @@ class CongestedElectricityMarketEnv(Env):
         self.bats_capacity = np.array(bats_capacity, dtype=np.float32)
         assert len(bats_init_energy) == self.num_bats
         self.bats_init_energy = np.array(bats_init_energy, dtype=np.float32)
+
+
+        # for debugging purposes
+        self.battery_charge = self.bats_init_energy.copy()
+
         assert (self.bats_init_energy >= 0).all()
         assert (self.bats_init_energy <= self.bats_capacity).all()
 
@@ -858,7 +884,7 @@ class CongestedElectricityMarketEnv(Env):
         self.moer_arr = self.moer_loader.retrieve(date).astype(np.float32)
         self.load_arr = self._generate_load_forecast_data(1, self.load_forecast_steps)
 
-        self.action = np.zeros((2, self.network.L, self.settlement_interval+1), dtype=np.float32)
+        self.action = np.zeros((2, self.network.L, self.settlement_interval + 1), dtype=np.float32)
         self.dispatch = np.zeros(1, dtype=np.float32)
         self.count = 0  # counter for the step in current episode
         self.battery_charge = self.bats_init_energy.copy()
@@ -871,10 +897,6 @@ class CongestedElectricityMarketEnv(Env):
         self.time = np.array([self._get_time()], dtype=np.float32)
 
         self.market_op = CongestedMarketOperator(self)
-
-        # print(self.demand_forecast)
-
-        print(self._calculate_dispatch_without_agent(self.count))
 
         self.price = np.array([self._calculate_dispatch_without_agent(self.count)[3]], dtype=np.float32)
 
@@ -1040,6 +1062,8 @@ class CongestedElectricityMarketEnv(Env):
 
         self.demand[:] = self._generate_load_data(count)
         x_gens, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(agent_control=False)
+
+        print(prices)
 
         # sanity checks
         assert np.isclose(x_bat_d, 0) and np.isclose(x_bat_c, 0) and (0 <= prices).all()
