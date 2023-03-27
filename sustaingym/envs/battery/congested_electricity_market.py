@@ -12,7 +12,6 @@ from typing import Any
 
 import cvxpy as cp
 from gym import Env, spaces
-from numpy import array
 import numpy as np
 import pandas as pd
 import pandapower.networks as pn
@@ -28,19 +27,25 @@ class Case24_ieee_rts:
     def __init__(self):
         """Power flow data for the IEEE Reliability Test System.
         Please see L{caseformat} for details on the case file format.
+
         This system data is from the IEEE Reliability Test System, see
+
         IEEE Reliability Test System Task Force of the Applications of
         Probability Methods Subcommittee, I{"IEEE reliability test system,"}
         IEEE Transactions on Power Apparatus and Systems, Vol. 98, No. 6,
         Nov./Dec. 1979, pp. 2047-2054.
+
         IEEE Reliability Test System Task Force of Applications of
         Probability Methods Subcommittee, I{"IEEE reliability test system-96,"}
         IEEE Transactions on Power Systems, Vol. 14, No. 3, Aug. 1999,
         pp. 1010-1020.
+
         Cost data is from Web site run by Georgia Tech Power Systems Control
         and Automation Laboratory:
         U{http://pscal.ece.gatech.edu/testsys/index.html}
+
         MATPOWER case file data provided by Bruce Wollenberg.
+
         @return: Power flow data for the IEEE RELIABILITY TEST SYSTEM.
         """
         ppc = {"version": '2'}
@@ -51,7 +56,7 @@ class Case24_ieee_rts:
 
         ## bus data
         # bus_i type Pd Qd Gs Bs area Vm Va baseKV zone Vmax Vmin
-        ppc["bus"] = array([
+        ppc["bus"] = np.array([
             [1,  2, 108, 22, 0, 0,    1, 1, 0, 138, 1, 1.05, 0.95],
             [2,  2,  97, 20, 0, 0,    1, 1, 0, 138, 1, 1.05, 0.95],
             [3,  1, 180, 37, 0, 0,    1, 1, 0, 138, 1, 1.05, 0.95],
@@ -81,45 +86,45 @@ class Case24_ieee_rts:
         ## generator data
         # bus, Pg, Qg, Qmax, Qmin, Vg, mBase, status, Pmax, Pmin, Pc1, Pc2,
         # Qc1min, Qc1max, Qc2min, Qc2max, ramp_agc, ramp_10, ramp_30, ramp_q, apf
-        ppc["gen"] = array([
-            [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U20
-            [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U20
-            [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U76
-            [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U76
-            [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U20
-            [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U20
-            [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U76
-            [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U76
-            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U100
-            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U100
-            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U100
-            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U197
-            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U197
-            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U197
-            [14, 0,   35.3, 200, -50, 0.98,  100, 1,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # SynCond
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U12
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U12
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U12
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U12
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U12
-            [15, 155,  0,    80, -50, 1.014, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U155
-            [16, 155,  0,    80, -50, 1.017, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U155
-            [18, 400,  0,   200, -50, 1.05,  100, 1, 400, 100,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U400
-            [21, 400,  0,   200, -50, 1.05,  100, 1, 400, 100,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U400
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U50
-            [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U155
-            [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U155
-            [23, 350,  0,   150, -25, 1.05,  100, 1, 350, 140,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]  # U350
+        ppc["gen"] = np.array([
+            [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
+            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
+            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
+            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
+            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
+            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
+            [14, 0,   35.3, 200, -50, 0.98,  100, 1,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # SynCond
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 155,  0,    80, -50, 1.014, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            [16, 155,  0,    80, -50, 1.017, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            [18, 400,  0,   200, -50, 1.05,  100, 1, 400, 100,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U400
+            [21, 400,  0,   200, -50, 1.05,  100, 1, 400, 100,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U400
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            [23, 350,  0,   150, -25, 1.05,  100, 1, 350, 140,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]   # U350
         ])
 
         ## branch data
         # fbus, tbus, r, x, b, rateA, rateB, rateC, ratio, angle, status, angmin, angmax
-        ppc["branch"] = array([
+        ppc["branch"] = np.array([
             [1,   2, 0.0026, 0.0139, 0.4611, 175, 250, 200, 0,    0, 1, -360, 360],
             [1,   3, 0.0546, 0.2112, 0.0572, 175, 208, 220, 0,    0, 1, -360, 360],
             [1,   5, 0.0218, 0.0845, 0.0229, 175, 208, 220, 0,    0, 1, -360, 360],
@@ -163,7 +168,7 @@ class Case24_ieee_rts:
         ##-----  OPF Data  -----##
         ## area data
         # area refbus
-        ppc["areas"] = array([
+        ppc["areas"] = np.array([
             [1, 1],
             [2, 3],
             [3, 8],
@@ -173,31 +178,31 @@ class Case24_ieee_rts:
         ## generator cost data
         # 1 startup shutdown n x1 y1 ... xn yn
         # 2 startup shutdown n c(n-1) ... c0
-        ppc["gencost"] = array([                           # bus Pmin  Pmax Qmin Qmax Unit Code
-            [2, 1500, 0, 3, 0,        130,      400.6849], #  1,  16,   20,   0,  10, U20
-            [2, 1500, 0, 3, 0,        130,      400.6849], #  1,  16,   20,   0,  10, U20
-            [2, 1500, 0, 3, 0.014142,  16.0811, 212.3076], #  1,  15.2, 76, -25,  30, U76
-            [2, 1500, 0, 3, 0.014142,  16.0811, 212.3076], #  1,  15.2, 76, -25,  30, U76
-            [2, 1500, 0, 3, 0,        130,      400.6849], #  2,  16,   20,   0,  10, U20
-            [2, 1500, 0, 3, 0,        130,      400.6849], #  2,  16,   20,   0,  10, U20
-            [2, 1500, 0, 3, 0.014142,  16.0811, 212.3076], #  2,  15.2, 76, -25,  30, U76
-            [2, 1500, 0, 3, 0.014142,  16.0811, 212.3076], #  2,  15.2, 76, -25,  30, U76
+        ppc["gencost"] = np.array([                           # bus Pmin  Pmax Qmin Qmax Unit Code
+            [2, 1500, 0, 3, 0,        130,      400.6849],  #  1,  16,   20,   0,  10, U20
+            [2, 1500, 0, 3, 0,        130,      400.6849],  #  1,  16,   20,   0,  10, U20
+            [2, 1500, 0, 3, 0.014142,  16.0811, 212.3076],  #  1,  15.2, 76, -25,  30, U76
+            [2, 1500, 0, 3, 0.014142,  16.0811, 212.3076],  #  1,  15.2, 76, -25,  30, U76
+            [2, 1500, 0, 3, 0,        130,      400.6849],  #  2,  16,   20,   0,  10, U20
+            [2, 1500, 0, 3, 0,        130,      400.6849],  #  2,  16,   20,   0,  10, U20
+            [2, 1500, 0, 3, 0.014142,  16.0811, 212.3076],  #  2,  15.2, 76, -25,  30, U76
+            [2, 1500, 0, 3, 0.014142,  16.0811, 212.3076],  #  2,  15.2, 76, -25,  30, U76
             [2, 1500, 0, 3, 0.052672,  43.6615*0.67, 781.521],  #  7,  25,  100,   0,  60, U100
             [2, 1500, 0, 3, 0.052672,  43.6615*0.67, 781.521],  #  7,  25,  100,   0,  60, U100
             [2, 1500, 0, 3, 0.052672,  43.6615, 781.521],  #  7,  25,  100,   0,  60, U100
-            [2, 1500, 0, 3, 0.00717,   48.5804+2, 832.7575], # 13,  69,  197,   0,  80, U197
-            [2, 1500, 0, 3, 0.00717,   48.5804 + 4, 832.7575], # 13,  69,  197,   0,  80, U197
-            [2, 1500, 0, 3, 0.00717,   48.5804 + 6, 832.7575], # 13,  69,  197,   0,  80, U197
+            [2, 1500, 0, 3, 0.00717,   48.5804+2, 832.7575],  # 13,  69,  197,   0,  80, U197
+            [2, 1500, 0, 3, 0.00717,   48.5804 + 4, 832.7575],  # 13,  69,  197,   0,  80, U197
+            [2, 1500, 0, 3, 0.00717,   48.5804 + 6, 832.7575],  # 13,  69,  197,   0,  80, U197
             [2, 1500, 0, 3, 0,          0,        0],      # 14                       SynCond
-            [2, 1500, 0, 3, 0.328412,  56.564+1,   86.3852], # 15,  2.4,  12,   0,   6, U12
-            [2, 1500, 0, 3, 0.328412,  56.564,   86.3852], # 15,  2.4,  12,   0,   6, U12
-            [2, 1500, 0, 3, 0.328412,  56.564,   86.3852], # 15,  2.4,  12,   0,   6, U12
-            [2, 1500, 0, 3, 0.328412,  56.564,   86.3852], # 15,  2.4,  12,   0,   6, U12
-            [2, 1500, 0, 3, 0.328412,  56.564,   86.3852], # 15,  2.4,  12,   0,   6, U12
-            [2, 1500, 0, 3, 0.008342,  12.3883+2, 382.2391], # 15, 54.3, 155, -50,  80, U155
-            [2, 1500, 0, 3, 0.008342,  12.3883+3, 382.2391], # 16, 54.3, 155, -50,  80, U155
-            [2, 1500, 0, 3, 0.000213,   4.4231, 395.3749], # 18, 100,  400, -50, 200, U400
-            [2, 1500, 0, 3, 0.000213,   4.4231, 395.3749], # 21, 100,  400, -50, 200, U400
+            [2, 1500, 0, 3, 0.328412,  56.564+1,   86.3852],  # 15,  2.4,  12,   0,   6, U12
+            [2, 1500, 0, 3, 0.328412,  56.564,   86.3852],  # 15,  2.4,  12,   0,   6, U12
+            [2, 1500, 0, 3, 0.328412,  56.564,   86.3852],  # 15,  2.4,  12,   0,   6, U12
+            [2, 1500, 0, 3, 0.328412,  56.564,   86.3852],  # 15,  2.4,  12,   0,   6, U12
+            [2, 1500, 0, 3, 0.328412,  56.564,   86.3852],  # 15,  2.4,  12,   0,   6, U12
+            [2, 1500, 0, 3, 0.008342,  12.3883+2, 382.2391],  # 15, 54.3, 155, -50,  80, U155
+            [2, 1500, 0, 3, 0.008342,  12.3883+3, 382.2391],  # 16, 54.3, 155, -50,  80, U155
+            [2, 1500, 0, 3, 0.000213,   4.4231, 395.3749],  # 18, 100,  400, -50, 200, U400
+            [2, 1500, 0, 3, 0.000213,   4.4231, 395.3749],  # 21, 100,  400, -50, 200, U400
             [2, 1500, 0, 3, 0,          1,    0.001],  # 22, 10,    50, -10,  16, U50
             [2, 1500, 0, 3, 0,          2,    0.001],  # 22, 10,    50, -10,  16, U50
             [2, 1500, 0, 3, 0,          3,    0.001],  # 22, 10,    50, -10,  16, U50
@@ -211,13 +216,13 @@ class Case24_ieee_rts:
 
         # Battery specs, to be added
         # node, Pmax, Pmin, eff_c, eff_d, soc, soc_f, soc_min, soc_max, cost_c, cost_d
-        ppc["battery"] = array([
+        ppc["battery"] = np.array([
             [11, 20, -20, 0.95, 0.95, 40, 40, 0, 80, 3, 3]
         ])
 
         self.ppc = ppc
 
-    def construct_network(self):
+    def construct_network(self) -> dict[str, Any]:
         N = len(self.ppc['bus'])
         M = len(self.ppc['branch'])
         L = len(self.ppc['battery'])
@@ -225,17 +230,17 @@ class Case24_ieee_rts:
         # load injection data
         p_l = []
         for i in range(N):
-            if self.ppc['bus'][i,2] > 0:
-                p_l.append((int(i+1), self.ppc['bus'][i, 2]))
-        load_data = np.array(p_l)
+            bus_pd = self.ppc['bus'][i, 2]
+            if bus_pd > 0:
+                p_l.append((int(i+1), bus_pd))
+        load_data = np.array(p_l)  # shape [D, 2]
 
-        self.load_data = load_data[:, 1]
+        self.load_data = load_data[:, 1]  # shape [D]
 
         # C, B, f_max
-        C = np.zeros(shape=(N, M))
+        C = np.zeros((N, M))
         b = np.zeros(M)
         f_max = np.zeros(M)
-        nodes = [i for i in range(1, N+1)]
         edges = []
         for j in range(M):
             fbus = int(self.ppc['branch'][j, 0] - 1)  # 0 indexing
@@ -253,7 +258,7 @@ class Case24_ieee_rts:
 
         # generators
         num_gen = len(self.ppc['gen'])
-        gen_data = np.zeros(shape=(num_gen, 5))
+        gen_data = np.zeros((num_gen, 5))
         gen_nodes = []
         gen_edges = []
         for g in range(num_gen):
@@ -266,10 +271,10 @@ class Case24_ieee_rts:
             gen_data[g, 3] = self.ppc['gencost'][g, -1]  # c0
             gen_data[g, 4] = self.ppc['gencost'][g, -2]  # c1
 
-        # J mapping matrix, shape = (N, D + G + L + L)
+        # J mapping matrix, shape = (N, D + G + 2 * L)
         D = len(self.load_data)
         G = len(gen_data)
-        J = np.zeros(shape=(N, D + G + L + L)) # for the charge and discharge battery decisions
+        J = np.zeros((N, D + G + 2 * L)) # for the charge and discharge battery decisions
 
         for d in range(D):
             bus_idx = int(load_data[d, 0] - 1)
@@ -279,44 +284,43 @@ class Case24_ieee_rts:
             J[bus_idx, D + g] = 1
         for l in range(L):
             bus_idx = int(self.ppc['battery'][l, 0] - 1)
-            J[bus_idx, D + G + l] = -1
-        for l in range(L):
-            bus_idx = int(self.ppc['battery'][l, 0] - 1)
-            J[bus_idx, D + G + L + l] = 1
+            J[bus_idx, D + G + l] = -1     # charge
+            J[bus_idx, D + G + L + l] = 1  # discharge
 
-        # p_min, p_max for gen and loads
+        # p_min, p_max for loads, gens, batteries (charge), batteries (discharge)
         p_min = np.concatenate([self.load_data, gen_data[:, 0], np.zeros(2*L)])
         p_max = np.concatenate([self.load_data, gen_data[:, 1], self.ppc['battery'][:,1], self.ppc['battery'][:,1]])
 
         c_gen = [[gen_data[g, 3], gen_data[g, 4]] for g in range(G)]
-        c_bat = [self.ppc['battery'][b, -2:] for b in range(L)]
+        c_bat = self.ppc['battery'][:L, -2:]
 
-        soc = [self.ppc['battery'][b, 5] for b in range(L)]
-        soc_min = [self.ppc['battery'][b, 7] for b in range(L)]
-        soc_max = [self.ppc['battery'][b, 8] for b in range(L)]
-        effs = [self.ppc['battery'][b, 3:5] for b in range(L)]
+        soc = self.ppc['battery'][:L, 5]
+        soc_min = self.ppc['battery'][:L, 7]
+        soc_max = self.ppc['battery'][:L, 8]
+        effs = self.ppc['battery'][:L, 3:5]
 
         # Network data dict
-        network = {'name': 'IEE24RTS',
-                'N': N,
-                'M': M,
-                'D': D,
-                'G': G,
-                'L': L,
-                'B': B,
-                'H': H,
-                'J': J,
-                'p_min': p_min,
-                'p_max': p_max,
-                'f_max': f_max,
-                'c_gen': c_gen,
-                'c_bat': c_bat,
-                'soc': soc,
-                'soc_min': soc_min,
-                'soc_max': soc_max,
-                'effs': effs
-                }
-        
+        network = {
+            'name': 'IEE24RTS',
+            'N': N,
+            'M': M,
+            'D': D,
+            'G': G,
+            'L': L,
+            'B': B,
+            'H': H,
+            'J': J,
+            'p_min': p_min,
+            'p_max': p_max,
+            'f_max': f_max,
+            'c_gen': c_gen,
+            'c_bat': c_bat,
+            'soc': soc,
+            'soc_min': soc_min,
+            'soc_max': soc_max,
+            'effs': effs
+        }
+
         return network
 
 class CongestedNetwork:
@@ -327,32 +331,32 @@ class CongestedNetwork:
         else:
             case24_ieee = Case24_ieee_rts()
             self.network = case24_ieee.construct_network()
-        
+
         if load_data is not None:
             self.default_load_split = load_data / np.sum(load_data)
         else:
             self.default_load_split = case24_ieee.load_data / np.sum(case24_ieee.load_data)
-        
+
         self.load_split = self.default_load_split.copy()
 
-        self.N = self.network['N'] # number of nodes
-        self.M = self.network['M'] # number of lines
-        self.G = self.network['G'] # number of generators
-        self.D = self.network['D'] # number of loads
-        self.L = self.network['L'] # number of batteries
-        self.J = self.network['J'] # pow_inject_to_bus_injection_matrix
-        self.H = self.network['H'] # generation_shift_factor_matrix
-        self.pmin = self.network['p_min'] # minimum power for participants
-        self.pmax = self.network['p_max'] # maximum power for participants
-        self.cgen = np.array(self.network['c_gen']) # cost of generation
-        self.cbat = np.array(self.network['c_bat']) # costs for battery charge decisions
+        self.N = self.network['N']  # number of nodes
+        self.M = self.network['M']  # number of lines
+        self.N_G = self.network['G']  # number of generators
+        self.N_D = self.network['D']  # number of loads
+        self.N_B = self.network['L']  # number of batteries
+        self.J = self.network['J']  # pow_inject_to_bus_injection_matrix
+        self.H = self.network['H']  # generation_shift_factor_matrix
+        self.pmin = self.network['p_min']  # minimum power for participants
+        self.pmax = self.network['p_max']  # maximum power for participants
+        self.cgen = np.array(self.network['c_gen'])  # cost of generation
+        self.cbat = np.array(self.network['c_bat'])  # costs for battery charge decisions
         self.fmax = self.network['f_max']
-    
+
     def update_load_split(self):
         # shift each +/- 10% of default load_split
 
         # load_split = np.zeros(self.D)
-        
+
         # for i in range(self.D-1):
         #     load_split[i] = np.random.uniform(low=0.9*self.default_load_split[i], high=1.1*self.default_load_split[i])
 
@@ -368,81 +372,82 @@ class CongestedMarketOperator:
         Args:
             env: instance of ElectricityMarketEnv class
         """
-
         self.env = env
-        
         if network is None:
             self.network = CongestedNetwork()
-        
-        # Constraints
-        constraints = []
 
+        h = self.env.settlement_interval  # horizon
+        N_D = self.network.N_D  # num loads
+        N_G = self.network.N_G  # num generators
+        N_B = self.network.N_B  # num batteries
+
+        # Variables
         # dispatch for participants (loads are trivially fixed by constraints)
-        self.out = cp.Variable(shape=(self.env.settlement_interval + 1, self.network.D+self.network.G+self.network.L+self.network.L), name="dispatch")
+        self.out = cp.Variable((N_D + N_G + 2*N_B, h + 1), name="dispatch")
+        soc = cp.Variable((N_B, h + 2))
 
-        gen_dis = self.out[:, self.network.D:self.network.D+self.network.G]
-        bat_d = self.out[:, self.network.D+self.network.G:self.network.D+self.network.G+self.network.L] # discharge
-        bat_c = self.out[:, self.network.D+self.network.G+self.network.L:] # charge
+        gen_dis = self.out[N_D: N_D+N_G]
+        bat_d = self.out[N_D+N_G: N_D+N_G+N_B]  # discharge
+        bat_c = self.out[N_D+N_G+N_B:]  # charge
 
         # Parameters
-        self.p_min = cp.Parameter((self.env.settlement_interval + 1, self.network.D+self.network.G+self.network.L+self.network.L), name="minimum power")
-        self.p_max = cp.Parameter((self.env.settlement_interval + 1, self.network.D+self.network.G+self.network.L+self.network.L), nonneg=True, name="maximum power")
-        self.cgen = cp.Parameter((self.network.G,2), nonneg=True, name="generator production costs") # assume time invariant 
-        self.cbat_d = cp.Parameter((self.network.L, self.env.settlement_interval + 1), nonneg=True, name="battery discharge costs") # discharge cost
-        self.cbat_c = cp.Parameter((self.network.L, self.env.settlement_interval + 1), nonneg=True, name="battery charge costs") # charge cost
-        self.bat_final_charge = cp.Parameter(self.network.L, nonneg=True, name="final soc") # final charge SOC(s)
-        self.bat_max_charge = cp.Parameter(self.network.L, nonneg=True, name="maximum soc") # maximum SOC(s)
+        self.p_min = cp.Parameter((N_D + N_G + 2*N_B, h+1), name="minimum power")
+        self.p_max = cp.Parameter((N_D + N_G + 2*N_B, h+1), nonneg=True, name="maximum power")
+        self.cgen = cp.Parameter((N_G, 2), nonneg=True, name="generator production costs")  # assume time invariant
+        self.cbat_d = cp.Parameter((N_B, h + 1), nonneg=True, name="battery discharge costs")  # discharge cost
+        self.cbat_c = cp.Parameter((N_B, h + 1), nonneg=True, name="battery charge costs")  # charge cost
+        self.soc_final = cp.Parameter(N_B, nonneg=True, name="soc final")  # final charge SOC(s)
+        self.soc_max = cp.Parameter(N_B, nonneg=True, name="soc maximum")  # maximum SOC(s)
 
-        # construct soc vector
-        soc = cp.Variable((self.network.L, self.env.settlement_interval + 2))
-        constraints.extend([
+        # Constraints
+        constraints = [
             # battery range
             0 <= soc,
-            soc <= self.bat_max_charge,
+            # soc <= self.soc_max,
 
             # initial and final soc
             soc[:, 0] == self.env.battery_charge,
-            soc[:, -1] == self.bat_final_charge,
+            # soc[:, -1] >= self.soc_final,
 
             # charging dynamics
-            soc[:, 1:] == soc[:, :-1] + self.env.CHARGE_EFFICIENCY * bat_c - (1. / self.env.DISCHARGE_EFFICIENCY) * bat_d
-        ])
+            # soc[:, 1:] == soc[:, :-1] + self.env.CHARGE_EFFICIENCY * bat_c - (1. / self.env.DISCHARGE_EFFICIENCY) * bat_d,
+
+            # generation limits
+            self.out >= self.p_min,
+            self.out <= self.p_max,
+        ]
 
         # power balance
-        constraints.append(np.ones(self.network.N) @ self.network.J @ self.out[0, :].T == 0)
-        constraints.append(np.ones(self.network.N) @ self.network.J @ self.out[1:, :].T == 0)
-        
+        self.power_balance_constr = cp.sum(self.network.J @ self.out, axis=0) == 0
+        constraints.append(self.power_balance_constr)
+
         if self.env.congestion:
             # power flow and line flow limits (aka power congestion constraints)
-            Hp = self.network.H @ self.network.J @ self.out.T
-            constraints.extend([
+            Hp = self.network.H @ self.network.J @ self.out
+            self.congestion_constrs = [
                 Hp <= self.network.fmax,
                 Hp >= -self.network.fmax
-            ])
-
-        # generation limits
-        constraints.extend([
-            self.out <= self.p_max,
-            self.out >= self.p_min,
-        ])
+            ]
+            constraints.extend(self.congestion_constrs)
 
         # Objective function
         obj = 0
-        
-        for tau in range(self.env.settlement_interval+1):
-            for g in range(self.network.G): # add up all generator costs
-                obj += self.cgen[g,0] + self.cgen[g,1] * gen_dis[tau, g]
-                # obj += self.cgen[g,1] * self.gen_dis[tau, g]
-            
-            for l in range(self.network.L):
-                obj += self.cbat_d[l, tau] * bat_d[l]
-                obj -= self.cbat_c[l, tau] * bat_c[l]
+
+        for tau in range(h+1):
+            for g in range(N_G): # add up all generator costs
+                obj += self.cgen[g, 0] + self.cgen[g, 1] * gen_dis[g, tau]
+                # obj += self.cgen[g,1] * self.gen_dis[g, tau]
+
+            for l in range(N_B):
+                obj += self.cbat_d[l, tau] * bat_d[l, tau]
+                obj -= self.cbat_c[l, tau] * bat_c[l, tau]
 
         # Solve problem
         self.prob = cp.Problem(cp.Minimize(obj), constraints)
         assert self.prob.is_dcp() and self.prob.is_dpp()
 
-    def get_dispatch(self, agent_control = True) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    def get_dispatch(self, agent_control: bool = True
+                     ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Determines dispatch values.
 
         Returns:
@@ -456,69 +461,51 @@ class CongestedMarketOperator:
         # print(self.env.demand_forecast.shape)
         # print((self.env.demand_forecast[0, 1] * self.network.load_split).shape)
 
+        h = self.env.settlement_interval  # horizon
+        N = self.network.N  # num buses
+        N_D = self.network.N_D  # num loads
+        N_G = self.network.N_G  # num generators
+        N_B = self.network.N_B  # num batteries
 
-        # shape [h+1, D]
-        loads = np.empty([self.env.settlement_interval + 1, self.network.D])
-        loads[0, :] = self.env.demand[0] * self.network.load_split
-        loads[1:, :] = (self.env.demand_forecast[0, :self.env.settlement_interval] * self.network.load_split.reshape(-1, 1)).T
+        # shape [N_D, h+1]
+        loads = np.empty([N_D, h + 1])
+        loads[:, 0] = self.env.demand[0] * self.network.load_split
+        loads[:, 1:] = self.env.demand_forecast[:h] * self.network.load_split[:, None]
 
         # for debugging purposes
         # loads[-1, :] = 0 * self.network.load_split
 
-        # loads will have shape [h+1, D]
-        # loads = []
-        # loads.append([self.env.demand[0] * self.network.load_split])
-
-        # for i in range(self.env.settlement_interval+1):
-        #     if i != 0: # current time step
-        #         loads.append([self.env.demand_forecast[0, i-1] * self.network.load_split])
-
-        # load_pows = np.array(loads)
-
-        # self.p_min[:self.network.D].value = load_pows
-
-        # print(load_pows.shape)
-        # print(load_pows[0, :].shape)
-
-        # for i in range(self.env.settlement_interval + 1):
-        #     print("interval: ", i)
-        #     print("load: ", load_pows[i, 0, :])
-        #     print("gen and bat max: ", self.network.pmax[self.network.D:])
-        #     print("gen and bat min: ", self.network.pmax[self.network.D:])
-
-        # p_min shape: [N, h+1] = [D + G + 2*L, h+1]
-        # p_min = np.empty([self.network.N, self.env.settlement_interval + 1])
-        # p_min[:self.network.D, :] = loads
-        # p_min[self.network.D:, :] = np.tile(self.network.pmin[self.network.D:], (1, self.env.settlement_interval + 1))
-
-        p_min = np.array([np.concatenate([loads[i, :], self.network.pmin[self.network.D:]]) for i in range(self.env.settlement_interval + 1)])
-        p_max = np.array([np.concatenate([loads[i, :], self.network.pmax[self.network.D:]]) for i in range(self.env.settlement_interval + 1)])
-
-        # p_min = np.concatenate([load_pows, self.network.pmin[self.network.D:]])
-        # p_max = np.concatenate([load_pows, self.network.pmax[self.network.D:]])
+        # p_min, p_max shape: [N_D + N_G + 2*N_B, h+1]
+        p_min = np.concatenate([
+            loads,
+            np.tile(self.network.pmin[N_D:, None], (1, h + 1))
+        ])
+        p_max = np.concatenate([
+            loads,
+            np.tile(self.network.pmax[N_D:, None], (1, h + 1))
+        ])
 
         if not agent_control:
-            p_min[:, -self.network.L*2:] = 0
-            p_max[:, -self.network.L*2:] = 0
+            p_min[-2*N_B:] = 0
+            p_max[-2*N_B:] = 0
 
         # sanity checks
-        assert np.array_equal(p_min[:, :self.network.D], p_max[:, :self.network.D])
-        assert (p_min[:, self.network.D:] <= p_max[:, self.network.D:]).all()
-        
+        assert np.array_equal(p_min[:N_D], p_max[:N_D])
+        assert (p_min[N_D:] <= p_max[N_D:]).all()
+
         self.p_min.value = p_min
         self.p_max.value = p_max
         # cbats = self.network.cbat
         # costs[-1, 0] = self.env.action[0]
         # costs[-1, 1] = self.env.action[1]
         self.cgen.value = self.network.cgen
-        self.cbat_d.value = self.env.action[1, :, :]
+
+        # action has shape [2, N_B, h + 1]
         self.cbat_c.value = self.env.action[0, :, :]
+        self.cbat_d.value = self.env.action[1, :, :]
 
-        self.bat_final_charge.value = self.env.bats_capacity / 2.
-        self.bat_max_charge.value = self.env.bats_capacity
-
-        # print("battery charge: ", self.env.battery_charge)
-        # print("final charge: ", self.bat_final_charge.value)
+        self.soc_final.value = self.env.bats_capacity / 2.
+        self.soc_max.value = self.env.bats_capacity
 
         # print("demand: ", self.env.demand[0])
         # print("total gen: ", np.sum(self.network.pmax))
@@ -527,17 +514,17 @@ class CongestedMarketOperator:
         # print("power min: ", self.p_min.value[-1, :])
 
         solve_mosek(self.prob)
-        
-        lam = -self.prob.constraints[5].dual_value
+
+        lam = -self.power_balance_constr.dual_value[0]
 
         if self.env.congestion:
-            prices = lam * np.ones(self.network.N) + self.network.H.T @ (self.prob.constraints[7].dual_value - self.prob.constraints[8].dual_value)
+            prices = lam + self.network.H.T @ (self.congestion_constrs[0].dual_value - self.congestion_constrs[1].dual_value)
         else:
-            prices = lam * np.ones(self.network.N)
-        
-        gen_dis = self.out.value[:, self.network.D:self.network.D+self.network.G]
-        bat_d = self.out.value[:, self.network.D+self.network.G:self.network.D+self.network.G+self.network.L] # discharge
-        bat_c = self.out.value[:, self.network.D+self.network.G+self.network.L:] # charge
+            prices = lam * np.ones(N)
+
+        gen_dis = self.out.value[N_D:N_D+N_G]
+        bat_d = self.out.value[N_D+N_G:N_D+N_G+N_B]  # discharge
+        bat_c = self.out.value[N_D+N_G+N_B:]  # charge
 
         print("gen dispatch: ", gen_dis)
         print("battery discharge: ", bat_d[0])
@@ -660,8 +647,7 @@ class CongestedElectricityMarketEnv(Env):
         rng = self.rng
 
         self.network = CongestedNetwork()
-
-        # print(self.network.L)
+        N_B = self.network.N_B  # num batteries
 
         # generators
         # self.gen_max_production = np.array(gen_max_production, dtype=np.float32)
@@ -676,7 +662,6 @@ class CongestedElectricityMarketEnv(Env):
         self.bats_capacity = np.array(bats_capacity, dtype=np.float32)
         assert len(bats_init_energy) == self.num_bats
         self.bats_init_energy = np.array(bats_init_energy, dtype=np.float32)
-
 
         # for debugging purposes
         self.battery_charge = self.bats_init_energy.copy()
@@ -701,14 +686,14 @@ class CongestedElectricityMarketEnv(Env):
         max_cost = 1.25 * max(max(self.network.cgen[:, 1]), self.network.cgen[-1, 0], self.network.cgen[-1, 1]) # edit for general n battery case later!!!
 
         # action space is two values for the charging and discharging costs
-        self.action_space = spaces.Box(low=0, high=max_cost, shape=(2, self.network.L, self.settlement_interval + 1), dtype=np.float32)
+        self.action_space = spaces.Box(low=0, high=max_cost, shape=(2, N_B, self.settlement_interval + 1), dtype=np.float32)
 
         # observation space is current energy level, current time, previous (a, b, x)
         # from dispatch and previous load demand value
         self.observation_space = spaces.Dict({
             'energy': spaces.Box(low=0, high=self.bats_capacity[-1], shape=(1,), dtype=float),
             'time': spaces.Box(low=0, high=1, shape=(1,), dtype=float),
-            'previous action': spaces.Box(low=0, high=np.inf, shape=(2*self.network.L,self.settlement_interval+1), dtype=float),
+            'previous action': spaces.Box(low=0, high=np.inf, shape=(2, N_B, self.settlement_interval+1), dtype=float),
             'previous agent dispatch': spaces.Box(low=self.network.pmin[-1] * self.TIME_STEP_DURATION,
                                                   high=self.network.pmax[-1] * self.TIME_STEP_DURATION,
                                                   shape=(1,), dtype=float),
@@ -769,9 +754,9 @@ class CongestedElectricityMarketEnv(Env):
             df_demand = pd.read_csv(BytesIO(bytes_data), index_col=0)
 
             df_demand = df_demand.loc[df_demand['Month'] == self.month]
-            
+
             return df_demand
-    
+
     def _get_demand_forecast_data(self) -> pd.DataFrame:
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
@@ -782,7 +767,7 @@ class CongestedElectricityMarketEnv(Env):
             df_demand_forecast = pd.read_csv(BytesIO(bytes_data), index_col=0)
 
             df_demand_forecast = df_demand_forecast.loc[df_demand_forecast['Month'] == self.month]
-            
+
             return df_demand_forecast
 
     def _generate_load_data(self, count: int) -> float:
@@ -794,7 +779,8 @@ class CongestedElectricityMarketEnv(Env):
         Returns:
             net demand for the given time step (MWh) *currently demand*
         """
-        return self.df_demand.iloc[self.idx * self.MAX_STEPS_PER_EPISODE + count, 4]
+        # use demand from Zone 1
+        return self.df_demand['1'].iloc[self.idx * self.MAX_STEPS_PER_EPISODE + count]
 
     # def _generate_load_forecast_data(self, count: int) -> float:
     #     """Generate hour ahead forecast of the net demand for the time step associated
@@ -819,17 +805,21 @@ class CongestedElectricityMarketEnv(Env):
             lookahead_steps: integer representing number of time steps to look ahead
 
         Returns:
-            Array of net demands for the given lookahead
+            array of shape [lookahead_steps], net demands for the given lookahead
         """
+        num_days_total = self.df_demand_forecast.shape[0]
+        start = self.idx * self.MAX_STEPS_PER_EPISODE + count
 
-        if count > self.df_demand_forecast.shape[0]: # outside of bounds
+        if count > num_days_total: # outside of bounds
             return np.array([np.nan]*lookahead_steps)
-        
-        elif count + lookahead_steps > self.df_demand_forecast.shape[0]: # part of lookahead outside of bounds
-            return np.concatenate([self.df_demand.iloc[self.idx * self.MAX_STEPS_PER_EPISODE + count:, 4],
-                                   np.array([self.df_demand.iloc[-1, 4]]*(lookahead_steps + count - self.df_demand_forecast.shape[0]))], axis=0)
+
+        elif count + lookahead_steps > num_days_total:  # part of lookahead outside of bounds
+            return np.concatenate([
+                self.df_demand['1'].iloc[start:],
+                [self.df_demand['1'].iloc[-1]] * (lookahead_steps + count - num_days_total)
+            ])
         else:
-            return self.df_demand.iloc[self.idx * self.MAX_STEPS_PER_EPISODE + count:self.idx * self.MAX_STEPS_PER_EPISODE + count + lookahead_steps, 4]
+            return self.df_demand['1'].iloc[start:start + lookahead_steps].values
 
     def _get_time(self) -> float:
         """Determine the fraction of the day that has elapsed based on the current
@@ -874,30 +864,28 @@ class CongestedElectricityMarketEnv(Env):
 
         # randomly pick a day for the episode, among the days with complete demand data
 
-        pos_ids = [
-            idx for idx in range(int(len(self.df_demand) / 288))
-        ]
-        self.idx = rng.choice(pos_ids)
+        self.idx = rng.choice(int(len(self.df_demand) / 288))
         day = self.idx + 1
 
         date = datetime.strptime(f'{self.date}-{day:02d}', '%Y-%m-%d').replace(tzinfo=pytz.timezone('America/Los_Angeles'))
         self.moer_arr = self.moer_loader.retrieve(date).astype(np.float32)
         self.load_arr = self._generate_load_forecast_data(1, self.load_forecast_steps)
 
-        self.action = np.zeros((2, self.network.L, self.settlement_interval + 1), dtype=np.float32)
+        self.action = np.zeros((2, self.network.N_B, self.settlement_interval + 1), dtype=np.float32)
         self.dispatch = np.zeros(1, dtype=np.float32)
         self.count = 0  # counter for the step in current episode
         self.battery_charge = self.bats_init_energy.copy()
 
         self.init = True
         self.demand = np.array([self._generate_load_data(self.count)], dtype=np.float32)
-        self.demand_forecast = np.array([self._generate_load_forecast_data(self.count+1, self.load_forecast_steps)], dtype=np.float32)
+        self.demand_forecast = np.array(self._generate_load_forecast_data(self.count+1, self.load_forecast_steps), dtype=np.float32)
         self.moer = self.moer_arr[0:1, 0]
         self.moer_forecast = self.moer_arr[0, 1:self.moer_forecast_steps + 1]
         self.time = np.array([self._get_time()], dtype=np.float32)
 
         self.market_op = CongestedMarketOperator(self)
 
+        # self.price = 0  # TODO: remove this line!
         self.price = np.array([self._calculate_dispatch_without_agent(self.count)[3]], dtype=np.float32)
 
         # print("action shape: ", self.action.shape)
@@ -939,8 +927,9 @@ class CongestedElectricityMarketEnv(Env):
         Assumes action is in environment's action space.
 
         Args:
-            action: array of shape [2], two float values representing
+            action: array of shape [2, N_B, h + 1], two float values representing
                 charging and discharging bid prices ($/MWh) for this time step
+            TODO: check the dimensions
 
         Returns:
             obs: dict representing the resulting state from that action
@@ -950,17 +939,17 @@ class CongestedElectricityMarketEnv(Env):
         """
 
         assert self.init
-        assert action.shape == (2, self.network.L, self.settlement_interval)
+        assert action.shape == (2, self.network.N_B, self.settlement_interval)
 
         self.count += 1
 
-        # convert action shape to (2 * self.network.L, self.settlement_interval)
-        # action = action.reshape((2 * self.network.L, self.settlement_interval))
+        # convert action shape to (2 * self.network.N_B, self.settlement_interval)
+        # action = action.reshape((2 * self.network.N_B, self.settlement_interval))
 
         # ensure selling cost (discharging) is at least as large as buying cost (charging)
         # print(action.shape)
         self.action[:] = action
-        
+
         for i in range(self.action.shape[1]):
             for j in range(self.action.shape[2]):
                 if action[1, i, j] < action[0, i, j]:
@@ -1066,10 +1055,11 @@ class CongestedElectricityMarketEnv(Env):
         print(prices)
 
         # sanity checks
-        assert np.isclose(x_bat_d, 0) and np.isclose(x_bat_c, 0) and (0 <= prices).all()
+        assert np.all(0 <= prices), 'prices should be nonnegative'
+        assert np.isclose(x_bat_d, 0).all() and np.isclose(x_bat_c, 0).all()
 
-        x_bat_d[:] = np.zeros(self.network.L)
-        x_bat_c[:] = np.zeros(self.network.L)
+        x_bat_d[:] = np.zeros(self.network.N_B)
+        x_bat_c[:] = np.zeros(self.network.N_B)
 
         return x_gens, x_bat_d, x_bat_c, prices
 
