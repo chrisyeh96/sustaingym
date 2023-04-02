@@ -23,7 +23,7 @@ from sustaingym.envs.utils import solve_mosek
 
 BATTERY_STORAGE_MODULE = 'sustaingym.envs.battery'
 
-class Case24_ieee_rts:
+class Case24_ieee_rts_network:
     def __init__(self):
         """Power flow data for the IEEE Reliability Test System.
         Please see L{caseformat} for details on the case file format.
@@ -117,9 +117,9 @@ class Case24_ieee_rts:
             [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
             [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
             [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
-            [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
-            [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
-            [23, 350,  0,   150, -25, 1.05,  100, 1, 350, 140,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]   # U350
+            # [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            # [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            # [23, 350,  0,   150, -25, 1.05,  100, 1, 350, 140,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]   # U350
         ])
 
         ## branch data
@@ -225,7 +225,7 @@ class Case24_ieee_rts:
     def construct_network(self) -> dict[str, Any]:
         N = len(self.ppc['bus'])
         M = len(self.ppc['branch'])
-        L = len(self.ppc['battery'])
+        N_B = len(self.ppc['battery'])
 
         # load injection data
         p_l = []
@@ -238,8 +238,8 @@ class Case24_ieee_rts:
         self.load_data = load_data[:, 1]  # shape [D]
 
         # C, B, f_max
-        C = np.zeros((N, M))
-        b = np.zeros(M)
+        C = np.zeros((N, M)) # connection matrix
+        b = np.zeros(M) # line susceptances
         f_max = np.zeros(M)
         edges = []
         for j in range(M):
@@ -249,12 +249,11 @@ class Case24_ieee_rts:
             v_mag_tbus = self.ppc['bus'][tbus, 7]
             f_max[j] = self.ppc['branch'][j, 5]  # rateA (long-term line rating)
             b[j] = self.ppc['branch'][j, 4] * abs(v_mag_fbus) * abs(v_mag_tbus)  # voltage-weighted susceptance
-            C[fbus, j] = 1
-            C[tbus, j] = -1
+            C[fbus, j] = 1 # source of line
+            C[tbus, j] = -1 # sink of line
             edges.append((fbus+1, tbus+1))
-        B = np.diag(b)
-        H = B @ C.T @ np.linalg.pinv(C @ B @ C.T)
-
+        B = np.diag(b) # susceptance matrix
+        H = B @ C.T @ np.linalg.pinv(C @ B @ C.T) # generation_shift_factor_matrix
 
         # generators
         num_gen = len(self.ppc['gen'])
@@ -272,41 +271,42 @@ class Case24_ieee_rts:
             gen_data[g, 4] = self.ppc['gencost'][g, -2]  # c1
 
         # J mapping matrix, shape = (N, D + G + 2 * L)
-        D = len(self.load_data)
-        G = len(gen_data)
-        J = np.zeros((N, D + G + 2 * L)) # for the charge and discharge battery decisions
+        N_D = len(self.load_data) # number of loads
+        N_G = len(gen_data) # number of generators
+        J = np.zeros((N, N_D + N_G + 2 * N_B)) # for the charge and discharge battery decisions
 
-        for d in range(D):
+        for d in range(N_D):
             bus_idx = int(load_data[d, 0] - 1)
             J[bus_idx, d] = -1
-        for g in range(G):
+        for g in range(N_G):
             bus_idx = int(gen_data[g, 2] - 1)
-            J[bus_idx, D + g] = 1
-        for l in range(L):
+            J[bus_idx, N_D + g] = 1
+        for l in range(N_B):
             bus_idx = int(self.ppc['battery'][l, 0] - 1)
-            J[bus_idx, D + G + l] = -1     # charge
-            J[bus_idx, D + G + L + l] = 1  # discharge
+            J[bus_idx, N_D + N_G + l] = -1     # charge
+            J[bus_idx, N_D + N_G + N_B + l] = 1  # discharge
 
         # p_min, p_max for loads, gens, batteries (charge), batteries (discharge)
-        p_min = np.concatenate([self.load_data, gen_data[:, 0], np.zeros(2*L)])
+        p_min = np.concatenate([self.load_data, gen_data[:, 0], np.zeros(2*N_B)])
         p_max = np.concatenate([self.load_data, gen_data[:, 1], self.ppc['battery'][:,1], self.ppc['battery'][:,1]])
 
-        c_gen = [[gen_data[g, 3], gen_data[g, 4]] for g in range(G)]
-        c_bat = self.ppc['battery'][:L, -2:]
+        c_gen = [[gen_data[g, 3], gen_data[g, 4]] for g in range(N_G)]
+        c_bat = self.ppc['battery'][:N_B, -2:]
 
-        soc = self.ppc['battery'][:L, 5]
-        soc_min = self.ppc['battery'][:L, 7]
-        soc_max = self.ppc['battery'][:L, 8]
-        effs = self.ppc['battery'][:L, 3:5]
+        soc = self.ppc['battery'][:N_B, 5]
+        soc_min = self.ppc['battery'][:N_B, 7]
+        soc_max = self.ppc['battery'][:N_B, 8]
+        effs = self.ppc['battery'][:N_B, 3:5]
+        bat_idx = self.ppc['battery'][:N_B, 0]
 
         # Network data dict
         network = {
             'name': 'IEE24RTS',
             'N': N,
             'M': M,
-            'D': D,
-            'G': G,
-            'L': L,
+            'N_D': N_D,
+            'N_G': N_G,
+            'N_B': N_B,
             'B': B,
             'H': H,
             'J': J,
@@ -318,7 +318,8 @@ class Case24_ieee_rts:
             'soc': soc,
             'soc_min': soc_min,
             'soc_max': soc_max,
-            'effs': effs
+            'effs': effs,
+            'bat_idx': bat_idx
         }
 
         return network
@@ -326,10 +327,17 @@ class Case24_ieee_rts:
 class CongestedNetwork:
     """CongestedNetwork class."""
     def __init__(self, market_network: dict = None, load_data: np.ndarray = None):
+        """
+        Construct instance of CongestedNetwork class.
+
+        Args:
+            market_network: dict, optional dictionary of network specifications
+            load_data: array of shape [number of loads], load distribution across network
+        """
         if market_network is not None:
             self.network = market_network
         else:
-            case24_ieee = Case24_ieee_rts()
+            case24_ieee = Case24_ieee_rts_network()
             self.network = case24_ieee.construct_network()
 
         if load_data is not None:
@@ -341,18 +349,22 @@ class CongestedNetwork:
 
         self.N = self.network['N']  # number of nodes
         self.M = self.network['M']  # number of lines
-        self.N_G = self.network['G']  # number of generators
-        self.N_D = self.network['D']  # number of loads
-        self.N_B = self.network['L']  # number of batteries
+        self.N_G = self.network['N_G']  # number of generators
+        self.N_D = self.network['N_D']  # number of loads
+        self.N_B = self.network['N_B']  # number of batteries
         self.J = self.network['J']  # pow_inject_to_bus_injection_matrix
         self.H = self.network['H']  # generation_shift_factor_matrix
         self.pmin = self.network['p_min']  # minimum power for participants
         self.pmax = self.network['p_max']  # maximum power for participants
         self.cgen = np.array(self.network['c_gen'])  # cost of generation
         self.cbat = np.array(self.network['c_bat'])  # costs for battery charge decisions
-        self.fmax = self.network['f_max']
+        self.fmax = self.network['f_max'] # line maximum power constraints
+        self.bat_idx = self.network['bat_idx']
 
     def update_load_split(self):
+        """
+        Updates load distribution for one time step.
+        """
         # shift each +/- 10% of default load_split
 
         # load_split = np.zeros(self.D)
@@ -371,6 +383,7 @@ class CongestedMarketOperator:
         """
         Args:
             env: instance of ElectricityMarketEnv class
+            network: instance of CongestedNetwork class (Optional)
         """
         self.env = env
         if network is None:
@@ -384,15 +397,15 @@ class CongestedMarketOperator:
         # Variables
         # dispatch for participants (loads are trivially fixed by constraints)
         self.out = cp.Variable((N_D + N_G + 2*N_B, h + 1), name="dispatch")
-        soc = cp.Variable((N_B, h + 2))
+        soc = cp.Variable((N_B, h + 2)) # state of charge
 
-        gen_dis = self.out[N_D: N_D+N_G]
+        gen_dis = self.out[N_D: N_D+N_G] # generator dispatch
         bat_d = self.out[N_D+N_G: N_D+N_G+N_B]  # discharge
         bat_c = self.out[N_D+N_G+N_B:]  # charge
 
         # Parameters
-        self.p_min = cp.Parameter((N_D + N_G + 2*N_B, h+1), name="minimum power")
-        self.p_max = cp.Parameter((N_D + N_G + 2*N_B, h+1), nonneg=True, name="maximum power")
+        self.p_min = cp.Parameter((N_D + N_G + 2*N_B, h+1), name="minimum power") # minimum power output
+        self.p_max = cp.Parameter((N_D + N_G + 2*N_B, h+1), nonneg=True, name="maximum power") # maximum power output
         self.cgen = cp.Parameter((N_G, 2), nonneg=True, name="generator production costs")  # assume time invariant
         self.cbat_d = cp.Parameter((N_B, h + 1), nonneg=True, name="battery discharge costs")  # discharge cost
         self.cbat_c = cp.Parameter((N_B, h + 1), nonneg=True, name="battery charge costs")  # charge cost
@@ -403,14 +416,14 @@ class CongestedMarketOperator:
         constraints = [
             # battery range
             0 <= soc,
-            # soc <= self.soc_max,
+            soc <= self.soc_max,
 
             # initial and final soc
             soc[:, 0] == self.env.battery_charge,
-            # soc[:, -1] >= self.soc_final,
+            soc[:, -1] >= self.soc_final,
 
             # charging dynamics
-            # soc[:, 1:] == soc[:, :-1] + self.env.CHARGE_EFFICIENCY * bat_c - (1. / self.env.DISCHARGE_EFFICIENCY) * bat_d,
+            soc[:, 1:] == soc[:, :-1] + self.env.CHARGE_EFFICIENCY * bat_c - (1. / self.env.DISCHARGE_EFFICIENCY) * bat_d,
 
             # generation limits
             self.out >= self.p_min,
@@ -438,7 +451,7 @@ class CongestedMarketOperator:
                 obj += self.cgen[g, 0] + self.cgen[g, 1] * gen_dis[g, tau]
                 # obj += self.cgen[g,1] * self.gen_dis[g, tau]
 
-            for l in range(N_B):
+            for l in range(N_B): # add up all battery costs
                 obj += self.cbat_d[l, tau] * bat_d[l, tau]
                 obj -= self.cbat_c[l, tau] * bat_c[l, tau]
 
@@ -450,16 +463,17 @@ class CongestedMarketOperator:
                      ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Determines dispatch values.
 
+        Args:
+            agent_control: bool, whether to allow batteries to participate
+
         Returns:
-            x_gens: array of shape [num_gens], generator dispatch values
-            x_bats: array of shape [num_bats], battery dispatch values
-            price: float
+            gen_dis: array of shape [number of generators, h+1], generator dispatch values
+            bat_d: array of shape [number of batteries], battery discharge amounts
+            bat_c: array of shape [number of batteries], battery charge amounts
+            price: array of shape [number of buses]
         """
 
         # self.network.update_load_split() # update load split for randomness
-
-        # print(self.env.demand_forecast.shape)
-        # print((self.env.demand_forecast[0, 1] * self.network.load_split).shape)
 
         h = self.env.settlement_interval  # horizon
         N = self.network.N  # num buses
@@ -471,9 +485,6 @@ class CongestedMarketOperator:
         loads = np.empty([N_D, h + 1])
         loads[:, 0] = self.env.demand[0] * self.network.load_split
         loads[:, 1:] = self.env.demand_forecast[:h] * self.network.load_split[:, None]
-
-        # for debugging purposes
-        # loads[-1, :] = 0 * self.network.load_split
 
         # p_min, p_max shape: [N_D + N_G + 2*N_B, h+1]
         p_min = np.concatenate([
@@ -495,9 +506,6 @@ class CongestedMarketOperator:
 
         self.p_min.value = p_min
         self.p_max.value = p_max
-        # cbats = self.network.cbat
-        # costs[-1, 0] = self.env.action[0]
-        # costs[-1, 1] = self.env.action[1]
         self.cgen.value = self.network.cgen
 
         # action has shape [2, N_B, h + 1]
@@ -507,12 +515,7 @@ class CongestedMarketOperator:
         self.soc_final.value = self.env.bats_capacity / 2.
         self.soc_max.value = self.env.bats_capacity
 
-        # print("demand: ", self.env.demand[0])
-        # print("total gen: ", np.sum(self.network.pmax))
-
-        # print("power max:", self.p_max.value[-1, :])
-        # print("power min: ", self.p_min.value[-1, :])
-
+        # solve optimization problem
         solve_mosek(self.prob)
 
         lam = -self.power_balance_constr.dual_value[0]
@@ -522,24 +525,20 @@ class CongestedMarketOperator:
         else:
             prices = lam * np.ones(N)
 
-        gen_dis = self.out.value[N_D:N_D+N_G]
+        gen_dis = self.out.value[N_D:N_D+N_G] # generator
         bat_d = self.out.value[N_D+N_G:N_D+N_G+N_B]  # discharge
         bat_c = self.out.value[N_D+N_G+N_B:]  # charge
 
-        print("gen dispatch: ", gen_dis)
-        print("battery discharge: ", bat_d[0])
-        print("battery charge: ", bat_c[0])
-
-        return gen_dis, bat_d[0], bat_c[0], prices
+        return gen_dis, bat_d[:, 0], bat_c[:, 0], prices
 
 
 class CongestedElectricityMarketEnv(Env):
     """
     Actions:
-        Type: Box(2)
+        Type: Box(2, number of batteries, settlement interval + 1)
+        Discharge and Charge action per battery for each time step in the lookahead.
         Action                              Min                     Max
-        a ($ / MWh)                         -Inf                    Inf
-        b ($ / MWh)                         -Inf                    Inf
+        ($ / MWh)                            0                    Max Cost
     Observation:
         Type: Box(9)
                                             Min                     Max
@@ -563,49 +562,30 @@ class CongestedElectricityMarketEnv(Env):
     CHARGE_EFFICIENCY = 0.95
     # discharge efficiency for all batteries
     DISCHARGE_EFFICIENCY = 0.95
-
-    # default max production rates (MW)
-    # DEFAULT_GEN_MAX_RATES = (36.8, 31.19, 3.8, 9.92, 49.0, 50.0, 50.0, 15.0, 48.5, 56.7)
-    # default max discharging rates for batteries (MW), from the perspective
-    #   of the market operator
-    # DEFAULT_BAT_MAX_DISCHARGE = (20.0, 29.7, 7.5, 2.0, 30.0)
     # default capacity for batteries (MWh)
-    # DEFAULT_BAT_CAPACITY = (80, 20, 30, 0.95, 120)
     DEFAULT_BAT_CAPACITY = [80]
     # defaul initial energy level for batteries (MWh)
-    # DEFAULT_BAT_INIT_ENERGY = (40, 10, 15, 0.475, 60)
     DEFAULT_BAT_INIT_ENERGY = [40]
-    # default range for max charging and discharging rates for batteries (MW)
-    #   assuming symmetric range
-    # DEFAULT_BAT_MAX_RATES = tuple((-val, val) for val in DEFAULT_BAT_MAX_DISCHARGE)
     # price of carbon ($ / mT of CO2), 1 mT = 1000 kg
     CARBON_PRICE = 30.85
 
     def __init__(self,
                  congestion: bool = True,
-                #  gen_max_production: Sequence[float] = DEFAULT_GEN_MAX_RATES,
-                 gens_costs: np.ndarray | None = None,
                  bats_capacity: Sequence[float] = DEFAULT_BAT_CAPACITY,
                  bats_init_energy: Sequence[float] = DEFAULT_BAT_INIT_ENERGY,
-                 # bats_max_rates: Sequence[Sequence[float]] = DEFAULT_BAT_MAX_RATES,
                  bats_costs: np.ndarray | None = None,
                  randomize_costs: Sequence[str] = (),
                  use_intermediate_rewards: bool = True,
                  month: str = '2020-05',
                  moer_forecast_steps: int = 36,
                  load_forecast_steps: int = 36,
-                 # settlement_interval: int = 36,
-                 settlement_interval: int = 22,
+                 settlement_interval: int = 36,
                  seed: int | None = None,
                  LOCAL_FILE_PATH: str | None = None):
         """
         Args:
             congestion: bool, whether or not to incorporate congestion constraints
-            gen_max_production: shape [num_gens], maximum production of each generator (MW)
-            gens_costs: shape [num_gens], costs of each generator ($/MWh)
             bats_capacity: shape [num_bats], capacity of each battery (MWh)
-            bats_max_rates: shape [num_bats, 2],
-                maximum charge (-) and discharge (+) rates of each battery (MW)
             bats_costs: shape [num_bats - 1, 2], charging and discharging costs
                 for each battery, excluding the agent-controlled battery ($/MWh)
             randomize_costs: list of str, chosen from ['gens', 'bats'], which
@@ -621,15 +601,9 @@ class CongestedElectricityMarketEnv(Env):
             seed: random seed
             LOCAL_FILE_PATH: string representing the relative path of personal dataset
         """
-        # if LOCAL_FILE_PATH is None:
-        #     assert month in ['2019-05', '2020-05', '2021-05']  # update for future dates
 
         if LOCAL_FILE_PATH is None:
             assert month[:4] == '2020' # make sure the month is in 2020
-
-        # self.num_gens = len(gen_max_production)
-        # self.num_bats = len(bats_capacity)
-        self.num_bats = 1
 
         self.randomize_costs = randomize_costs
         self.use_intermediate_rewards = use_intermediate_rewards
@@ -647,20 +621,12 @@ class CongestedElectricityMarketEnv(Env):
         rng = self.rng
 
         self.network = CongestedNetwork()
-        N_B = self.network.N_B  # num batteries
-
-        # generators
-        # self.gen_max_production = np.array(gen_max_production, dtype=np.float32)
-
-        # if gens_costs is None:
-        #     self.gens_base_costs = rng.uniform(50, 150, size=self.num_gens)
-        # else:
-        #     assert len(gens_costs) == self.num_gens
-        #     self.gens_base_costs = gens_costs
+        self.N_B = self.network.N_B  # num batteries
+        self.bat_idx = self.network.bat_idx[0]
 
         # batteries
         self.bats_capacity = np.array(bats_capacity, dtype=np.float32)
-        assert len(bats_init_energy) == self.num_bats
+        assert len(bats_init_energy) == self.N_B
         self.bats_init_energy = np.array(bats_init_energy, dtype=np.float32)
 
         # for debugging purposes
@@ -669,14 +635,9 @@ class CongestedElectricityMarketEnv(Env):
         assert (self.bats_init_energy >= 0).all()
         assert (self.bats_init_energy <= self.bats_capacity).all()
 
-        # self.bats_max_rates = np.array(bats_max_rates, dtype=np.float32)
-        # assert self.bats_max_rates.shape == (self.num_bats, 2)
-        # assert (self.bats_max_rates[:, 0] < 0).all()
-        # assert (self.bats_max_rates[:, 1] > 0).all()
-
-        self.bats_base_costs = np.zeros((self.num_bats, 2))
+        self.bats_base_costs = np.zeros((self.N_B, 2))
         if bats_costs is None:
-            self.bats_base_costs[:-1, 0] = rng.uniform(2.8, 3.2, size=self.num_bats-1)  # discharging
+            self.bats_base_costs[:-1, 0] = rng.uniform(2.8, 3.2, size=self.N_B-1)  # discharging
             self.bats_base_costs[:-1, 1] = 0.75 * self.bats_base_costs[:-1, 1]  # charging
         else:
             self.bats_base_costs[:-1] = bats_costs
@@ -686,14 +647,14 @@ class CongestedElectricityMarketEnv(Env):
         max_cost = 1.25 * max(max(self.network.cgen[:, 1]), self.network.cgen[-1, 0], self.network.cgen[-1, 1]) # edit for general n battery case later!!!
 
         # action space is two values for the charging and discharging costs
-        self.action_space = spaces.Box(low=0, high=max_cost, shape=(2, N_B, self.settlement_interval + 1), dtype=np.float32)
+        self.action_space = spaces.Box(low=0, high=max_cost, shape=(2, self.N_B, self.settlement_interval + 1), dtype=np.float32)
 
         # observation space is current energy level, current time, previous (a, b, x)
         # from dispatch and previous load demand value
         self.observation_space = spaces.Dict({
             'energy': spaces.Box(low=0, high=self.bats_capacity[-1], shape=(1,), dtype=float),
             'time': spaces.Box(low=0, high=1, shape=(1,), dtype=float),
-            'previous action': spaces.Box(low=0, high=np.inf, shape=(2, N_B, self.settlement_interval+1), dtype=float),
+            'previous action': spaces.Box(low=0, high=np.inf, shape=(2, self.N_B, self.settlement_interval+1), dtype=float),
             'previous agent dispatch': spaces.Box(low=self.network.pmin[-1] * self.TIME_STEP_DURATION,
                                                   high=self.network.pmax[-1] * self.TIME_STEP_DURATION,
                                                   shape=(1,), dtype=float),
@@ -712,39 +673,10 @@ class CongestedElectricityMarketEnv(Env):
             starttime=starttime, endtime=starttime,
             ba='SGIP_CAISO_SCE', save_dir='sustaingym/data/moer')
 
-    # def _get_demand_data(self) -> pd.DataFrame:
-    #     """Get demand data.
-
-    #     Returns:
-    #         DataFrame with demand, columns are 'HH:MM' at 5-min intervals
-    #     """
-    #     if self.LOCAL_PATH is not None:
-    #         return pd.read_csv(self.LOCAL_PATH)
-    #     else:
-    #         csv_path = os.path.join('data', 'demand_data', f'CAISO-demand-{self.month}.csv.gz')
-    #         bytes_data = pkgutil.get_data('sustaingym', csv_path)
-    #         assert bytes_data is not None
-    #         df_demand = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
-    #         assert df_demand.shape == (31, 289)
-    #         return df_demand / 1800.
-
-    # def _get_demand_forecast_data(self) -> pd.DataFrame:
-    #     """Get temporal load forecast data.
-
-    #     Returns:
-    #         Dataframe with demand forecast, columns are 'HH:MM' at 5-min intervals
-    #     """
-    #     if self.LOCAL_PATH is not None:
-    #         return pd.read_csv(self.LOCAL_PATH)
-    #     else:
-    #         csv_path = f'data/demand_forecast_data/CAISO-demand-forecast-{self.month}.csv.gz'
-    #         bytes_data = pkgutil.get_data('sustaingym', csv_path)
-    #         assert bytes_data is not None
-    #         df_demand_forecast = pd.read_csv(BytesIO(bytes_data), compression='gzip', index_col=0)
-    #         assert df_demand_forecast.shape == (31, 289)
-    #         return df_demand_forecast / 1800.
-
     def _get_demand_data(self) -> pd.DataFrame:
+        """
+        Load demand data from compressed csv file.
+        """
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
@@ -758,6 +690,10 @@ class CongestedElectricityMarketEnv(Env):
             return df_demand
 
     def _get_demand_forecast_data(self) -> pd.DataFrame:
+        """
+        Load demand forecast data from compressed csv file.
+        Assume perfect forecasts (i.e. same as actual demand data for future time steps).
+        """
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
@@ -771,7 +707,7 @@ class CongestedElectricityMarketEnv(Env):
             return df_demand_forecast
 
     def _generate_load_data(self, count: int) -> float:
-        """Generate net demand for the time step associated with the given count.
+        """Generate ieee network demand for the time step associated with the given count.
 
         Args:
             count: integer representing a given time step
@@ -781,20 +717,6 @@ class CongestedElectricityMarketEnv(Env):
         """
         # use demand from Zone 1
         return self.df_demand['1'].iloc[self.idx * self.MAX_STEPS_PER_EPISODE + count]
-
-    # def _generate_load_forecast_data(self, count: int) -> float:
-    #     """Generate hour ahead forecast of the net demand for the time step associated
-    #     with the given count.
-
-    #     Args:
-    #         count: integer representing a given time step
-
-    #     Returns:
-    #         net demand for the given time step (MWh) *currently demand*
-    #     """
-    #     if count > self.df_demand_forecast.shape[1]:
-    #         return np.nan
-    #     return self.df_demand_forecast.iloc[self.idx, count]
 
     def _generate_load_forecast_data(self, count: int, lookahead_steps: int) -> np.ndarray:
         """Generate hour ahead forecast of the net demand for the time step associated
@@ -833,7 +755,7 @@ class CongestedElectricityMarketEnv(Env):
     def reset(self, seed: int | None = None, return_info: bool = False,
               options: dict | None = None
               ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
-        """Initialize or restart an instance of an episode for the BatteryStorageEnv.
+        """Initialize or restart an instance of an episode for the CongestedElectricityMarketEnv.
 
         Args:
             seed: optional seed value for controlling seed of np_random attributes
@@ -847,21 +769,6 @@ class CongestedElectricityMarketEnv(Env):
         self.rng = np.random.default_rng(seed)
         rng = self.rng
 
-        # initialize gen costs, battery charge costs, and battery discharge costs for all time steps
-        # if 'gens' in self.randomize_costs:
-        #     self.all_gens_costs = self.gens_base_costs[:, None] * rng.uniform(0.8, 1.25, size=(self.num_gens, self.MAX_STEPS_PER_EPISODE))
-        # else:
-        #     self.all_gens_costs = self.gens_base_costs[:, None] * np.ones((self.num_gens, self.MAX_STEPS_PER_EPISODE))
-        # if 'bats' in self.randomize_costs:
-        #     self.all_bats_costs = self.bats_base_costs[:, None, :] * rng.uniform(0.8, 1.25, size=(self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
-        # else:
-        #     self.all_bats_costs = self.bats_base_costs[:, None, :] * np.ones((self.num_bats, self.MAX_STEPS_PER_EPISODE, 2))
-
-        # enforce convexity of battery bids:
-        # discharge costs must be >= charge costs
-        # self.all_bats_costs[:, :, 1] = np.maximum(
-        #     self.all_bats_costs[:, :, 0], self.all_bats_costs[:, :, 1])
-
         # randomly pick a day for the episode, among the days with complete demand data
 
         self.idx = rng.choice(int(len(self.df_demand) / 288))
@@ -872,7 +779,7 @@ class CongestedElectricityMarketEnv(Env):
         self.load_arr = self._generate_load_forecast_data(1, self.load_forecast_steps)
 
         self.action = np.zeros((2, self.network.N_B, self.settlement_interval + 1), dtype=np.float32)
-        self.dispatch = np.zeros(1, dtype=np.float32)
+        self.dispatch = np.zeros(self.N_B, dtype=np.float32)
         self.count = 0  # counter for the step in current episode
         self.battery_charge = self.bats_init_energy.copy()
 
@@ -884,16 +791,7 @@ class CongestedElectricityMarketEnv(Env):
         self.time = np.array([self._get_time()], dtype=np.float32)
 
         self.market_op = CongestedMarketOperator(self)
-
-        # self.price = 0  # TODO: remove this line!
-        self.price = np.array([self._calculate_dispatch_without_agent(self.count)[3]], dtype=np.float32)
-
-        # print("action shape: ", self.action.shape)
-        # print("dispatch shape: ", self.dispatch.shape)
-        # print("demand: ", self.demand)
-        # print("demand forecast: ", self.demand_forecast)
-        # print("price: ", self.price)
-
+        self.price = np.array(self._calculate_dispatch_without_agent(self.count)[3], dtype=np.float32)[int(self.bat_idx - 1)]
 
         # set up observations
         self.obs = {
@@ -927,9 +825,9 @@ class CongestedElectricityMarketEnv(Env):
         Assumes action is in environment's action space.
 
         Args:
-            action: array of shape [2, N_B, h + 1], two float values representing
-                charging and discharging bid prices ($/MWh) for this time step
-            TODO: check the dimensions
+            action: array of shape [2, N_B, h + 1], float values representing
+                charging and discharging bid prices ($/MWh) for each battery and time step
+                in the lookahead
 
         Returns:
             obs: dict representing the resulting state from that action
@@ -939,15 +837,11 @@ class CongestedElectricityMarketEnv(Env):
         """
 
         assert self.init
-        assert action.shape == (2, self.network.N_B, self.settlement_interval)
+        assert action.shape == (2, self.network.N_B, self.settlement_interval+1)
 
         self.count += 1
 
-        # convert action shape to (2 * self.network.N_B, self.settlement_interval)
-        # action = action.reshape((2 * self.network.N_B, self.settlement_interval))
-
         # ensure selling cost (discharging) is at least as large as buying cost (charging)
-        # print(action.shape)
         self.action[:] = action
 
         for i in range(self.action.shape[1]):
@@ -955,32 +849,16 @@ class CongestedElectricityMarketEnv(Env):
                 if action[1, i, j] < action[0, i, j]:
                     self.action[1, i, j] = action[0, i, j]
 
-        # self.gens_costs = self.all_gens_costs[:, self.count]
-        # self.bats_costs = self.all_bats_costs[:, self.count]
-        # self.bats_costs[-1] = self.action
-
-        # assert (self.bats_costs[:, 1] >= self.bats_costs[:, 0]).all()
-
         self.demand[:] = self._generate_load_data(self.count)
         self.moer[:] = self.moer_arr[self.count:self.count + 1, 0]
 
-        # rates in MW
-        self.bats_max_charge = np.maximum(
-            self.network.pmin[-1],
-            -(self.bats_capacity - self.battery_charge) / (self.TIME_STEP_DURATION * self.CHARGE_EFFICIENCY))
-        self.bats_max_discharge = np.minimum(
-            self.network.pmax[-1],
-            self.battery_charge * self.DISCHARGE_EFFICIENCY / self.TIME_STEP_DURATION)
-
-        _, x_bats, price = self.market_op.get_dispatch(self.congestion)
-        x_agent = x_bats[-1]
-        self.dispatch[:] = x_agent
-        self.price[:] = price
+        _, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(self.congestion)
+        self.dispatch[:] = x_bat_d - x_bat_c
+        self.price = prices[int(self.network.bat_idx - 1)]
 
         # update battery charges
-        charging = (x_bats < 0)
-        self.battery_charge[charging] -= self.CHARGE_EFFICIENCY * x_bats[charging]
-        self.battery_charge[~charging] -= (1. / self.DISCHARGE_EFFICIENCY) * x_bats[~charging]
+        self.battery_charge += self.CHARGE_EFFICIENCY * x_bat_c
+        self.battery_charge -= (1. / self.DISCHARGE_EFFICIENCY) * x_bat_d
         self.battery_charge[:] = self.battery_charge.clip(0, self.bats_capacity)
 
         # get forecasts for next time step
@@ -988,8 +866,9 @@ class CongestedElectricityMarketEnv(Env):
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1, self.load_forecast_steps)
         self.moer_forecast[:] = self.moer_arr[self.count, 1:self.moer_forecast_steps + 1]
 
-        energy_reward = price * x_agent
-        carbon_reward = self.CARBON_PRICE * self.moer[0] * x_agent
+        energy_reward = prices[int(self.network.bat_idx - 1)] * self.dispatch[0]
+        carbon_reward = self.CARBON_PRICE * self.moer[0] * self.dispatch[0]
+
         reward = energy_reward + carbon_reward
 
         self.intermediate_rewards['energy'][self.count] = energy_reward
@@ -1034,25 +913,9 @@ class CongestedElectricityMarketEnv(Env):
             x_bats: array of shape [num_bats], battery dispatch values
             price: float
         """
-        # self.gens_costs = self.all_gens_costs[:, count]
-        # self.bats_costs = self.all_bats_costs[:, count]
-
-        # update charging range for each battery
-        # self.bats_max_charge = np.maximum(
-        #     self.network.pmin[-1],
-        #     -(self.bats_capacity - self.battery_charge) / (self.TIME_STEP_DURATION * self.CHARGE_EFFICIENCY))
-        # self.bats_max_discharge = np.minimum(
-        #     self.network.pmax[-1],
-        #     self.battery_charge * self.DISCHARGE_EFFICIENCY / self.TIME_STEP_DURATION)
-
-        # prevent agent-battery from participating in market
-        # self.bats_max_charge[-1] = 0
-        # self.bats_max_discharge[-1] = 0
 
         self.demand[:] = self._generate_load_data(count)
         x_gens, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(agent_control=False)
-
-        print(prices)
 
         # sanity checks
         assert np.all(0 <= prices), 'prices should be nonnegative'

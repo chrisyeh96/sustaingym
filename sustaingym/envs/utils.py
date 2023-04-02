@@ -13,7 +13,7 @@ def solve_mosek(prob: cp.Problem) -> None:
             # 'MSK_IPAR_INTPNT_SOLVE_FORM': int(mosek.solveform.primal) # Solve primal problem formulation
         }
         # prob.solve(warm_start=True, solver=cp.MOSEK, mosek_params=mosek_params, verbose=True)
-        prob.solve(warm_start=True, solver=cp.MOSEK, verbose=True)
+        prob.solve(warm_start=True, solver=cp.MOSEK)
         # prob.solve(warm_start=True, solver=cp.ECOS, verbose=True)
     except cp.SolverError:
         print('MOSEK solver failed. Trying cp.ECOS')
