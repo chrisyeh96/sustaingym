@@ -136,7 +136,10 @@ class EVChargingEnv(Env):
         self.vectorize_obs = vectorize_obs
         if self.vectorize_obs:
             concat_length = self.num_stations * 2 + 1 + self.moer_forecast_steps + 1
+            self._est_departures_idx, self._demands_idx = 0, self.num_stations
+
             self.observation_space = spaces.Box(-288, 288, shape=(concat_length,), dtype=np.float32)
+            # order of variables here is important for multiagent setting
             self._vectorized_obs = [
                 self._est_departures, self._demands, self._prev_moer, 
                 self._forecasted_moer, self._timestep_obs
@@ -434,7 +437,7 @@ class EVChargingEnv(Env):
         return np.mean(np.array([ev.departure - ev.arrival for ev in self.evs]))
 
     def _calculate_max_profit(self) -> float:
-        """Calculate profits without regards to network constraints."""
+        """Calculate max profits without regards to network constraints."""
         requested_energy = np.array([ev.requested_energy for ev in self.evs])
         duration_in_periods = np.array([ev.departure - ev.arrival for ev in self.evs])
         max_kwh_in_duration = duration_in_periods * 32 * self.A_PERS_TO_KWH
