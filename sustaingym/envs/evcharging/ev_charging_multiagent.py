@@ -25,11 +25,13 @@ class MultiAgentEVChargingEnv(Env):
                  periods_delay: int = 0,
                  moer_forecast_steps: int = 36,
                  project_action_in_env: bool = True,
+                 vectorize_obs: bool = True,
                  verbose: int = 0):
         self.single_env = EVChargingEnv(
             data_generator=data_generator,
             moer_forecast_steps=moer_forecast_steps,
             project_action_in_env=project_action_in_env,
+            vectorize_obs=vectorize_obs,
             verbose=verbose)
         
         self.agents = self.single_env.cn.station_ids[:]
@@ -39,53 +41,46 @@ class MultiAgentEVChargingEnv(Env):
         self.max_num_agents = self.num_agents
 
         self.periods_delay = periods_delay
-        self.past_obs: deque = deque([], maxlen=self.periods_delay)
+        self.past_obs_agg: deque = deque([], maxlen=self.periods_delay)
 
-        self.observation_spaces = {agent: spaces.Dict({
-            'est_departures':  spaces.Box(-288, 288, shape=(self.max_num_agents,), dtype=np.float32),
-            'demands':         spaces.Box(0,
-                                        self.single_env.data_generator.requested_energy_cap,
-                                        shape=(self.max_num_agents,), dtype=np.float32),
-            'prev_moer':       spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-            'forecasted_moer': spaces.Box(0, 1.0, shape=(self.single_env.moer_forecast_steps,), dtype=np.float32),
-            'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-        }) for agent in self.agents}
+        self.observation_spaces = {agent: self.single_env.observation_space for agent in self.agents}
 
-        self.action_spaces = {agent: 
-            spaces.Box(low=0, high=1.0, shape=(1,), dtype=np.float32)
-            for agent in self.agents
-        }
+        self.action_spaces = {agent: self.single_env.action_space for agent in self.agents}
 
-    def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any], init: bool = False) -> dict[str, dict[str, Any]]:
+    def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any] | np.ndarray, init: bool = False) -> dict[str, dict[str, Any]]:
         """Spread observation across agents."""
-        obs = {}
-        for i, agent in enumerate(self.agents):
-            # ob = {
-            #     'est_departures': obs_agg['est_departures'],
-            #     'demands': obs_agg['demands'],
-            #     'prev_moer': obs_agg['prev_moer'],
-            #     'forecasted_moer': obs_agg['forecasted_moer'],
-            #     'timestep': obs_agg['timestep'],
-            # }
-            obs[agent] = obs_agg
-        
         if self.periods_delay == 0:
-            return obs
-
+            return {agent: obs_agg for agent in self.agents}
+        
         if init:  # initialize past_obs by repeating first observation
-            self.past_obs.clear()
+            self.past_obs_agg.clear()
             for _ in range(self.periods_delay):
-                self.past_obs.append(obs.copy())
-            return obs
-        else:
-            first_obs = self.past_obs.popleft()
-            self.past_obs.append(obs)
+                self.past_obs_agg.append(obs_agg)
 
-            td_obs = obs.copy()  # time-delay observation
-            for i, agent in enumerate(self.agents):
-                for var in ['est_departures', 'demands']:
-                    td_obs[agent][var] = first_obs[agent][var]
-                    td_obs[agent][var][i] = obs[agent][var][i]
+            return {agent: obs_agg for agent in self.agents}
+        else:
+            first_obs_agg = self.past_obs_agg.popleft()
+            self.past_obs_agg.append(obs_agg)
+            td_obs = {agent: obs_agg.copy() for agent in self.agents}  # time-delay observation
+
+            # observations in vectorized form
+            if self.single_env.vectorize_obs:
+                # td_obs = {agent: obs_agg.copy() for agent in self.agents}
+                for i, agent in enumerate(self.agents):
+                    # agent's info on other agents (time-delayed)
+                    np.copyto(
+                        td_obs[agent][:self.num_agents * 2],
+                        first_obs_agg[:self.num_agents * 2])
+                    # # agent's info of self (current)
+                    np.copyto(td_obs[agent][i:i+1], obs_agg[i:i+1])
+                    np.copyto(td_obs[agent][self.num_agents+i: self.num_agents+i+1], 
+                              obs_agg[self.num_agents+i: self.num_agents+i+1])
+            else:
+                for i, agent in enumerate(self.agents):
+                    # observations in a dictionary
+                    for var in ['est_departures', 'demands']:
+                        td_obs[agent][var] = first_obs_agg[var]
+                        td_obs[agent][var][i] = obs_agg[var][i]
             return td_obs
  
     def _create_dict_from_infos_agg(self, infos_agg: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -124,7 +119,7 @@ class MultiAgentEVChargingEnv(Env):
 
     def reset(self, *,
               seed: int | None = None,
-              return_info: bool = False,
+              return_info: bool = True,
               options: dict | None = None
               ) -> dict[str, dict[str, Any]] | tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
         """dict 2 layers: agent -> obs_type
