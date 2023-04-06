@@ -11,10 +11,12 @@ from gymnasium import spaces
 import numpy as np
 import pandas as pd
 from stable_baselines3.common.base_class import BaseAlgorithm
+from ray.rllib.algorithms.algorithm import Algorithm
 from tqdm import tqdm
 
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 from sustaingym.envs.utils import solve_mosek
+
 
 
 class BaseEVChargingAlgorithm:
@@ -39,6 +41,7 @@ class BaseEVChargingAlgorithm:
             env (EVChargingEnv): EV charging environment
         """
         self.env = env
+        print("env observation space: ", self.env.observation_space.shape)
         self.continuous_action_space = isinstance(self.env.action_space, spaces.Box)
     
     def _get_max_action(self) -> int:
@@ -94,7 +97,7 @@ class BaseEVChargingAlgorithm:
             episode_reward = 0.0
 
             # Reset environment
-            obs = self.env.reset(seed=seed)
+            obs, _ = self.env.reset(seed=seed)
 
             # Reset algorithm
             self.reset()
@@ -103,7 +106,8 @@ class BaseEVChargingAlgorithm:
             done = False
             while not done:
                 action = self.get_action(obs)
-                obs, reward, done, info = self.env.step(action)
+                obs, reward, terminated, truncated, info = self.env.step(action)
+                done = terminated or truncated
                 episode_reward += reward
 
             # Collect reward info from environment
@@ -345,3 +349,25 @@ class RLAlgorithm(BaseEVChargingAlgorithm):
             *See get_action() in BaseEVChargingAlgorithm.
         """
         return self.rl_model.predict(observation, deterministic=True)[0]
+
+
+class RLLibAlgorithm(BaseEVChargingAlgorithm):
+    """Wrapper for RLLib RL agent."""
+    def __init__(self, env: EVChargingEnv, algo: Algorithm):
+        """
+            env (EVChargingEnv): EV charging environment
+            algo (BaseAlgorithm): RL Lib model
+        """
+        super().__init__(env)
+        self.algo = algo
+    
+    def get_action(self, observation: dict[str, Any]) -> np.ndarray:
+        """Returns output of RL model.
+
+        Args:
+            *See get_action() in BaseEVChargingAlgorithm.
+
+        Returns:
+            *See get_action() in BaseEVChargingAlgorithm.
+        """
+        return self.algo.compute_single_action(observation)
