@@ -82,6 +82,7 @@ class EVChargingEnv(Env):
     def __init__(self, data_generator: AbstractTraceGenerator,
                  moer_forecast_steps: int = 36,
                  project_action_in_env: bool = True,
+                 vectorize_obs: bool = True,
                  verbose: int = 0):
         """
         Args:
@@ -92,6 +93,10 @@ class EVChargingEnv(Env):
                 maximum of 3 hrs.
             project_action_in_env: flag for whether gym should project action
                 to obey network constraints and not overcharge vehicles.
+            vectorize_obs: if True, returns observations as flattened numpy
+                array. Otherwise, observations are returned in a dictionary.
+                Vectorized observations are useful for simplifying an algorithm's
+                observation input.
             verbose: level of verbosity for print out.
                 0: nothing
                 1: print description of current simulation day
@@ -120,40 +125,48 @@ class EVChargingEnv(Env):
         self.num_stations = len(self.cn.station_ids)
         self._evse_name_to_idx = {evse: i for i, evse in enumerate(self.cn.station_ids)}
 
-        self.observation_space = spaces.Dict({
-            'est_departures':  spaces.Box(-288, 288, shape=(self.num_stations,), dtype=np.float32),
-            'demands':         spaces.Box(0,
-                                          self.data_generator.requested_energy_cap,
-                                          shape=(self.num_stations,), dtype=np.float32),
-            'prev_moer':       spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-            'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
-            'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-        })
-
         # Initialize information-tracking arrays once, always gets zeroed out at each step
         self._est_departures = np.zeros(self.num_stations, dtype=np.float32)
         self._demands = np.zeros(self.num_stations, dtype=np.float32)
         self._prev_moer = np.zeros(1, dtype=np.float32)
         self._forecasted_moer = np.zeros(self.moer_forecast_steps, dtype=np.float32)
         self._timestep_obs = np.zeros(1, dtype=np.float32)
-        self._obs = {
-            'est_departures': self._est_departures,
-            'demands': self._demands,
-            'prev_moer': self._prev_moer,
-            'forecasted_moer': self._forecasted_moer,
-            'timestep': self._timestep_obs,
-        }
+
+        # Create observation spaces
+        self.vectorize_obs = vectorize_obs
+        if self.vectorize_obs:
+            concat_length = self.num_stations * 2 + 1 + self.moer_forecast_steps + 1
+            self.observation_space = spaces.Box(-288, 288, shape=(concat_length,), dtype=np.float32)
+            self._vectorized_obs = [
+                self._est_departures, self._demands, self._prev_moer, 
+                self._forecasted_moer, self._timestep_obs
+            ]
+            self._vectorized_shape = (concat_length,)
+        else:
+            self.observation_space = spaces.Dict({
+                'est_departures':  spaces.Box(-288, 288, shape=(self.num_stations,), dtype=np.float32),
+                'demands':         spaces.Box(0,
+                                            self.data_generator.requested_energy_cap,
+                                            shape=(self.num_stations,), dtype=np.float32),
+                'prev_moer':       spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+                'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
+                'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+            })
+
+            self._obs = {
+                'est_departures': self._est_departures,
+                'demands': self._demands,
+                'prev_moer': self._prev_moer,
+                'forecasted_moer': self._forecasted_moer,
+                'timestep': self._timestep_obs,
+            }
+
+        # Track cumulative components of reward signal
         self._reward_breakdown = {
             'profit': 0.0,
             'carbon_cost': 0.0,
             'excess_charge': 0.0,
         }
-
-        self._vectorized_obs = [
-            self._est_departures, self._demands, self._prev_moer, 
-            self._prev_moer, self._forecasted_moer, self._timestep_obs]
-        self._vectorized_shape = np.concatenate(self._vectorized_obs).shape
-        self.vectorize_obs = False
 
         # Initialize variables for gym resetting
         self.timestep = 0
@@ -162,7 +175,7 @@ class EVChargingEnv(Env):
         # Define action space for the pilot signals
         self.action_space = spaces.Box(low=0, high=1.0,
                                        shape=(self.num_stations,), dtype=np.float32)
-
+        
         # Set up action projection
         if self.project_action_in_env:
             self._init_action_projection()
@@ -206,7 +219,7 @@ class EVChargingEnv(Env):
                 that minimizes the L2 norm between it and the suggested action.
         """
         self.agent_action.value = action
-        self.demands_cvx.value = self._obs['demands']
+        self.demands_cvx.value = self._demands
         solve_mosek(self.prob, self.verbose)
         action = self.projected_action.value
         return action
@@ -244,7 +257,10 @@ class EVChargingEnv(Env):
                     Between 0 and 1.
                 'timestep': shape [1], fraction of day between 0 and 1.
             reward: scheduler's performance metric per timestep
-            done: whether episode is finished
+            terminated: whether episode is terminated 
+            truncated: whether episode has reached a time limit. Here, truncated
+                is always the same as terminated because the episode is always
+                across the entire day.
             info: auxiliary useful information
                 'num_evs' (int): number of charging sessions in episode.
                 'avg_plugin_time' (float): average plugin time in periods
@@ -482,25 +498,30 @@ if __name__ == '__main__':
     ('2020-02-01', '2020-05-31'),
     ('2021-05-01', '2021-08-31'),
     )
+    env = EVChargingEnv(RealTraceGenerator('caltech', test_ranges[0]))
+    # print(env.)
 
-    with cProfile.Profile() as profile:
-        env = EVChargingEnv(RealTraceGenerator('caltech', test_ranges[0]))
+    # with cProfile.Profile() as profile:
+    #     env = EVChargingEnv(RealTraceGenerator('caltech', test_ranges[0]))
 
-        for i in range(10):
-            done = False
-            obs, episode_info = env.reset(seed=i, return_info=True)
-            steps = 0
-            while not done:
-                action = np.ones((54,))
-                obs, reward, terminated, truncated, info = env.step(action, return_info=False)
-                done = terminated or truncated
-                steps += 1
-            print(f"Iteration: {i + 1}, steps {steps}")
+    #     for i in range(10):
+    #         done = False
+    #         obs, episode_info = env.reset(seed=i, return_info=True)
+    #         print("reset obs length: ", len(obs))
+    #         steps = 0
+    #         while not done:
+    #             action = np.ones((54,))
+    #             obs, reward, terminated, truncated, info = env.step(action, return_info=False)
+    #             print("step obs length: ", len(obs))
+    #             # assert 1 == 0
+    #             done = terminated or truncated
+    #             steps += 1
+    #         print(f"Iteration: {i + 1}, steps {steps}")
 
-        print(steps)
-        print(info.keys())
-        print(info['reward_breakdown'])
+    #     print(steps)
+    #     print(info.keys())
+    #     print(info['reward_breakdown'])
 
-    results = pstats.Stats(profile)
-    results.sort_stats(pstats.SortKey.CUMULATIVE)
-    results.print_stats(20)
+    # results = pstats.Stats(profile)
+    # results.sort_stats(pstats.SortKey.CUMULATIVE)
+    # results.print_stats(20)
