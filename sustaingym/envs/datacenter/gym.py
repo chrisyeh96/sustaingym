@@ -3,8 +3,8 @@ import pandas as pd
 import gym
 
 
-TASK_DATA_PATH = "sustaingym/data/datacenter/task_durations.csv"
-SIMULATION_LENGTH = 24  # In hours
+TASK_DATA_PATH = "sustaingym/data/datacenter/daily_events"
+SIMULATION_LENGTH = 72  # In hours
 HOURS_PER_DAY = 24
 MICROSEC_PER_HOUR = 60*60*1000000
 START_DELAY = 600  # trace period starts at 600 seconds
@@ -12,22 +12,15 @@ START_DELAY_H = 600 / 3600  # measured in hours
 SIM_START_TIME = datetime(2019, 5, 1)
 SIM_END_TIME = datetime(2019, 6, 1)
 BALANCING_AUTHORITY = "SGIP_CAISO_PGE"
+PRIORITY_THRESH = 120  # priority values geq are considered inflexible
 
 
 class DatacenterGym(gym.Env):
     def __init__(self):
         self.datacenter = Cluster(SIMULATION_LENGTH, SIM_START_TIME,
                                   SIM_END_TIME, BALANCING_AUTHORITY)
-
-        # initialize task data
-        self.task_data = pd.read_csv(TASK_DATA_PATH)
-
-        # TODO cleanup file instead of doing it in code
-        bad_rows = self.task_data[(self.task_data['time'] == 0) |
-                                  (self.task_data['duration'] == 0) |
-                                  (self.task_data['cpu'] == 0)].index
-        self.task_data.drop(bad_rows, inplace=True)
-
+    
+        self.task_data = None
         self.time_window = MICROSEC_PER_HOUR
         self.episode_len = SIMULATION_LENGTH
     
@@ -100,28 +93,21 @@ class DatacenterGym(gym.Env):
         TODO: document
         """
         curr_t = self.datacenter.t
+
+        if curr_t % HOURS_PER_DAY == 0:
+            curr_d = curr_t // HOURS_PER_DAY
+            self.task_data = pd.read_csv(f"{TASK_DATA_PATH}/day_{curr_d}.csv")
+
         start = (curr_t + START_DELAY_H)*MICROSEC_PER_HOUR
-        end = (curr_t + START_DELAY_H +1)*MICROSEC_PER_HOUR
+        end = (curr_t + START_DELAY_H + 1)*MICROSEC_PER_HOUR
 
         tasks = []
         new_task_data = self.task_data[(start <= self.task_data['time']) & (self.task_data['time'] < end)]
         for _, row in new_task_data.iterrows():
             task_duration = (row['duration'] // self.time_window) + 1  # calculate number of timesteps tasks lasts
             new_task = Task(row['task_id'], task_duration, row['cpu'])
-            tasks.append(new_task)
+            if row["priority"] < PRIORITY_THRESH:  # it's a flexible task
+                tasks.append(new_task)
             self.update_daily_capacity_req(curr_t, new_task)
 
         return tasks
-
-
-# class DatacenterState:
-#     def __init__(self, datacenter: Cluster):
-#         self.VCC = datacenter.VCC
-#         self.capacity = datacenter.capacity
-#         self.n_ready_tasks = len(datacenter.task_q)
-    
-#     def display(self):
-#         print("Datacenter state:")
-#         print(f"\t- VCC: {self.VCC}")
-#         print(f"\t- Used capacity: {self.capacity}")
-#         print(f"\t- # queued tasks: {self.n_ready_tasks}")
