@@ -4,6 +4,7 @@ The module implements a multi-agent version of the EVChargingEnv.
 from __future__ import annotations
 
 from collections import deque
+import functools
 from typing import Any
 
 from gymnasium import Env, spaces
@@ -13,8 +14,10 @@ import numpy as np
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
 
+from ray.rllib.env import MultiAgentEnv
 
-class MultiAgentEVChargingEnv(Env):
+
+class MultiAgentEVChargingEnv(MultiAgentEnv):
     """Quick mock-up for multi-agent. Doing one agent per EVSE.
 
     New attributes:
@@ -37,15 +40,18 @@ class MultiAgentEVChargingEnv(Env):
         self.agents = self.single_env.cn.station_ids[:]
         self.agent_idx = {agent: i for i, agent in enumerate(self.agents)}
         self.num_agents = self.single_env.num_stations
-        self.possible_agents = self.agents
+        self.possible_agents = self.agents[:]
         self.max_num_agents = self.num_agents
 
         self.periods_delay = periods_delay
         self.past_obs_agg: deque = deque([], maxlen=self.periods_delay)
 
         self.observation_spaces = {agent: self.single_env.observation_space for agent in self.agents}
+        self.observation_space = self.single_env.observation_space
 
         self.action_spaces = {agent: self.single_env.action_space for agent in self.agents}
+        self.action_space = spaces.Box(low=0, high=1.0,
+                                       shape=(1,), dtype=np.float32)
 
     def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any] | np.ndarray, init: bool = False) -> dict[str, dict[str, Any]]:
         """Spread observation across agents."""
@@ -102,20 +108,25 @@ class MultiAgentEVChargingEnv(Env):
 
         # feed action
         obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(actions_agg, return_info=return_info)
+        rew = rews_agg / self.num_agents
         obs = self._create_dict_from_obs_agg(obs_agg)
 
         reward = {}
         infos = {}
         for agent in self.agents:
-            reward[agent] = rews_agg  # every agent gets same global reward signal
+            reward[agent] = rew  # every agent gets same global reward signal
             infos[agent] = infos_agg  # same as info
 
-        terminations = {agent: terminated for agent in self.agents}
-        truncations = {agent: truncated for agent in self.agents}
+        terminateds = {agent: terminated for agent in self.agents}
+        truncateds = {agent: truncated for agent in self.agents}
         if terminated or truncated:
-            self.agents = []
+            terminateds["__all__"] = True
+            truncateds["__all__"] = True
+        else:
+            terminateds["__all__"] = False
+            truncateds["__all__"] = False
         
-        return obs, reward, terminations, truncations, infos
+        return obs, reward, terminateds, truncateds, infos
 
     def reset(self, *,
               seed: int | None = None,
@@ -143,8 +154,10 @@ class MultiAgentEVChargingEnv(Env):
         """Close the environment. Delete internal variables."""
         self.single_env.close()
 
-    def observation_space(self, agent):
-        return self.observation_spaces[agent]
+    # @functools.lru_cache(maxsize=None)
+    # def observation_space(self, agent):
+    #     return self.observation_spaces[agent]
 
-    def action_space(self, agent):
-        return self.action_spaces[agent]
+    # @functools.lru_cache(maxsize=None)
+    # def action_space(self, agent):
+    #     return self.action_spaces[agent]

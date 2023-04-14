@@ -1,4 +1,4 @@
-"""RL training script.
+"""RL training script using stable_baselines.
 
 usage: train.py [-h] -n EXPERIMENT_IDENTIFIER -t TRAIN [TRAIN ...] -e TEST
                 [TEST ...] [-s SITE] [-d | --discrete | --no-discrete] -m

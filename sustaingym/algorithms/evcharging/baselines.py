@@ -41,7 +41,6 @@ class BaseEVChargingAlgorithm:
             env (EVChargingEnv): EV charging environment
         """
         self.env = env
-        print("env observation space: ", self.env.observation_space.shape)
         self.continuous_action_space = isinstance(self.env.action_space, spaces.Box)
     
     def _get_max_action(self) -> int:
@@ -353,13 +352,14 @@ class RLAlgorithm(BaseEVChargingAlgorithm):
 
 class RLLibAlgorithm(BaseEVChargingAlgorithm):
     """Wrapper for RLLib RL agent."""
-    def __init__(self, env: EVChargingEnv, algo: Algorithm):
+    def __init__(self, env: EVChargingEnv, algo: Algorithm, multiagent: bool = False):
         """
             env (EVChargingEnv): EV charging environment
             algo (BaseAlgorithm): RL Lib model
         """
         super().__init__(env)
         self.algo = algo
+        self.multiagent = multiagent
     
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """Returns output of RL model.
@@ -370,4 +370,10 @@ class RLLibAlgorithm(BaseEVChargingAlgorithm):
         Returns:
             *See get_action() in BaseEVChargingAlgorithm.
         """
-        return self.algo.compute_single_action(observation)
+        if self.multiagent:
+            action = {}
+            for agent in observation:
+                action[agent] = self.algo.compute_single_action(observation[agent])
+            return action
+        else:
+            return self.algo.compute_single_action(observation)
