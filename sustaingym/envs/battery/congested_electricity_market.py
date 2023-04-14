@@ -324,20 +324,20 @@ class Case24_ieee_rts_network:
             'f_max': f_max,
             'c_gen': c_gen,
             'c_bat': c_bat,
-            'soc': soc,
-            'soc_min': soc_min,
-            'soc_max': soc_max,
-            'effs': effs,
-            'bat_idx': bat_idx
+            'soc': soc,          # array, shape [N_B], starting soc of each battery
+            'soc_min': soc_min,  # array, shape [N_B], min soc of each battery
+            'soc_max': soc_max,  # array, shape [N_B], max soc of each battery
+            'effs': effs,        # array, shape [N_B, 2], charge/discharge efficiencies of each battery
+            'bat_idx': bat_idx   # array, shape [N_B], bus at which each battery is connected
         }
-
         return network
+
 
 class CongestedNetwork:
     """CongestedNetwork class."""
-    def __init__(self, market_network: dict = None, load_data: np.ndarray = None):
-        """
-        Construct instance of CongestedNetwork class.
+    def __init__(self, market_network: dict | None = None,
+                 load_data: np.ndarray | None = None):
+        """Construct instance of CongestedNetwork class.
 
         Args:
             market_network: dict, optional dictionary of network specifications
@@ -367,13 +367,11 @@ class CongestedNetwork:
         self.pmax = self.network['p_max']  # maximum power for participants
         self.cgen = np.array(self.network['c_gen'])  # cost of generation
         self.cbat = np.array(self.network['c_bat'])  # costs for battery charge decisions
-        self.fmax = self.network['f_max'] # line maximum power constraints
+        self.fmax = self.network['f_max']  # line maximum power constraints
         self.bat_idx = self.network['bat_idx']
 
     def update_load_split(self):
-        """
-        Updates load distribution for one time step.
-        """
+        """Updates load distribution for one time step."""
         # shift each +/- 10% of default load_split
 
         # load_split = np.zeros(self.D)
@@ -386,15 +384,21 @@ class CongestedNetwork:
 
         self.load_split = self.default_load_split.copy()
 
+
 class CongestedMarketOperator:
     """MarketOperator class."""
-    def __init__(self, env: CongestedElectricityMarketEnv, network: CongestedNetwork = None):
+    def __init__(self, env: CongestedElectricityMarketEnv,
+                 network: CongestedNetwork | None = None,
+                 milp: bool = True):
         """
         Args:
             env: instance of ElectricityMarketEnv class
             network: instance of CongestedNetwork class (Optional)
+            milp: whether to solve a mixed-integer linear program to enforce
+                that charge * discharge = 0
         """
         self.env = env
+        self.milp = milp
         if network is None:
             self.network = CongestedNetwork()
 
@@ -405,34 +409,34 @@ class CongestedMarketOperator:
 
         # Variables
         # dispatch for participants (loads are trivially fixed by constraints)
-        self.out = cp.Variable((N_D + N_G + 2*N_B, h + 1), name="dispatch")
-        soc = cp.Variable((N_B, h + 2)) # state of charge
+        self.out = cp.Variable((N_D + N_G + 2*N_B, h + 1), name='dispatch')
+        self.soc = cp.Variable((N_B, h + 2), name='soc')  # state of charge
 
-        gen_dis = self.out[N_D: N_D+N_G] # generator dispatch
+        gen_dis = self.out[N_D: N_D+N_G]  # generator dispatch
         bat_d = self.out[N_D+N_G: N_D+N_G+N_B]  # discharge
         bat_c = self.out[N_D+N_G+N_B:]  # charge
 
         # Parameters
-        self.p_min = cp.Parameter((N_D + N_G + 2*N_B, h+1), name="minimum power") # minimum power output
-        self.p_max = cp.Parameter((N_D + N_G + 2*N_B, h+1), nonneg=True, name="maximum power") # maximum power output
-        self.cgen = cp.Parameter((N_G, 2), nonneg=True, name="generator production costs")  # assume time invariant
-        self.cbat_d = cp.Parameter((N_B, h + 1), nonneg=True, name="battery discharge costs")  # discharge cost
-        self.cbat_c = cp.Parameter((N_B, h + 1), nonneg=True, name="battery charge costs")  # charge cost
-        self.soc_final = cp.Parameter(N_B, nonneg=True, name="soc final")  # final charge SOC(s)
-        self.soc_max = cp.Parameter(N_B, nonneg=True, name="soc maximum")  # maximum SOC(s)
+        self.p_min = cp.Parameter((N_D + N_G + 2*N_B, h+1), name='minimum power')  # minimum power output
+        self.p_max = cp.Parameter((N_D + N_G + 2*N_B, h+1), nonneg=True, name='maximum power')  # maximum power output
+        self.cgen = cp.Parameter((N_G, 2), nonneg=True, name='generator production costs')  # assume time invariant
+        self.cbat_d = cp.Parameter((N_B, h + 1), nonneg=True, name='battery discharge costs')  # discharge cost
+        self.cbat_c = cp.Parameter((N_B, h + 1), nonneg=True, name='battery charge costs')  # charge cost
+        self.soc_final = cp.Parameter(N_B, nonneg=True, name='soc final')  # final charge SOC(s)
+        self.soc_max = cp.Parameter(N_B, nonneg=True, name='soc maximum')  # maximum SOC(s)
 
         # Constraints
         constraints = [
             # battery range
-            0 <= soc,
-            soc <= self.soc_max,
+            0 <= self.soc,
+            self.soc <= self.soc_max,
 
             # initial and final soc
-            soc[:, 0] == self.env.battery_charge,
-            soc[:, -1] >= self.soc_final,
+            self.soc[:, 0] == self.env.battery_charge,
+            self.soc[:, -1] >= self.soc_final,
 
             # charging dynamics
-            soc[:, 1:] == soc[:, :-1] + self.env.CHARGE_EFFICIENCY * bat_c - (1. / self.env.DISCHARGE_EFFICIENCY) * bat_d,
+            self.soc[:, 1:] == self.soc[:, :-1] + self.env.CHARGE_EFFICIENCY * bat_c - (1. / self.env.DISCHARGE_EFFICIENCY) * bat_d,
 
             # generation limits
             self.out >= self.p_min,
@@ -447,28 +451,39 @@ class CongestedMarketOperator:
             # power flow and line flow limits (aka power congestion constraints)
             Hp = self.network.H @ self.network.J @ self.out
             self.congestion_constrs = [
-                Hp <= np.array([[*self.network.fmax],]*(h+1)).transpose(),
-                Hp >= -np.array([[*self.network.fmax],]*(h+1)).transpose()
+                Hp <= self.network.fmax.reshape(-1, 1),
+                Hp >= -self.network.fmax.reshape(-1, 1)
             ]
             constraints.extend(self.congestion_constrs)
 
         # Objective function
         obj = 0
-
         for tau in range(h+1):
-            for g in range(N_G): # add up all generator costs
-                obj += self.cgen[g, 0] + self.cgen[g, 1] * gen_dis[g, tau]
-                # obj += self.cgen[g,1] * self.gen_dis[g, tau]
+            # add up all generator costs
+            # - self.cgen[:, 0] is a constant, so we can ignore it in the objective
+            obj += (
+                self.cgen[:, 1] @ gen_dis[:, tau]       # generators
+                + self.cbat_d[:, tau] @ bat_d[:, tau]   # battery discarge
+                - self.cbat_c[:, tau] @ bat_c[:, tau])  # battery charge
 
-            for l in range(N_B): # add up all battery costs
-                obj += self.cbat_d[l, tau] * bat_d[l, tau]
-                obj -= self.cbat_c[l, tau] * bat_c[l, tau]
-
-        # Solve problem
+        self.obj = obj
         self.prob = cp.Problem(cp.Minimize(obj), constraints)
         assert self.prob.is_dcp() and self.prob.is_dpp()
 
-    def get_dispatch(self, agent_control: bool = True
+        if milp:
+            # use mixed-integer linear program (MILP) to enforce that
+            # battery is either only charging or only discharging (not both)
+            # at every time step
+            self.z = cp.Variable((N_B, h+1), boolean=True)  # z ∈ {0,1}
+            milp_constraints = [
+                bat_d <= cp.multiply(self.p_max[N_D+N_G: N_D+N_G+N_B], self.z),
+                bat_c <= cp.multiply(self.p_max[N_D+N_G+N_B:], 1-self.z),
+            ]
+            self.milp_prob = cp.Problem(
+                cp.Minimize(obj), constraints=constraints + milp_constraints)
+            assert self.milp_prob.is_dcp() and self.milp_prob.is_dpp()
+
+    def get_dispatch(self, agent_control: bool = True, verbose: bool = True
                      ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Determines dispatch values.
 
@@ -476,12 +491,11 @@ class CongestedMarketOperator:
             agent_control: bool, whether to allow batteries to participate
 
         Returns:
-            gen_dis: array of shape [number of generators, h+1], generator dispatch values
+            gen_dis: array of shape [number of generators], generator dispatch values
             bat_d: array of shape [number of batteries], battery discharge amounts
             bat_c: array of shape [number of batteries], battery charge amounts
             price: array of shape [number of buses]
         """
-
         # self.network.update_load_split() # update load split for randomness
 
         h = self.env.settlement_interval  # horizon
@@ -525,25 +539,51 @@ class CongestedMarketOperator:
         self.soc_max.value = self.env.bats_capacity
 
         # solve optimization problem
+        if self.milp:
+            # if using MILP, solve it first. However, the MILP does not use
+            # dual variables like a regular linear program. So we use the
+            # result from the MILP to constrain the battery charge/discharge
+            # upper-bound. Finally, resolve the linear program to get the
+            # appropriate dual variables. This resolve will be very fast,
+            # because the variables will already be initialized to the optimal
+            # values from the MILP.
+            solve_mosek(self.milp_prob)
+            self.p_max.value[N_D+N_G: N_D+N_G+N_B] *= self.z.value
+            self.p_max.value[N_D+N_G+N_B:] *= 1 - self.z.value
         solve_mosek(self.prob)
 
         lam = -self.power_balance_constr.dual_value[0]
-
-        # print(self.congestion_constrs[0].dual_value[].shape)
-        # print(self.congestion_constrs[1].dual_value.shape)
-
-        # print((self.network.H.T).shape)
 
         if self.env.congestion:
             prices = lam + self.network.H.T @ (self.congestion_constrs[0].dual_value[:,0] - self.congestion_constrs[1].dual_value[:,0])
         else:
             prices = lam * np.ones(N)
 
-        gen_dis = self.out.value[N_D:N_D+N_G] # generator
+        gen_dis = self.out.value[N_D:N_D+N_G]  # generator
         bat_d = self.out.value[N_D+N_G:N_D+N_G+N_B]  # discharge
         bat_c = self.out.value[N_D+N_G+N_B:]  # charge
 
-        return gen_dis, bat_d[:, 0], bat_c[:, 0], prices
+        if verbose:
+            Δsoc = self.env.CHARGE_EFFICIENCY * bat_c - (1. / self.env.DISCHARGE_EFFICIENCY) * bat_d
+
+            with np.printoptions(precision=2):
+                print(f'========== dispatch output ==========')
+                print(f'network: {N} buses, {self.network.M} lines, {N_D} loads, {N_G} generators, {N_B} batteries')
+                print(f'horizon: {h}')
+                print(f'total load: {loads.sum(axis=0)}')
+                print(f'objective value: {self.prob.value}')
+                print(f'battery soc initial: {self.env.battery_charge}, final target: ≥{self.soc_final.value}')
+                print(f'battery soc: {self.soc.value[0]}')
+                print(f'battery Δsoc: {Δsoc}')
+                print(f'battery discharge x: {bat_d}')
+                print(f'battery charge x: {bat_c}')
+                print(f'battery charge costs: {self.cbat_c.value}')
+                print(f'battery discharge costs: {self.cbat_d.value}')
+                print(f'generator dispatch: {gen_dis}')
+                print(f'generator costs: {self.cgen.value[:, 1]}')
+                print()
+
+        return gen_dis[:, 0], bat_d[:, 0], bat_c[:, 0], prices
 
 
 class CongestedElectricityMarketEnv(Env):
@@ -553,6 +593,7 @@ class CongestedElectricityMarketEnv(Env):
         Discharge and Charge action per battery for each time step in the lookahead.
         Action                              Min                     Max
         ($ / MWh)                            0                    Max Cost
+
     Observation:
         Type: Box(9)
                                             Min                     Max
@@ -636,7 +677,7 @@ class CongestedElectricityMarketEnv(Env):
 
         self.network = CongestedNetwork()
         self.N_B = self.network.N_B  # num batteries
-        self.bat_idx = self.network.bat_idx[0]
+        self.bat_idx = int(self.network.bat_idx[0]) - 1
 
         # batteries
         self.bats_capacity = np.array(bats_capacity, dtype=np.float32)
@@ -805,7 +846,9 @@ class CongestedElectricityMarketEnv(Env):
         self.time = np.array([self._get_time()], dtype=np.float32)
 
         self.market_op = CongestedMarketOperator(self)
-        self.price = np.array([np.array(self._calculate_dispatch_without_agent(self.count)[3], dtype=np.float32)[int(self.bat_idx - 1)]])
+
+        nodal_prices = self._calculate_dispatch_without_agent(self.count)[3]
+        self.price = np.array([nodal_prices[self.bat_idx]], dtype=np.float32)
 
         # set up observations
         self.obs = {
@@ -849,7 +892,6 @@ class CongestedElectricityMarketEnv(Env):
             done: whether the episode is done
             info: additional info (currently empty)
         """
-
         assert self.init
         assert action.shape == (2, self.network.N_B, self.settlement_interval+1)
 
@@ -858,20 +900,19 @@ class CongestedElectricityMarketEnv(Env):
         # ensure selling cost (discharging) is at least as large as buying cost (charging)
         self.action[:] = action
 
-        for i in range(self.action.shape[1]):
-            for j in range(self.action.shape[2]):
-                if action[1, i, j] < action[0, i, j]:
-                    self.action[1, i, j] = action[0, i, j]
+        # for i in range(self.action.shape[1]):
+        #     for j in range(self.action.shape[2]):
+        #         if action[1, i, j] < action[0, i, j]:
+        #             self.action[1, i, j] = action[0, i, j]
 
         self.demand[:] = self._generate_load_data(self.count)
         self.moer[:] = self.moer_arr[self.count:self.count + 1, 0]
 
         _, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(self.congestion)
         self.dispatch = np.array(x_bat_d - x_bat_c)
-        print(x_bat_d)
-        print(x_bat_c)
+        print(f'discharge: {x_bat_d}, charge: {x_bat_c}')
         # print("dispatch: ", self.dispatch)
-        self.price = np.array(prices[int(self.network.bat_idx - 1)])
+        self.price[:] = prices[self.bat_idx]
 
         # update battery charges
         self.battery_charge += self.CHARGE_EFFICIENCY * x_bat_c
@@ -883,7 +924,7 @@ class CongestedElectricityMarketEnv(Env):
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1, self.load_forecast_steps)
         self.moer_forecast[:] = self.moer_arr[self.count, 1:self.moer_forecast_steps + 1]
 
-        energy_reward = prices[int(self.network.bat_idx - 1)] * self.dispatch[0]
+        energy_reward = prices[self.bat_idx] * self.dispatch[0]
         carbon_reward = self.CARBON_PRICE * self.moer[0] * self.dispatch[0]
 
         reward = energy_reward + carbon_reward
@@ -915,8 +956,9 @@ class CongestedElectricityMarketEnv(Env):
         }
         return self.obs, reward, done, info
 
-    def _calculate_dispatch_without_agent(self, count: int
-                                          ) -> tuple[np.ndarray, np.ndarray, float]:
+    def _calculate_dispatch_without_agent(
+            self, count: int
+            ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Calculates market price and dispatch at given time step, without
         agent participation.
 
@@ -926,11 +968,11 @@ class CongestedElectricityMarketEnv(Env):
             count: time step
 
         Returns:
-            x_gens: array of shape [num_gens], generator dispatch values
-            x_bats: array of shape [num_bats], battery dispatch values
-            price: float
+            x_gens: array of shape [num_gens, h+1], generator dispatch values
+            x_bat_d: array of shape [num_bats], battery discharge amounts
+            x_bat_c: array of shape [num_bats], battery charge amounts
+            price: array of shape [num_buses], nodal prices
         """
-
         self.demand[:] = self._generate_load_data(count)
         x_gens, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(agent_control=False)
 
@@ -944,7 +986,8 @@ class CongestedElectricityMarketEnv(Env):
         return x_gens, x_bat_d, x_bat_c, prices
 
     def _calculate_prices_without_agent(self) -> np.ndarray:
-        """Calculates market prices, as if the agent did not participate.
+        """Calculates market prices for a full episode, as if the agent did not
+        participate.
 
         The only state variable that is modified is self.demand.
 
