@@ -1,14 +1,14 @@
 # Install or update environment
-# conda env update --file env.yml --prune
+# conda env update --file env_rllib.yml --prune
 #
 # Remove environment
-# conda remove --name sustaingym --all
+# conda remove --name rllib --all
 #
-# Notes
+# rllib can use tensorflow back-end
+# rllib supports gymnasium
 #
 name: rllib
 channels:
-# - pytorch  # torch (PyTorch)
 - mosek
 - conda-forge
 dependencies:
@@ -26,7 +26,6 @@ dependencies:
 - numpy
 - pandas=1.1
 - pip
-# - pytorch=1.11
 - pytz
 - scikit-learn
 - scipy
