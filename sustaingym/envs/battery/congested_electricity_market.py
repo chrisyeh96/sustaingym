@@ -109,14 +109,23 @@ class Case24_ieee_rts_network:
             [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
             [15, 155,  0,    80, -50, 1.014, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
             [16, 155,  0,    80, -50, 1.017, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
-            [18, 400,  0,   200, -50, 1.05,  100, 1, 400, 100,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U400
-            [21, 400,  0,   200, -50, 1.05,  100, 1, 400, 100,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U400
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
-            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [18, 400,  0,   200, -50, 1.05,  100, 1, 400, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U400
+            [21, 400,  0,   200, -50, 1.05,  100, 1, 400, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U400
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            [23, 350,  0,   150, -25, 1.05,  100, 1, 350, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]   # U350
+            # [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            # [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            # [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            # [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            # [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
+            # [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
             # [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
             # [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
             # [23, 350,  0,   150, -25, 1.05,  100, 1, 350, 140,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]   # U350
@@ -438,8 +447,8 @@ class CongestedMarketOperator:
             # power flow and line flow limits (aka power congestion constraints)
             Hp = self.network.H @ self.network.J @ self.out
             self.congestion_constrs = [
-                Hp <= self.network.fmax,
-                Hp >= -self.network.fmax
+                Hp <= np.array([[*self.network.fmax],]*(h+1)).transpose(),
+                Hp >= -np.array([[*self.network.fmax],]*(h+1)).transpose()
             ]
             constraints.extend(self.congestion_constrs)
 
@@ -520,8 +529,13 @@ class CongestedMarketOperator:
 
         lam = -self.power_balance_constr.dual_value[0]
 
+        # print(self.congestion_constrs[0].dual_value[].shape)
+        # print(self.congestion_constrs[1].dual_value.shape)
+
+        # print((self.network.H.T).shape)
+
         if self.env.congestion:
-            prices = lam + self.network.H.T @ (self.congestion_constrs[0].dual_value - self.congestion_constrs[1].dual_value)
+            prices = lam + self.network.H.T @ (self.congestion_constrs[0].dual_value[:,0] - self.congestion_constrs[1].dual_value[:,0])
         else:
             prices = lam * np.ones(N)
 
@@ -662,7 +676,7 @@ class CongestedElectricityMarketEnv(Env):
             'demand forecast': spaces.Box(low=0, high=np.inf, shape=(load_forecast_steps,), dtype=float),
             'moer previous': spaces.Box(low=0, high=1, shape=(1,), dtype=float),
             'moer forecast': spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=float),
-            'prices previous': spaces.Box(low=0, high=max_cost, shape=(1,), dtype=float)
+            'price previous': spaces.Box(low=0, high=max_cost, shape=(1,), dtype=float)
         })
         self.init = False
         self.df_demand = self._get_demand_data()
@@ -791,7 +805,7 @@ class CongestedElectricityMarketEnv(Env):
         self.time = np.array([self._get_time()], dtype=np.float32)
 
         self.market_op = CongestedMarketOperator(self)
-        self.price = np.array(self._calculate_dispatch_without_agent(self.count)[3], dtype=np.float32)[int(self.bat_idx - 1)]
+        self.price = np.array([np.array(self._calculate_dispatch_without_agent(self.count)[3], dtype=np.float32)[int(self.bat_idx - 1)]])
 
         # set up observations
         self.obs = {
@@ -853,8 +867,11 @@ class CongestedElectricityMarketEnv(Env):
         self.moer[:] = self.moer_arr[self.count:self.count + 1, 0]
 
         _, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(self.congestion)
-        self.dispatch[:] = x_bat_d - x_bat_c
-        self.price = prices[int(self.network.bat_idx - 1)]
+        self.dispatch = np.array(x_bat_d - x_bat_c)
+        print(x_bat_d)
+        print(x_bat_c)
+        # print("dispatch: ", self.dispatch)
+        self.price = np.array(prices[int(self.network.bat_idx - 1)])
 
         # update battery charges
         self.battery_charge += self.CHARGE_EFFICIENCY * x_bat_c
@@ -935,12 +952,12 @@ class CongestedElectricityMarketEnv(Env):
             np.ndarray, shape [num_steps], type float64
         """
         battery_charge_save = self.battery_charge.copy()
-        prices = np.zeros((self.network.N, self.MAX_STEPS_PER_EPISODE))
+        prices = np.zeros(self.MAX_STEPS_PER_EPISODE)
 
         # get prices from market for all time steps
         for count in range(self.MAX_STEPS_PER_EPISODE):
-            _, x_bat_d, x_bat_c, prices = self._calculate_dispatch_without_agent(count)
-            prices[:, count] = prices
+            _, x_bat_d, x_bat_c, bus_prices = self._calculate_dispatch_without_agent(count)
+            prices[count] = bus_prices[int(self.network.bat_idx - 1)]
 
             # update battery charges
             self.battery_charge += self.CHARGE_EFFICIENCY * x_bat_c
@@ -979,9 +996,9 @@ class CongestedElectricityMarketEnv(Env):
 
             # rate constraints
             0 <= c,
-            c / self.CHARGE_EFFICIENCY <= -self.network.pmax[-1] * self.TIME_STEP_DURATION,
+            c / self.CHARGE_EFFICIENCY <= self.network.pmax[-1] * self.TIME_STEP_DURATION,
             0 <= d,
-            d * self.DISCHARGE_EFFICIENCY <= self.network.pmin[-1] * self.TIME_STEP_DURATION
+            d * self.DISCHARGE_EFFICIENCY <= self.network.pmax[-1] * self.TIME_STEP_DURATION
         ]
         if final_charge > 0:
             constraints.append(final_charge <= init_charge + delta_energy[-1])

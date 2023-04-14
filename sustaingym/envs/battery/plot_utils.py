@@ -7,6 +7,7 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
+from datetime import datetime, timedelta
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import matplotlib.ticker as plticker
@@ -92,9 +93,9 @@ def plot_returns(results: Mapping[str, Mapping[str, np.ndarray]],
             alg = label
         alg = '\n'.join(alg.split(' '))
 
-        year = 2019 if '2019' in label else 2021
-        # returns = np.sum(d['rewards'], axis=1)
-        returns = np.sum(d['results'], axis=1) # check to make sure this makes sense!
+        year = 2019 if '2019' in label else 2020
+        returns = np.sum(d['rewards'], axis=1)
+        # returns = np.sum(d['results'], axis=1) # check to make sure this makes sense!
         rows.extend([
             (alg, year, r) for r in returns
         ])
@@ -143,20 +144,34 @@ def setup_episode_plot(env: ElectricityMarketEnv, month_str: str,
     curr_ax = 0
 
     # demand
+    # ax = axs[curr_ax]
+    # ax_dict['demand'] = ax
+    # demand_df = env._get_demand_data()
+    # demand_forecast_df = env._get_demand_forecast_data()
+    # times = [datetime.strptime(t, '%H:%M') for t in demand_df.columns[:-1]]
+    # ax.plot(times, demand_df.iloc[env.idx, :-1], label='actual')
+    # ax.plot(times, demand_forecast_df.iloc[env.idx, :-1], label='forecasted')
+    # ax.set_ylabel('demand (MWh)')
+    # lines, labels = ax.get_legend_handles_labels()
+
     ax = axs[curr_ax]
     ax_dict['demand'] = ax
     demand_df = env._get_demand_data()
     demand_forecast_df = env._get_demand_forecast_data()
-    times = [datetime.strptime(t, '%H:%M') for t in demand_df.columns[:-1]]
-    ax.plot(times, demand_df.iloc[env.idx, :-1], label='actual')
-    ax.plot(times, demand_forecast_df.iloc[env.idx, :-1], label='forecasted')
+
+    start = env.idx * env.MAX_STEPS_PER_EPISODE
+    start_time = datetime(env.year, env.month, 1, 0, 0)
+
+    times = [start_time + timedelta(minutes=5*step) for step in demand_df['Period']]
+    ax.plot(times[:env.MAX_STEPS_PER_EPISODE], demand_df['1'].iloc[start:start + env.MAX_STEPS_PER_EPISODE].values, label='actual')
+    ax.plot(times[:env.MAX_STEPS_PER_EPISODE], demand_df['1'].iloc[start:start + env.MAX_STEPS_PER_EPISODE].values, label='forecasted')
     ax.set_ylabel('demand (MWh)')
     lines, labels = ax.get_legend_handles_labels()
 
     # MOER
     ax = ax.twinx()
     ax.set_ylabel('MOER (kg CO$_2$/kWh)')
-    ax.plot(times, env.moer_arr[:-1, 0], color='grey', label='MOER')
+    ax.plot(times[:env.MAX_STEPS_PER_EPISODE], env.moer_arr[:-1, 0], color='grey', label='MOER')
     ax.grid(False)
     lines2, labels2 = ax.get_legend_handles_labels()
     ax.legend(lines + lines2, labels + labels2, bbox_to_anchor=(1.2,1))
