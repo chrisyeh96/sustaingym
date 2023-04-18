@@ -106,14 +106,24 @@ class BaseEVChargingAlgorithm:
             while not done:
                 action = self.get_action(obs)
                 obs, reward, terminated, truncated, info = self.env.step(action)
+                if type(reward) == dict:
+                    reward = sum(reward.values())
                 done = terminated or truncated
                 episode_reward += reward
 
             # Collect reward info from environment
-            for rb in info['reward_breakdown']:
-                reward_breakdown[rb].append(info['reward_breakdown'][rb])
+            if 'reward_breakdown' in info:
+                for rb in info['reward_breakdown']:
+                    reward_breakdown[rb].append(info['reward_breakdown'][rb])
+                reward_breakdown[
+                    'max_profit'].append(info['max_profit'])
+            else:
+                # multiagent
+                station = list(info.keys())[0]
+                for rb in info[station]['reward_breakdown']:
+                    reward_breakdown[rb].append(info[station]['reward_breakdown'][rb])
+                reward_breakdown['max_profit'].append(info[station]['max_profit'])
             reward_breakdown['reward'].append(episode_reward)
-            reward_breakdown['max_profit'].append(info['max_profit'])
 
         return pd.DataFrame(reward_breakdown)
 
