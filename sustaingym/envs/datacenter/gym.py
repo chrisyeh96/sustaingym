@@ -31,6 +31,8 @@ class DatacenterGym(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         super().reset()
+        self.datacenter.t = 0
+        self.datacenter.daily_capacity_req = [0 for _ in range(31)]  # 31 days
         obs = self.datacenter.get_state()
         info = {}
         return obs, info
@@ -103,6 +105,7 @@ class DatacenterGym(gym.Env):
 
         if curr_t % HOURS_PER_DAY == 0:
             curr_d = curr_t // HOURS_PER_DAY
+            print(f"DAY#{curr_d}, t={curr_t}")
             self.task_data = pd.read_csv(f"{TASK_DATA_PATH}/day_{curr_d}.csv")
 
         start = (curr_t + START_DELAY_H)*MICROSEC_PER_HOUR

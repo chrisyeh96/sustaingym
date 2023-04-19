@@ -14,7 +14,7 @@ class Machine:
         self.capacity += task.capacity
         self.tasks[task.id] = task
     
-    def stop_task(self, task_id):
+    def stop_task(self, task_id) -> Task:
         """
         - Return: the stopped task object.
         """
@@ -29,11 +29,10 @@ class Machine:
         """
         return random.choice(list(self.tasks.keys()))
 
-    def evict(self):
+    def evict(self) -> Task:
         """
         - Return the evicted task.
         """
         evicted_task_id = self.select_task_to_evict()
         evicted_task = self.stop_task(evicted_task_id)
-        self.capacity -= evicted_task.capacity
         return evicted_task

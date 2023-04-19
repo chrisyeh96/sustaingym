@@ -195,7 +195,7 @@ class Cluster:
             if end_time > self.t:
                 break
             elif event == REMOVED_EVENT:
-                continue
+                heappop(self.event_q)
             elif event.type == EventType.TASK_FINISHED:
                 heappop(self.event_q)
                 stopped_task = self.machines[event.machine_id].stop_task(event.task_id)
@@ -210,10 +210,14 @@ class Cluster:
         self.task_q.extend(tasks)
 
     def select_machine_to_evict(self) -> str:
+        attempt_counter = 0
         while True:
             machine_id = random.choice(list(self.machines.keys()))
             if len(self.machines[machine_id].tasks) > 0:
                 break
+            attempt_counter += 1
+            if attempt_counter > len(self.machines):
+                return None
         return machine_id
 
     def obey_vcc(self) -> None:
@@ -225,7 +229,10 @@ class Cluster:
         """
         while self.capacity > self.VCC*self.max_capacity:
             machine_id = self.select_machine_to_evict()
+            if machine_id is None:
+                break
             evicted_task = self.machines[machine_id].evict()
+            self.capacity -= evicted_task.capacity
 
             # mark the entry as invalid in the priority queue
             eq_entry = self.task_to_eq_entry[evicted_task]
