@@ -40,7 +40,8 @@ class DatacenterGym(gym.Env):
     def render(self):
         print(self.datacenter.get_state())
 
-    def step(self, VCC: np.ndarray):
+    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+        VCC = action
         assert VCC.shape == self.action_space.shape  # (1,)
 
         VCC = VCC[0] # only care about scalar
@@ -56,14 +57,15 @@ class DatacenterGym(gym.Env):
         reward = self.compute_reward()
 
         self.datacenter.t += 1
+        print(self.datacenter.t)
 
         terminated = self.datacenter.t >= self.episode_len
         truncated = False
         info = {}
 
-        return (obs, reward, terminated, truncated, info)
+        return obs, reward, terminated, truncated, info
 
-    def close(self):
+    def close(self) -> None:
         # TODO
         return super().close()
 
@@ -74,7 +76,7 @@ class DatacenterGym(gym.Env):
 
         return -1*(SLO_violation_cost + carbon_cost)
 
-    def update_daily_capacity_req(self, task_start_time : int, task : Task):
+    def update_daily_capacity_req(self, task_start_time: int, task: Task) -> None:
         """
         TODO document
         """
