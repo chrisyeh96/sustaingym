@@ -13,8 +13,17 @@ if __name__ == "__main__":
     """
     algo = ppo.PPO(env=DatacenterGym, config={ "env_config": {}, "framework": "torch", "disable_env_checking": True})
 
+    episodes = []
+    mean_reward = []
     while True:
-        print(algo.train())
+        d = algo.train()
+        episodes_total = d["episodes_total"]
+        mean_reward.append(d["episode_reward_mean"])
+        episodes.append(episodes_total)
+        mean_reward.append(mean_reward)
+        print(f"Episode #{episodes_total} reward: {d['episode_reward_mean']}")
+        if episodes_total > 100:
+            break
 
     # algo = PPOConfig().framework("torch").environment(env=DatacenterGym).build()
     # env = DatacenterGym()
