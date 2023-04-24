@@ -298,15 +298,18 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
 def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str
               ) -> pd.DataFrame:
     """Returns data for all months that overlap with interval.
+
     Args:
         starttime: start time for data. Only year and month are used.
         endtime: end time for data. See starttime.
-        ba: balancing authority, responsible for region grid operation.
-        save_dir: directory to load compressed csv from.
+        ba: balancing authority, responsible for region grid operation
+        save_dir: directory to load compressed csvs from
+
     Returns:
-        A DataFrame of historical emissions and forecasts for all months that
+        DataFrame of historical emissions and forecasts for all months that
         overlap the (starttime, endtime) interval. Index is sorted
         chronologically. See ``get_historical_and_forecasts()`` for more info.
+
     Examples:
         starttime, endtime = datetime(2021, 2, 1), datetime(2021, 5, 31)
         ba = 'SGIP_CAISO_PGE'
