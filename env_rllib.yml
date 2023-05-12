@@ -18,7 +18,6 @@ dependencies:
 - flake8
 - gymnasium=0.27.1
 - ipympl
-- jupyterlab
 - matplotlib
 - mosek=9.3.21
 - mypy=0.961
@@ -37,9 +36,5 @@ dependencies:
   - acnportal==0.3.2
   - atari_py
   - GPUtil
-  - "gym[accept-rom-license]"
-  - "gym[atari]"
   - pettingzoo==1.22.3
   - "ray[rllib]"
-  - tensorflow
-  - tensorflow_probability
