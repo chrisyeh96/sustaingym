@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sustaingym"
+version = "0.1.0"
+authors = [
+  { name="Christopher Yeh", email="cyeh@caltech.edu" },
+]
+description = "SustainGym: Reinforcement Learning Benchmark Suite for Sustainability Applications"
+readme = "README.md"
+license = { file="LICENSE" }
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/chrisyeh96/sustaingym"
+"Bug Tracker" = "https://github.com/chrisyeh96/sustaingym/issues"
+
+[tool.setuptools.packages.find]
+include = ["sustaingym"]

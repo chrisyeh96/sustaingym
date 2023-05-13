@@ -1,8 +1,10 @@
 ## CUSTOM EXCLUSIONS
 .DS_STORE
+*.code-workspace
 .vscode/
 sandbox/
 logs/
+log/
 plots/
 ## END CUSTOM EXCLUSIONS
 
