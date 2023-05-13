@@ -14,12 +14,12 @@ from datetime import datetime, timedelta
 from io import BytesIO
 import os
 import pkgutil
-import requests
 from typing import Literal
 
 import numpy as np
 import pandas as pd
 import pytz
+import requests
 
 DEFAULT_DATE_RANGES = [
     ('2019-05', '2019-08'),
@@ -68,9 +68,9 @@ def get_data_sgip(starttime: str, endtime: str, ba: str,
     """Retrieves data from the SGIP Signal API.
 
     Authenticates user, performs API request, and returns data as a DataFrame.
-    If req_type is 'historical', returns the historical marginal emissions rate.
-    If req_type is 'forecast', returns the forecast for emissions rate at the next
-    5 minute mark. See https://sgipsignal.com/api-documentation
+    If req_type is 'historical', returns the historical MOER.
+    If req_type is 'forecast', returns the forecast for emissions rate at the
+    next 5 minute mark. See https://sgipsignal.com/api-documentation
 
     Args:
         starttime: start time. Format ISO 8601 timestamp.
@@ -80,11 +80,12 @@ def get_data_sgip(starttime: str, endtime: str, ba: str,
             are limited to 1 day.
         ba: balancing authority, responsible for region grid operation.
         req_type: either 'historical' or 'forecast'
-        forecast_timesteps: number of forecast timesteps to grab, default next 3 hours
+        forecast_timesteps: number of forecast timesteps to grab (in 5 min
+            increments), default is 36 timesteps (=3 hours)
 
     Returns:
-        A DataFrame containing either historical or forecasted
-            rates with a DateTimeIndex named as "time". The time index type
+        DataFrame containing either historical or forecasted
+            rates with a DateTimeIndex named "time". The time index type
             is datetime64[ns, UTC] (in UTC time).
         If forecast:
             f1                        float64
@@ -154,38 +155,30 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
 
     # Give one-day padding around starttime and endtime.
     starttime -= ONEDAY
-    endtime += ONEDAY
-
-    days30 = timedelta(days=30)
-    days1 = ONEDAY
+    endtime += ONEDAY - FIVEMINS
 
     combined_dfs = []
     for req_type in ['historical', 'forecasted']:
         # Historical queries are limited to 31 days. Queries on forecasts
         # are limited to 1 day.
-        span = days30 if req_type == 'historical' else days1
+        span = timedelta(days=30) if req_type == 'historical' else ONEDAY
 
-        # Go backwards so that there isn't need to sort
-        # Set up request range
-        req_endtime = endtime
-        req_starttime = max(starttime, req_endtime - span + FIVEMINS)
+        # Set up request range (inclusive)
+        req_starttime = starttime
+        req_endtime = min(starttime + span - FIVEMINS, endtime)
 
         dfs = []
-        while req_endtime >= starttime:
+        while req_starttime <= endtime:
             # Retrieve data
             req_starttimestr = datetime.strftime(req_starttime, SGIP_DT_FORMAT)
             req_endtimestr = datetime.strftime(req_endtime, SGIP_DT_FORMAT)
             print(f"Retrieving {ba} {req_type}: {req_starttimestr}, {req_endtimestr}")
             df = get_data_sgip(req_starttimestr, req_endtimestr, ba, req_type)  # type: ignore
-            df.sort_index(axis=0, ascending=False, inplace=True)
+            df.sort_index(axis=0, ascending=True, inplace=True)
 
             # Update request span
-            req_endtime -= span
-            req_starttime = max(starttime, req_endtime - span + FIVEMINS)
-
-            # Drop last row to avoid duplicate row (from next CSV)
-            if df.index[-1] == req_endtime:
-                df.drop(df.tail(1).index, inplace=True)
+            req_starttime += span
+            req_endtime = min(req_starttime + span - FIVEMINS, endtime)
 
             dfs.append(df)
         dfs = pd.concat(dfs, axis=0)
@@ -220,20 +213,24 @@ def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
 
     # Find range of dates for month and retrieve data
     starttime = datetime(year, month, 1, tzinfo=pytz.UTC)
-    endtime = datetime(year, month + 1, 1, tzinfo=pytz.UTC)
+    if month < 12:
+        endtime = datetime(year, month + 1, 1, tzinfo=pytz.UTC)
+    else:
+        endtime = datetime(year + 1, 1, 1, tzinfo=pytz.UTC)
     df = get_historical_and_forecasts(starttime, endtime, ba)
 
-    # data sometimes has NaNs. In these cases, propagate values forward in time.
-    # We use "bfill" because the dataframe is sorted backwards in time.
-    df.fillna(method='bfill', inplace=True)
+    # when data has NaNs, propagate values forward in time
+    df.fillna(method='ffill', inplace=True)
     df.to_csv(save_path, compression=COMPRESSION, index=True)  # keep datetime index
 
 
 def save_moer(starttime: datetime, endtime: datetime, ba: str) -> None:
     """Saves all full-months data between a date range.
+
     Saves data separated by months as separate compressed csv files, which
     contain historical and forecasted marginal emission rates for the days
     spanning the month.
+
     Args:
         starttime: start time for data. Only year and month are used.
             Timezone information is ignored.
@@ -242,6 +239,7 @@ def save_moer(starttime: datetime, endtime: datetime, ba: str) -> None:
     """
     if starttime > endtime:
         raise ValueError(f'starttime {starttime} must come before endtime {endtime}')
+
     syear, smonth = starttime.year, starttime.month
     eyear, emonth = endtime.year, endtime.month
 
@@ -268,23 +266,30 @@ def save_moer_default_ranges() -> None:
             save_moer(starttime, endtime, ba)
 
 
-def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataFrame:
+def load_monthly_moer(year: int, month: int, ba: str,
+                      save_dir: str | None = None) -> pd.DataFrame:
     """Loads pandas DataFrame from file.
+
     Args:
         year: year of requested month
         month: requested month
-        ba: balancing authority, responsible for region grid operation.
-        save_dir: directory to save compressed csv to.
+        ba: balancing authority, responsible for region grid operation
+        save_dir: directory to save compressed csv to
+
     Returns:
-        A DataFrame of the emission rates for the month, with index sorted
+        DataFrame of the emission rates for the month, with index sorted
         chronologically. See ``get_historical_and_forecasts()`` for more info.
     """
     # first search through custom models
     file_name = FNAME_FORMAT_STR.format(ba=ba, year=year, month=month)
-    file_or_bytes: str | BytesIO = os.path.join(save_dir, file_name)
+
+    if save_dir is not None:
+        file_or_bytes: str | BytesIO = os.path.join(save_dir, file_name)
+
     # search default models
-    if not os.path.exists(file_or_bytes):
-        data = pkgutil.get_data('sustaingym', os.path.join('data', 'moer_data', file_name))
+    if save_dir is None or not os.path.exists(file_or_bytes):
+        data = pkgutil.get_data(
+            'sustaingym', os.path.join('data', 'moer', file_name))
         assert data is not None
         file_or_bytes = BytesIO(data)
 
@@ -295,8 +300,8 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     return df
 
 
-def load_moer(starttime: datetime, endtime: datetime, ba: str, save_dir: str
-              ) -> pd.DataFrame:
+def load_moer(starttime: datetime, endtime: datetime, ba: str,
+              save_dir: str | None = None) -> pd.DataFrame:
     """Returns data for all months that overlap with interval.
 
     Args:
@@ -338,15 +343,18 @@ class MOERLoader:
     """Class for loading emission rates data for gyms.
 
     Attributes:
-        df: DataFrame of forecasted and historical data for date time range
+        df: DataFrame of historical emissions and forecasts for all months that
+            overlap the (starttime, endtime) interval. Index is sorted
+            chronologically. See ``get_historical_and_forecasts()`` for more info.
     """
-    def __init__(self, starttime: datetime, endtime: datetime, ba: str, save_dir: str):
+    def __init__(self, starttime: datetime, endtime: datetime, ba: str,
+                 save_dir: str | None = None):
         """
         Args:
-            starttime: start time for data. Only year and month are used.
-            endtime: end time for data. See starttime.
-            ba: balancing authority, responsible for region grid operation.
-            save_dir: directory to load compressed csv from.
+            starttime: start time for data. Only year and month are used
+            endtime: end time for data. See starttime
+            ba: balancing authority, responsible for region grid operation
+            save_dir: directory to load compressed csv from
         """
         self.df = load_moer(starttime, endtime, ba, save_dir)
 
