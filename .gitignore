@@ -1,6 +1,4 @@
 ## CUSTOM EXCLUSIONS
-.ipynb_checkpoints
-*/.ipynb_checkpoints/*
 .DS_STORE
 *.code-workspace
 .vscode/
@@ -16,6 +14,7 @@ examples/old
 examples/train_DQN.py
 examples/test.ipynb
 examples/intermreward
+examples/congested_intermreward/
 examples/model_analysis.ipynb
 *.png
 sustaingym/tests*
