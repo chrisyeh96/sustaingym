@@ -2,6 +2,7 @@
 .ipynb_checkpoints
 */.ipynb_checkpoints/*
 .DS_STORE
+*.code-workspace
 .vscode/
 sandbox/
 logs/
@@ -18,6 +19,8 @@ examples/intermreward
 examples/model_analysis.ipynb
 *.png
 sustaingym/tests*
+log/
+plots/
 ## END CUSTOM EXCLUSIONS
 
 # Byte-compiled / optimized / DLL files
