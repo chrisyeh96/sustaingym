@@ -7,7 +7,7 @@
 # Notes
 # - acnportal v0.3.2 only supports up to Pandas 1.1
 # - Pandas 1.1 only supports up to Python 3.9
-# - last updated: May 13, 2023
+# - last updated: May 17, 2023
 name: sustaingym_norl
 channels:
 - mosek             # for mosek
@@ -24,6 +24,7 @@ dependencies:
 - pandas=1.1.5      # acnportal 0.3.2 only works with Pandas 1.1
 - pip
 - pytz
+- requests
 - scikit-learn
 - scipy
 - seaborn
