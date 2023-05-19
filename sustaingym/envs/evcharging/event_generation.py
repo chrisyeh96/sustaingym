@@ -60,7 +60,7 @@ class AbstractTraceGenerator:
                  site: SiteStr,
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
-                 seed: int = None):
+                 seed: int | None = None):
         """
         Args:
             site: garage to get events from, either 'caltech' or 'jpl'
@@ -232,7 +232,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
                  sequential: bool = True,
                  use_unclaimed: bool = False,
                  requested_energy_cap: float = 100,
-                 seed: int = None):
+                 seed: int | None = None):
         """
         Args:
             sequential: whether to draw simulated days sequentially from date
@@ -358,7 +358,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  n_components: int = 30,
                  requested_energy_cap: float = 100,
-                 seed: int = None):
+                 seed: int | None = None):
         """
         Args:
             n_components: number of components in GMM
