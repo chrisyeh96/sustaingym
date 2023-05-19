@@ -4,8 +4,10 @@ import os
 import string
 from typing import Callable
 
+import gymnasium as gym
 import pandas as pd
 from ray.rllib.algorithms import a2c, ppo, sac
+from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from ray.tune.registry import register_env
 
 from sustaingym.envs.evcharging import EVChargingEnv, RealTraceGenerator, \
@@ -108,12 +110,12 @@ def get_env(full: bool, real_trace: bool, dp: str, site: SiteStr, discrete: bool
             if multiagent:
                 raise ValueError("discrete = True and multiagent = True currently not supported")
             else:
-                return DiscreteActionWrapper(EVChargingEnv(gen))
+                return DiscreteActionWrapper(gym.wrappers.FlattenObservation(EVChargingEnv(gen)))
         else:
             if multiagent:
-                return MultiAgentEVChargingEnv(gen, periods_delay=periods_delay)
+                return ParallelPettingZooEnv(MultiAgentEVChargingEnv(gen, periods_delay=periods_delay))
             else:
-                return EVChargingEnv(gen)
+                return gym.wrappers.FlattenObservation(EVChargingEnv(gen))
     return _get_env
 
 
@@ -160,7 +162,7 @@ def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
         env = get_env(**config)()
         rllib_algo = RLLibAlgorithm(env, algo, multiagent=config['multiagent'])
         reward_breakdown = rllib_algo.run(EVAL_EPISODES).to_dict('list')
-        # print(reward_breakdown)
+        print(reward_breakdown)
         train_results.append(reward_breakdown)
 
     train_results_df = pd.DataFrame(train_results, index=range(1 * SPB, TOTAL_STEPS + SPB, SPB))
@@ -193,18 +195,23 @@ def get_best_seeds() -> dict:
     }
     algos = ['a2c', 'ppo', 'sac']
     dps = ['Summer 2019', 'Summer 2021']
+    multiagents = [True, None]
     seeds = [123, 246, 369]
 
     best_seeds = {}
     for algo in algos:
         for dp in dps:
-            config['algo'], config['dp'] = algo, dp
-            for seed in seeds:
-                config['seed'] = seed
-                _, test_results_df = read_experiment(config)
-                mean = test_results_df['reward'].mean()
-                if (algo, dp) not in best_seeds or mean > best_seeds[(algo, dp)][1]:
-                    best_seeds[(algo, dp)] = seed, mean
+            for ma in multiagents:
+                config['algo'], config['dp'], config['multiagent'] = algo, dp, ma
+                for seed in seeds:
+                    config['seed'] = seed
+                    try:
+                        _, test_results_df = read_experiment(config)
+                        mean = test_results_df['reward'].mean()
+                        if (algo, dp, ma) not in best_seeds or mean > best_seeds[(algo, dp, ma)][1]:
+                            best_seeds[(algo, dp, ma)] = seed, mean
+                    except Exception:
+                        pass
     return best_seeds
 
 
@@ -290,19 +297,23 @@ def plot_violins() -> None:
         "periods_delay": 0, "seed": 123
     }
 
-    for _, (algo, dp) in enumerate(best_seeds):
-        config['algo'], config['dp'], config['seed'] = algo, dp, best_seeds[(algo, dp)][0]
+    for _, (algo, dp, ma) in enumerate(best_seeds):
+        config['algo'], config['dp'], config['multiagent'], config['seed'] = algo, dp, ma, best_seeds[(algo, dp, ma)][0]
         _, test_results_df = read_experiment(config)
         reward = list(test_results_df['reward'])
         year = 2021 if dp == 'Summer 2021' else 2019
         for r in reward:
-            records.append((algo, r, year))
+            records.append((algo, r, year, ma))
 
     fig, ax = plt.subplots(figsize=(6, 4), tight_layout=True)
-    df = pd.DataFrame.from_records(records, columns=['alg', 'reward', 'in_dist'])
+    df = pd.DataFrame.from_records(records, columns=['alg', 'reward', 'in_dist', 'multiagent'])
+    df['multiagent'].fillna(0, inplace=True)
+    df['multiagent'] = df['multiagent'].apply(lambda x: "ma" if x else "")
     print(df.head())
     print(df.tail())
-    sns.violinplot(data=df, x='alg', y='reward', hue='in_dist', ax=ax)
+    print(df[df['multiagent'] == 'ma'])
+    df['alg_multiagent'] = df['alg'] + df['multiagent']
+    sns.violinplot(data=df, x='alg_multiagent', y='reward', hue='in_dist', ax=ax)
     ax.set(xlabel='Algorithm', ylabel="Daily Return ($)")
     # ax.set_xticklabels(algs, rotation=30)
     print(f"Save to: 'plots/violins_caltech_Summer 2021_rllib.png'")
@@ -310,15 +321,16 @@ def plot_violins() -> None:
 
 
 if __name__ == '__main__':
-    # register_env(ENV_NAME, lambda config: get_env(**config)())
 
-    plot_reward_curve_separate()
+    # plot_violins()
+    # # plot_reward_curve_separate()
 
-    # config = parse_args()
-    # config_str = config_to_str(config)
-    # SAVE_PATH = os.path.join(RLLIB_PATH, config_str)
-    # if not os.path.exists(SAVE_PATH):
-    #     os.makedirs(SAVE_PATH)
+    register_env(ENV_NAME, lambda config: get_env(**config)())
+    config = parse_args()
+    config_str = config_to_str(config)
+    SAVE_PATH = os.path.join(RLLIB_PATH, config_str)
+    if not os.path.exists(SAVE_PATH):
+        os.makedirs(SAVE_PATH)
 
-    # run_algo(config)
-    # train_results_df, test_results_df = read_experiment(config)
+    run_algo(config)
+    train_results_df, test_results_df = read_experiment(config)

@@ -10,6 +10,7 @@ import warnings
 import acnportal.acnsim as acns
 import cvxpy as cp
 from gymnasium import Env, spaces
+from gymnasium.envs.registration import EnvSpec
 import numpy as np
 
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
@@ -82,7 +83,6 @@ class EVChargingEnv(Env):
     def __init__(self, data_generator: AbstractTraceGenerator,
                  moer_forecast_steps: int = 36,
                  project_action_in_env: bool = True,
-                 vectorize_obs: bool = True,
                  verbose: int = 0):
         """
         Args:
@@ -93,10 +93,6 @@ class EVChargingEnv(Env):
                 maximum of 3 hrs.
             project_action_in_env: flag for whether gym should project action
                 to obey network constraints and not overcharge vehicles.
-            vectorize_obs: if True, returns observations as flattened numpy
-                array. Otherwise, observations are returned in a dictionary.
-                Vectorized observations are useful for simplifying an algorithm's
-                observation input.
             verbose: level of verbosity for print out.
                 0: nothing
                 1: print description of current simulation day
@@ -132,37 +128,23 @@ class EVChargingEnv(Env):
         self._forecasted_moer = np.zeros(self.moer_forecast_steps, dtype=np.float32)
         self._timestep_obs = np.zeros(1, dtype=np.float32)
 
-        # Create observation spaces
-        self.vectorize_obs = vectorize_obs
-        if self.vectorize_obs:
-            concat_length = self.num_stations * 2 + 1 + self.moer_forecast_steps + 1
-            self._est_departures_idx, self._demands_idx = 0, self.num_stations
+        self.observation_space = spaces.Dict({
+            'est_departures':  spaces.Box(-288, 288, shape=(self.num_stations,), dtype=np.float32),
+            'demands':         spaces.Box(0,
+                                        self.data_generator.requested_energy_cap,
+                                        shape=(self.num_stations,), dtype=np.float32),
+            'prev_moer':       spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+            'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
+            'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+        })
 
-            self.observation_space = spaces.Box(-288, 288, shape=(concat_length,), dtype=np.float32)
-            # order of variables here is important for multiagent setting
-            self._vectorized_obs = [
-                self._est_departures, self._demands, self._prev_moer, 
-                self._forecasted_moer, self._timestep_obs
-            ]
-            self._vectorized_shape = (concat_length,)
-        else:
-            self.observation_space = spaces.Dict({
-                'est_departures':  spaces.Box(-288, 288, shape=(self.num_stations,), dtype=np.float32),
-                'demands':         spaces.Box(0,
-                                            self.data_generator.requested_energy_cap,
-                                            shape=(self.num_stations,), dtype=np.float32),
-                'prev_moer':       spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-                'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
-                'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-            })
-
-            self._obs = {
-                'est_departures': self._est_departures,
-                'demands': self._demands,
-                'prev_moer': self._prev_moer,
-                'forecasted_moer': self._forecasted_moer,
-                'timestep': self._timestep_obs,
-            }
+        self._obs = {
+            'est_departures': self._est_departures,
+            'demands': self._demands,
+            'prev_moer': self._prev_moer,
+            'forecasted_moer': self._forecasted_moer,
+            'timestep': self._timestep_obs,
+        }
 
         # Track cumulative components of reward signal
         self._reward_breakdown = {
@@ -179,6 +161,18 @@ class EVChargingEnv(Env):
         self.action_space = spaces.Box(low=0, high=1.0,
                                        shape=(self.num_stations,), dtype=np.float32)
         
+
+        # Define reward range
+        self.reward_range = (-np.inf, self.PROFIT_FACTOR * 32 * self.num_stations)
+
+        # Define environment spec
+        self.spec = EnvSpec(
+            id='sustaingym/EVCharging-v0',
+            entry_point='sustaingym.envs:EVChargingEnv',
+            nondeterministic=False,
+            max_episode_steps=288,
+        )
+
         # Set up action projection
         if self.project_action_in_env:
             self._init_action_projection()
@@ -320,7 +314,7 @@ class EVChargingEnv(Env):
             obs: state. See step().
             info: other information (when return_info = True). See step().
         """
-        self.rng = np.random.default_rng(seed)
+        super().reset(seed=seed)
         self.data_generator.set_seed(seed)
 
         if options and 'verbose' in options:
@@ -402,10 +396,7 @@ class EVChargingEnv(Env):
         self._forecasted_moer[:] = self.moer[self.timestep, 1:self.moer_forecast_steps + 1]  # forecasts start from 2nd column
         self._timestep_obs[0] = self.timestep / self.max_timestep
 
-        if self.vectorize_obs:
-            return np.concatenate(self._vectorized_obs)
-        else:
-            return self._obs
+        return self._obs
     
     def _get_info(self, all: bool = False) -> dict[str, Any]:
         """

@@ -7,17 +7,15 @@ from collections import deque
 import functools
 from typing import Any
 
-from gymnasium import Env, spaces
-
+from gymnasium import spaces
 import numpy as np
+from pettingzoo import ParallelEnv
 
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
 
-from ray.rllib.env import MultiAgentEnv
 
-
-class MultiAgentEVChargingEnv(MultiAgentEnv):
+class MultiAgentEVChargingEnv(ParallelEnv):
     """Quick mock-up for multi-agent. Doing one agent per EVSE.
 
     New attributes:
@@ -34,24 +32,22 @@ class MultiAgentEVChargingEnv(MultiAgentEnv):
             data_generator=data_generator,
             moer_forecast_steps=moer_forecast_steps,
             project_action_in_env=project_action_in_env,
-            vectorize_obs=vectorize_obs,
             verbose=verbose)
+        self.vectorize_obs = vectorize_obs
         
         self.agents = self.single_env.cn.station_ids[:]
+        self.possible_agents = self.agents
         self.agent_idx = {agent: i for i, agent in enumerate(self.agents)}
-        self.num_agents = self.single_env.num_stations
-        self.possible_agents = self.agents[:]
-        self.max_num_agents = self.num_agents
 
         self.periods_delay = periods_delay
         self.past_obs_agg: deque = deque([], maxlen=self.periods_delay)
 
         self.observation_spaces = {agent: self.single_env.observation_space for agent in self.agents}
-        self.observation_space = self.single_env.observation_space
+        # self.observation_space = self.single_env.observation_space
 
         self.action_spaces = {agent: self.single_env.action_space for agent in self.agents}
-        self.action_space = spaces.Box(low=0, high=1.0,
-                                       shape=(1,), dtype=np.float32)
+        # self.action_space = spaces.Box(low=0, high=1.0,
+        #                                shape=(1,), dtype=np.float32)
 
     def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any] | np.ndarray, init: bool = False) -> dict[str, dict[str, Any]]:
         """Spread observation across agents."""
@@ -70,23 +66,14 @@ class MultiAgentEVChargingEnv(MultiAgentEnv):
             td_obs = {agent: obs_agg.copy() for agent in self.agents}  # time-delay observation
 
             # observations in vectorized form
-            if self.single_env.vectorize_obs:
-                # td_obs = {agent: obs_agg.copy() for agent in self.agents}
-                for i, agent in enumerate(self.agents):
-                    # agent's info on other agents (time-delayed)
-                    np.copyto(
-                        td_obs[agent][:self.num_agents * 2],
-                        first_obs_agg[:self.num_agents * 2])
-                    # # agent's info of self (current)
-                    np.copyto(td_obs[agent][i:i+1], obs_agg[i:i+1])
-                    np.copyto(td_obs[agent][self.num_agents+i: self.num_agents+i+1], 
-                              obs_agg[self.num_agents+i: self.num_agents+i+1])
-            else:
-                for i, agent in enumerate(self.agents):
-                    # observations in a dictionary
-                    for var in ['est_departures', 'demands']:
-                        td_obs[agent][var] = first_obs_agg[var]
-                        td_obs[agent][var][i] = obs_agg[var][i]
+            for i, agent in enumerate(self.agents):
+                # observations in a dictionary
+                for var in ['est_departures', 'demands']:
+                    td_obs[agent][var] = first_obs_agg[var]
+                    td_obs[agent][var][i] = obs_agg[var][i]
+            if self.vectorize_obs:
+                for agent in self.agents:
+                    td_obs[agent] = spaces.flatten(self.observation_spaces[agent], td_obs[agent])
             return td_obs
  
     def _create_dict_from_infos_agg(self, infos_agg: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -151,13 +138,11 @@ class MultiAgentEVChargingEnv(MultiAgentEnv):
         self.single_env.render()
 
     def close(self) -> None:
-        """Close the environment. Delete internal variables."""
+        """Close the environment."""
         self.single_env.close()
 
-    # @functools.lru_cache(maxsize=None)
-    # def observation_space(self, agent):
-    #     return self.observation_spaces[agent]
+    def observation_space(self, agent: str):
+        return self.observation_spaces[agent]
 
-    # @functools.lru_cache(maxsize=None)
-    # def action_space(self, agent):
-    #     return self.action_spaces[agent]
+    def action_space(self, agent: str):
+        return self.action_spaces[agent]
