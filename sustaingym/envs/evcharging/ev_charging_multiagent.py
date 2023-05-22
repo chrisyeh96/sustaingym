@@ -43,11 +43,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         self.past_obs_agg: deque = deque([], maxlen=self.periods_delay)
 
         self.observation_spaces = {agent: self.single_env.observation_space for agent in self.agents}
-        # self.observation_space = self.single_env.observation_space
-
         self.action_spaces = {agent: self.single_env.action_space for agent in self.agents}
-        # self.action_space = spaces.Box(low=0, high=1.0,
-        #                                shape=(1,), dtype=np.float32)
 
     def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any] | np.ndarray, init: bool = False) -> dict[str, dict[str, Any]]:
         """Spread observation across agents."""
@@ -117,20 +113,16 @@ class MultiAgentEVChargingEnv(ParallelEnv):
 
     def reset(self, *,
               seed: int | None = None,
-              return_info: bool = True,
               options: dict | None = None
-              ) -> dict[str, dict[str, Any]] | tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+              ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
         """dict 2 layers: agent -> obs_type
         """
-        obs_agg, infos_agg = self.single_env.reset(seed=seed, return_info=True, options=options)
+        obs_agg, infos_agg = self.single_env.reset(seed=seed, options=options)
         self.agents = self.possible_agents[:]
 
-        if return_info:
-            return self._create_dict_from_obs_agg(obs_agg, init=True), self._create_dict_from_infos_agg(infos_agg)
-        else:
-            return self._create_dict_from_obs_agg(obs_agg, init=True)
+        return self._create_dict_from_obs_agg(obs_agg, init=True), self._create_dict_from_infos_agg(infos_agg)
         
-    def seed(self, seed: int = None) -> None:
+    def seed(self, seed: int | None = None) -> None:
         self.reset(seed=seed)
 
     def render(self) -> None:
@@ -141,8 +133,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         """Close the environment."""
         self.single_env.close()
 
-    def observation_space(self, agent: str):
+    def observation_space(self, agent: str) -> spaces.Dict:
         return self.observation_spaces[agent]
 
-    def action_space(self, agent: str):
+    def action_space(self, agent: str) -> spaces.Box:
         return self.action_spaces[agent]
