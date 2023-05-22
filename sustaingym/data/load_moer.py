@@ -284,7 +284,7 @@ def load_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> pd.DataF
     file_or_bytes: str | BytesIO = os.path.join(save_dir, file_name)
     # search default models
     if not os.path.exists(file_or_bytes):
-        data = pkgutil.get_data('sustaingym', os.path.join('data', 'moer_data', file_name))
+        data = pkgutil.get_data('sustaingym', os.path.join('data', 'moer', file_name))
         assert data is not None
         file_or_bytes = BytesIO(data)
 

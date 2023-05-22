@@ -4,7 +4,6 @@ The module implements a multi-agent version of the EVChargingEnv.
 from __future__ import annotations
 
 from collections import deque
-import functools
 from typing import Any
 
 from gymnasium import spaces
@@ -28,6 +27,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
                  project_action_in_env: bool = True,
                  vectorize_obs: bool = True,
                  verbose: int = 0):
+        assert vectorize_obs, "only vectorized observations supported"
+
         self.single_env = EVChargingEnv(
             data_generator=data_generator,
             moer_forecast_steps=moer_forecast_steps,
@@ -40,22 +41,25 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         self.agent_idx = {agent: i for i, agent in enumerate(self.agents)}
 
         self.periods_delay = periods_delay
-        self.past_obs_agg: deque = deque([], maxlen=self.periods_delay)
+        self.past_obs_agg: deque[dict[str, Any]] = deque([], maxlen=self.periods_delay)
 
-        self.observation_spaces = {agent: self.single_env.observation_space for agent in self.agents}
-        self.action_spaces = {agent: self.single_env.action_space for agent in self.agents}
+        self.observation_spaces = {agent: self.single_env.observation_space \
+                                   for agent in self.agents}
+        self.action_spaces = {agent: spaces.Box(0.0, 1.0, shape=(1,)) \
+                for agent in self.agents}
 
-    def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any] | np.ndarray, init: bool = False) -> dict[str, dict[str, Any]]:
+    def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any], init: bool = False) -> dict[str, np.narray]:
         """Spread observation across agents."""
         if self.periods_delay == 0:
-            return {agent: obs_agg for agent in self.agents}
+            return {agent: spaces.flatten(self.observation_spaces[agent], obs_agg)
+                    for agent in self.agents}
         
         if init:  # initialize past_obs by repeating first observation
             self.past_obs_agg.clear()
             for _ in range(self.periods_delay):
                 self.past_obs_agg.append(obs_agg)
-
-            return {agent: obs_agg for agent in self.agents}
+            return {agent: spaces.flatten(self.observation_spaces[agent], obs_agg)
+                    for agent in self.agents}
         else:
             first_obs_agg = self.past_obs_agg.popleft()
             self.past_obs_agg.append(obs_agg)
@@ -76,11 +80,11 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         """Each agent gets same global info."""
         infos = {}
         for agent in self.agents:
-            infos[agent] = infos_agg  # perhaps TODO, separate
+            infos[agent] = infos_agg
         return infos
 
     def step(self, action: dict[str, np.ndarray], return_info: bool = False
-             ) -> tuple[dict[str, dict[str, np.ndarray]], dict[str, float],
+             ) -> tuple[dict[str, np.ndarray], dict[str, float],
                         dict[str, bool], dict[str, bool], dict[str, dict[str, Any]]]:
         """Made everything dictionaries w/ agent as key. "done" is scalar b/c all agents end at same time."""
 
@@ -103,24 +107,26 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         terminateds = {agent: terminated for agent in self.agents}
         truncateds = {agent: truncated for agent in self.agents}
         if terminated or truncated:
-            terminateds["__all__"] = True
-            truncateds["__all__"] = True
-        else:
-            terminateds["__all__"] = False
-            truncateds["__all__"] = False
+            self.agents = []  # all agents done at the end of day
+        # if terminated or truncated:
+        #     terminateds["__all__"] = True
+        #     truncateds["__all__"] = True
+        # else:
+        #     terminateds["__all__"] = False
+        #     truncateds["__all__"] = False
         
         return obs, reward, terminateds, truncateds, infos
 
     def reset(self, *,
               seed: int | None = None,
               options: dict | None = None
-              ) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+              ) -> dict[str, np.ndarray]:
         """dict 2 layers: agent -> obs_type
         """
-        obs_agg, infos_agg = self.single_env.reset(seed=seed, options=options)
+        obs_agg, _ = self.single_env.reset(seed=seed, options=options)
         self.agents = self.possible_agents[:]
 
-        return self._create_dict_from_obs_agg(obs_agg, init=True), self._create_dict_from_infos_agg(infos_agg)
+        return self._create_dict_from_obs_agg(obs_agg, init=True)
         
     def seed(self, seed: int | None = None) -> None:
         self.reset(seed=seed)
@@ -133,7 +139,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         """Close the environment."""
         self.single_env.close()
 
-    def observation_space(self, agent: str) -> spaces.Dict:
+    def observation_space(self, agent: str) -> spaces.Space:
         return self.observation_spaces[agent]
 
     def action_space(self, agent: str) -> spaces.Box:
