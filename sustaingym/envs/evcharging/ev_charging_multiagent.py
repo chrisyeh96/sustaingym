@@ -15,11 +15,10 @@ from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
 
 
 class MultiAgentEVChargingEnv(ParallelEnv):
-    """Quick mock-up for multi-agent. Doing one agent per EVSE.
+    """Multi-agent EV charging environment.
 
-    New attributes:
-    - action_spaces
-    - observation_spaces
+    Each charging station is modeled as an independent agent with a single action
+    of the pilot signal to supply. 
     """
     def __init__(self, data_generator: AbstractTraceGenerator,
                  periods_delay: int = 0,
@@ -28,56 +27,67 @@ class MultiAgentEVChargingEnv(ParallelEnv):
                  vectorize_obs: bool = True,
                  verbose: int = 0):
         assert vectorize_obs, "only vectorized observations supported"
+        self.periods_delay = periods_delay
 
+        # Create internal single-agent environment
+        # observations are dictionaries
         self.single_env = EVChargingEnv(
             data_generator=data_generator,
             moer_forecast_steps=moer_forecast_steps,
             project_action_in_env=project_action_in_env,
             verbose=verbose)
-        self.vectorize_obs = vectorize_obs
         
+        # Petting zoo API
         self.agents = self.single_env.cn.station_ids[:]
         self.possible_agents = self.agents
         self.agent_idx = {agent: i for i, agent in enumerate(self.agents)}
+        self.observation_spaces = {agent: spaces.flatten_space(self._dict_observation_spaces[agent]) \
+            for agent in self.agents}  # flattened observations
+        self.action_spaces = {agent: spaces.Box(0.0, 1.0, shape=(1,)) \
+                for agent in self.agents}  # singular actions
 
-        self.periods_delay = periods_delay
+        # Create queue of previous observations to implement time-delay
         self.past_obs_agg: deque[dict[str, Any]] = deque([], maxlen=self.periods_delay)
 
-        self.observation_spaces = {agent: self.single_env.observation_space \
+        # Create observation spaces w/ dictionary to help in flattening
+        self._dict_observation_spaces = {agent: self.single_env.observation_space \
                                    for agent in self.agents}
-        self.action_spaces = {agent: spaces.Box(0.0, 1.0, shape=(1,)) \
-                for agent in self.agents}
 
-    def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any], init: bool = False) -> dict[str, np.narray]:
-        """Spread observation across agents."""
+    def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any], init: bool = False) -> dict[str, np.ndarray]:
+        """Creates dictionary of individual observations from aggregate observation."""
+
+        # Without time delay, agent gets global information
         if self.periods_delay == 0:
-            return {agent: spaces.flatten(self.observation_spaces[agent], obs_agg)
+            return {agent: spaces.flatten(self._dict_observation_spaces[agent], obs_agg)
                     for agent in self.agents}
         
-        if init:  # initialize past_obs by repeating first observation
+        # With time delay, agent gets its current information (estimated departure
+        # and demands) and other agents' previous information
+        if init:
+            # Initialize past_obs by repeating first observation
             self.past_obs_agg.clear()
             for _ in range(self.periods_delay):
                 self.past_obs_agg.append(obs_agg)
-            return {agent: spaces.flatten(self.observation_spaces[agent], obs_agg)
+            return {agent: spaces.flatten(self._dict_observation_spaces[agent], obs_agg)
                     for agent in self.agents}
         else:
             first_obs_agg = self.past_obs_agg.popleft()
             self.past_obs_agg.append(obs_agg)
             td_obs = {agent: obs_agg.copy() for agent in self.agents}  # time-delay observation
 
-            # observations in vectorized form
             for i, agent in enumerate(self.agents):
-                # observations in a dictionary
                 for var in ['est_departures', 'demands']:
+                    # Other agents' information is from the time delay
                     td_obs[agent][var] = first_obs_agg[var]
+                    # Agents' own information is current
                     td_obs[agent][var][i] = obs_agg[var][i]
-            if self.vectorize_obs:
-                for agent in self.agents:
-                    td_obs[agent] = spaces.flatten(self.observation_spaces[agent], td_obs[agent])
+            # Convert each agents' dictionary observation to a flattened array
+            for agent in self.agents:
+                td_obs[agent] = spaces.flatten(self._dict_observation_spaces[agent], td_obs[agent])
             return td_obs
  
     def _create_dict_from_infos_agg(self, infos_agg: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        """Each agent gets same global info."""
+        """Every agent gets global information."""
         infos = {}
         for agent in self.agents:
             infos[agent] = infos_agg
@@ -88,45 +98,43 @@ class MultiAgentEVChargingEnv(ParallelEnv):
                         dict[str, bool], dict[str, bool], dict[str, dict[str, Any]]]:
         """Made everything dictionaries w/ agent as key. "done" is scalar b/c all agents end at same time."""
 
-        # create action
+        # Build action
         actions_agg = np.empty(shape=(self.num_agents,), dtype=np.float32)
         for i, agent in enumerate(self.agents):
             actions_agg[i] = action[agent]
 
-        # feed action
+        # Use internal single-agent environment
         obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(actions_agg, return_info=return_info)
         rew = rews_agg / self.num_agents
         obs = self._create_dict_from_obs_agg(obs_agg)
 
-        reward = {}
-        infos = {}
+        reward, terminateds, truncateds, infos = {}, {}, {}, {}
         for agent in self.agents:
             reward[agent] = rew  # every agent gets same global reward signal
+            terminateds[agent] = terminated
+            truncateds[agent] = truncated
             infos[agent] = infos_agg  # same as info
 
-        terminateds = {agent: terminated for agent in self.agents}
-        truncateds = {agent: truncated for agent in self.agents}
+        # Delete all agents when day is finished
         if terminated or truncated:
-            self.agents = []  # all agents done at the end of day
-        # if terminated or truncated:
-        #     terminateds["__all__"] = True
-        #     truncateds["__all__"] = True
-        # else:
-        #     terminateds["__all__"] = False
-        #     truncateds["__all__"] = False
-        
+            self.agents = []
+
         return obs, reward, terminateds, truncateds, infos
 
     def reset(self, *,
               seed: int | None = None,
+              return_info: bool = False,
               options: dict | None = None
               ) -> dict[str, np.ndarray]:
-        """dict 2 layers: agent -> obs_type
-        """
-        obs_agg, _ = self.single_env.reset(seed=seed, options=options)
+        """Resets the environment."""
+        obs_agg, info_agg = self.single_env.reset(seed=seed, options=options)
         self.agents = self.possible_agents[:]
 
-        return self._create_dict_from_obs_agg(obs_agg, init=True)
+        if return_info:
+            return self._create_dict_from_obs_agg(obs_agg, init=True), self._create_dict_from_infos_agg(info_agg)
+        else:
+            return self._create_dict_from_obs_agg(obs_agg, init=True)
+
         
     def seed(self, seed: int | None = None) -> None:
         self.reset(seed=seed)
