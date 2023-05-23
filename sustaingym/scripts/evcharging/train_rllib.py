@@ -146,6 +146,8 @@ def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
         .environment(ENV_NAME, env_config=config)
         .training(train_batch_size=SPB)
     )
+    if config['multiagent']:
+        train_config = train_config.rollouts(rollout_fragment_length=200)
     algo = train_config.build(env=ENV_NAME)
 
     # running eval environment

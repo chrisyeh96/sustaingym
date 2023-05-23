@@ -36,11 +36,15 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             moer_forecast_steps=moer_forecast_steps,
             project_action_in_env=project_action_in_env,
             verbose=verbose)
-        
+
         # Petting zoo API
         self.agents = self.single_env.cn.station_ids[:]
         self.possible_agents = self.agents
         self.agent_idx = {agent: i for i, agent in enumerate(self.agents)}
+
+        # Create observation spaces w/ dictionary to help in flattening
+        self._dict_observation_spaces = {agent: self.single_env.observation_space \
+                                   for agent in self.agents}
         self.observation_spaces = {agent: spaces.flatten_space(self._dict_observation_spaces[agent]) \
             for agent in self.agents}  # flattened observations
         self.action_spaces = {agent: spaces.Box(0.0, 1.0, shape=(1,)) \
@@ -49,9 +53,6 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         # Create queue of previous observations to implement time-delay
         self.past_obs_agg: deque[dict[str, Any]] = deque([], maxlen=self.periods_delay)
 
-        # Create observation spaces w/ dictionary to help in flattening
-        self._dict_observation_spaces = {agent: self.single_env.observation_space \
-                                   for agent in self.agents}
 
     def _create_dict_from_obs_agg(self, obs_agg: dict[str, Any], init: bool = False) -> dict[str, np.ndarray]:
         """Creates dictionary of individual observations from aggregate observation."""
