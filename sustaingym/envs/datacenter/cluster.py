@@ -1,16 +1,18 @@
+from __future__ import annotations
+
+from collections.abc import Sequence
+from collections import deque
+from datetime import datetime, timedelta, timezone
+from heapq import *
+import random
+
+import pandas as pd
+import numpy as np
+
 from sustaingym.envs.datacenter.util.event import *
 from sustaingym.data.load_moer import load_moer
 from sustaingym.envs.datacenter.machine import *
 from sustaingym.envs.datacenter.task import *
-
-from datetime import datetime, timedelta, timezone
-from collections.abc import Sequence
-from collections import deque
-import pandas as pd
-from heapq import *
-import numpy as np
-import random
-
 
 HOURS_PER_DAY = 24
 REMOVED_EVENT = 'R'
@@ -21,13 +23,13 @@ ONEDAY = timedelta(days=1)
 
 
 class Cluster:
-    def __init__(self, simulation_length: int, start_time: datetime,
-                end_time: datetime, balancing_authority: str):
-        self.VCC = 0  # fraction of self.max_capacity that can be used
-        self.VCC_hist = [0 for _ in range(HOURS_PER_DAY)]  # VCC over last day
+    def __init__(self, start_time: datetime, end_time: datetime,
+                 balancing_authority: str):
+        self.VCC = np.zeros(1, dtype=np.float32)  # fraction of self.max_capacity that can be used
+        self.VCC_hist = np.zeros(HOURS_PER_DAY, dtype=np.float32)  # VCC over last day
 
-        self.capacity = 0
-        self.max_capacity = 0  # sum of all machines' max_capacities
+        self.capacity = np.zeros(1, dtype=np.float32)
+        self.max_capacity = 0.  # sum of all machines' max_capacities
 
         self.carbon_intensities = self.get_carbon_data(start_time, end_time, balancing_authority)
 
@@ -43,6 +45,19 @@ class Cluster:
         self.event_q = []  # Min heap with end times as priority
         self.task_to_eq_entry = {}
         self.task_q = deque()  # Holds tasks before being scheduled
+
+        # set up state
+        self._num_queued_tasks = np.zeros(1, dtype=np.float32)  # always an int
+        self._moers = np.zeros(24, dtype=np.float32)  # MOERs for next 24h, 0th entry is current
+        self.state = {
+            'VCC': self.VCC,
+            'capacity': self.capacity,
+            'num_queued_tasks': self._num_queued_tasks,
+            # avg_task_duration
+            # avg_task_priority
+            # avg_task_capacity
+            'moers': self._moers
+        }
 
     # *** INITIALIZATION & DATA LOADING ***
     def init_machines(self) -> dict[str, Machine]:
@@ -74,18 +89,21 @@ class Cluster:
         # return [curr_day_MOER[i] for i in range(0, 289, five_min_timesteps_per_hour)]
 
     # *** APIs ***
-    def get_state(self):
+    def get_state(self) -> dict[str, np.ndarray]:
         """
         Returns observation of the state of the Cluster
         """
-        state = []
+        self._num_queued_tasks[:] = len(self.task_q)
+        self._moers[:] = self.carbon_intensities[self.t: self.t + 24]
+        return self.state
+        # state = []
 
-        state.append(self.VCC)
-        state.append(self.capacity)
-        state.append(len(self.task_q))
-        state += list(self.carbon_intensities[self.t: self.t + 24])
+        # state.append(self.VCC)
+        # state.append(self.capacity)
+        # state.append(len(self.task_q))
+        # state += list(self.carbon_intensities[self.t: self.t + 24])
 
-        return np.array(state)
+        # return np.array(state)
     
     def set_VCC(self, new_VCC: float) -> None:
         """
@@ -93,7 +111,7 @@ class Cluster:
 
         If 'new_VCC' is less than current 'capacity', then evicts tasks.
         """
-        self.VCC = new_VCC
+        self.VCC[:] = new_VCC
         hour_of_day = self.t % HOURS_PER_DAY
         self.VCC_hist[hour_of_day] = new_VCC
 
@@ -176,7 +194,7 @@ class Cluster:
                 # it will block potentially smaller tasks behind it from being scheduled.
             if (failed_schedule or
                 len(self.task_q) == 0 or
-                self.capacity + self.task_q[0].capacity > self.VCC):
+                self.capacity.item() + self.task_q[0].capacity > self.VCC.item()):
                 break
             task = self.task_q.popleft()
             failed_schedule = self.schedule_task(task)
@@ -227,7 +245,7 @@ class Cluster:
         capacity set by the new VCC. Evict until capacity falls below
         VCC.
         """
-        while self.capacity > self.VCC*self.max_capacity:
+        while self.capacity.item() > self.VCC.item() * self.max_capacity:
             machine_id = self.select_machine_to_evict()
             if machine_id is None:
                 break
@@ -250,4 +268,4 @@ class Cluster:
     def get_power_usage(self):
         """Compute power usage at time 't'."""
         proportionality_constant = 1
-        return self.capacity * proportionality_constant
+        return self.capacity.item() * proportionality_constant

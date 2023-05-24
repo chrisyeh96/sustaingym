@@ -1,3 +1,6 @@
+from __future__ import annotations
+
+import gymnasium as gym
 import ray
 from ray.rllib.algorithms import ppo
 from ray.rllib.algorithms.ppo import PPOConfig
@@ -11,7 +14,9 @@ if __name__ == "__main__":
     """
     `algo = Algorithm(env='<class 'sustaingym.envs.datacenter.gym.DatacenterGym'>', ...)` has been deprecated. Use `algo = AlgorithmConfig().environment('<class 'sustaingym.envs.datacenter.gym.DatacenterGym'>').build()` instead. This will raise an error in the future!
     """
-    algo = ppo.PPO(env=DatacenterGym, config={ "env_config": {}, "framework": "torch", "disable_env_checking": True})
+    env = gym.wrappers.FlattenObservation(DatacenterGym())
+
+    algo = ppo.PPO(env=env, config={ "env_config": {}, "framework": "torch", "disable_env_checking": True})
 
     episodes = []
     mean_reward = []

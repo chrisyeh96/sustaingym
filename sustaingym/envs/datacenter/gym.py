@@ -20,7 +20,17 @@ class DatacenterGym(gym.Env):
                                   env_config["sim_end_time"],
                                   BALANCING_AUTHORITY)
         self.action_space = gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
-        self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(27,), dtype=np.float32)
+
+        self.observation_space = gym.spaces.Dict({
+            'VCC':              gym.spaces.Box(0, 1, shape=(1,), dtype=np.float32),
+            'capacity':         gym.spaces.Box(0, np.inf, shape=(1,), dtype=np.float32),
+            'num_queued_tasks': gym.spaces.Box(0, np.inf, shape=(1,), dtype=np.float32),
+            'moers':            gym.spaces.Box(0, np.inf, shape=(24,), dtype=np.float32),
+            # avg_task_duration
+            # avg_task_priority
+            # avg_task_capacity
+        })
+
         self.task_data = None
         self.time_window = MICROSEC_PER_HOUR
         self.episode_len = SIMULATION_LENGTH
@@ -40,7 +50,7 @@ class DatacenterGym(gym.Env):
     def render(self):
         print(self.datacenter.get_state())
 
-    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def step(self, action: np.ndarray) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         VCC = action
         assert VCC.shape == self.action_space.shape  # (1,)
 
