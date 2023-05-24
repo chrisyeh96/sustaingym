@@ -70,9 +70,9 @@ class Cluster:
             max_capacity = data.iloc[i]['capacity']['cpus']
             machines[machine_id] = Machine(machine_id, max_capacity)
         return machines
-    
+
     def get_carbon_data(self, start_time: datetime, end_time: datetime,
-                       balancing_authority: str):
+                        balancing_authority: str):
         step_size = 60 // 5  # datacenter simulation is in hours, and MOER data every 5 mins
         data = load_moer(start_time, end_time, balancing_authority, MOER_PATH).values
         return data[::step_size, 0]  # column 0 has ground truth
@@ -104,7 +104,7 @@ class Cluster:
         # state += list(self.carbon_intensities[self.t: self.t + 24])
 
         # return np.array(state)
-    
+
     def set_VCC(self, new_VCC: float) -> None:
         """
         Sets current VCC and records it in day's history.
@@ -133,8 +133,8 @@ class Cluster:
         total_allocated_capacity = sum(self.VCC_hist) * self.max_capacity
 
         penalty = max(0, 0.97*capacity_requirement - total_allocated_capacity)
-        self.VCC_hist = [0 for _ in range(HOURS_PER_DAY)]  # reset VCC history for next day
-        
+        self.VCC_hist[:] = 0.  # reset VCC history for next day
+
         return penalty
 
     def compute_carbon_cost(self):
@@ -147,9 +147,9 @@ class Cluster:
         return pow_usage * carbon_intensity
 
     # *** INTERNAL DATACENTER FUNCTIONALITY ***
-    def select_machine_to_schedule(self):
-        return random.choice(list(self.machines.keys()))
-    
+    def select_machines_to_schedule(self):
+        return random.shuffle(list(self.machines.keys()))
+
     def schedule_task(self, task: Task) -> bool:
         """
         Assigns 'task' to a machine for it to run on.
@@ -157,18 +157,16 @@ class Cluster:
         Returns: boolean indicating if schedule was successful.
         """
         # find a machine and run task on it
-        attempt_count = 0
-        while True:
-            machine_id = self.select_machine_to_schedule()
+        scheduled = False
+        for machine_id in self.select_machines_to_schedule():
             if (self.machines[machine_id].capacity + task.capacity
                     <= self.machines[machine_id].max_capacity):
                 self.machines[machine_id].start_task(task)
+                scheduled = True
                 break
-            elif attempt_count > len(self.machines):
-                # if no machine has capacity, simply re-enqueue task
-                self.task_q.append(task)
-                return False
-            attempt_count += 1
+        if not scheduled:
+            self.task_q.append(task)
+            return False
 
         self.capacity += task.capacity
 
@@ -181,16 +179,16 @@ class Cluster:
         eq_entry = EventQueueEntry(task_end_time, event)
         self.task_to_eq_entry[task] = eq_entry
         heappush(self.event_q, eq_entry)
-        
+
         return True
-    
+
     def schedule_tasks(self) -> None:
         """
         Dequeues tasks and schedules them as long as VCC isn't exceeded.
         """
         failed_schedule = False
         while True:
-            # NOTE: if there is a huge task (in terms of capacity requirement) at the front of the queue, 
+            # NOTE: if there is a huge task (in terms of capacity requirement) at the front of the queue,
                 # it will block potentially smaller tasks behind it from being scheduled.
             if (failed_schedule or
                 len(self.task_q) == 0 or

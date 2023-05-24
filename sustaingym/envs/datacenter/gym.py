@@ -1,24 +1,45 @@
-from sustaingym.envs.datacenter.cluster import *
-import pandas as pd
+from __future__ import annotations
+
 import gymnasium as gym
+import pandas as pd
 
-
-TASK_DATA_PATH = "sustaingym/data/datacenter/daily_events"
-SIMULATION_LENGTH = 672  # In hours
-HOURS_PER_DAY = 24
-MICROSEC_PER_HOUR = 60*60*1000000
-START_DELAY = 600  # trace period starts at 600 seconds
-START_DELAY_H = 600 / 3600  # measured in hours
-BALANCING_AUTHORITY = "SGIP_CAISO_PGE"
-PRIORITY_THRESH = 120  # priority values geq are considered inflexible
+from sustaingym.envs.datacenter.cluster import *
 
 
 class DatacenterGym(gym.Env):
-    def __init__(self, env_config: dict):
-        self.datacenter = Cluster(SIMULATION_LENGTH,
+    """
+    Attributes:
+        # attributes required by gym.Env
+        action_space: spaces.Box, structure of actions expected by env
+        observation_space: spaces.Dict, structure of observations returned by env
+        reward_range: tuple[float, float], min and max rewards
+        spec: EnvSpec, info used to initialize env from gymnasium.make()
+        metadata: dict[str, Any], unused
+        np_random: np.random.Generator, random number generator for the env
+
+        # attributes specific to DatacenterGym
+        datacenter: Cluster, represents a datacenter cluster
+        task_data: pd.DataFrame, TODO
+    """
+    TASK_DATA_PATH = "sustaingym/data/datacenter/daily_events"
+    EPISODE_LEN = 672  # In hours
+    HOURS_PER_DAY = 24
+    MICROSEC_PER_HOUR = 60*60*1000000
+    START_DELAY = 600  # trace period starts at 600 seconds
+    START_DELAY_H = 600 / 3600  # measured in hours
+    PRIORITY_THRESH = 120  # priority values geq are considered inflexible
+
+    def __init__(self, env_config: dict,
+                 balancing_authority: str = 'SGIP_CAISO_PGE'):
+        """
+        Args:
+            env_config: TODO, describe what this is
+            balancing_authority: where to get MOER values from
+        """
+        self.datacenter = Cluster(self.EPISODE_LEN,
                                   env_config["sim_start_time"],
                                   env_config["sim_end_time"],
-                                  BALANCING_AUTHORITY)
+                                  balancing_authority)
         self.action_space = gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
 
         self.observation_space = gym.spaces.Dict({
@@ -32,21 +53,22 @@ class DatacenterGym(gym.Env):
         })
 
         self.task_data = None
-        self.time_window = MICROSEC_PER_HOUR
-        self.episode_len = SIMULATION_LENGTH
-    
+        self.time_window = self.MICROSEC_PER_HOUR
+
     def make(self):
         # TODO
         return
 
-    def reset(self, *, seed=None, options=None):
-        super().reset()
+    def reset(self, *, seed: int | None = None,
+              options: dict[str, Any] | None = None
+              ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+        super().reset(seed=seed)
         self.datacenter.t = 0
         self.datacenter.daily_capacity_req = [0 for _ in range(31)]  # 31 days
         obs = self.datacenter.get_state()
         info = {}
         return obs, info
-    
+
     def render(self):
         print(self.datacenter.get_state())
 
@@ -68,7 +90,7 @@ class DatacenterGym(gym.Env):
 
         self.datacenter.t += 1
 
-        terminated = self.datacenter.t >= self.episode_len
+        terminated = (self.datacenter.t >= self.EPISODE_LEN)
         truncated = False
         info = {}
 
@@ -107,7 +129,7 @@ class DatacenterGym(gym.Env):
             self.datacenter.add_daily_capacity_req(curr_day + entire_days + 1, task.capacity * task_duration_in_last_day)
         else:
             self.datacenter.add_daily_capacity_req(curr_day, task.capacity * task.duration)
-        
+
     def get_new_tasks(self) -> list[Task]:
         """
         TODO: document
@@ -116,17 +138,17 @@ class DatacenterGym(gym.Env):
 
         if curr_t % HOURS_PER_DAY == 0:
             curr_d = curr_t // HOURS_PER_DAY
-            self.task_data = pd.read_csv(f"{TASK_DATA_PATH}/day_{curr_d}.csv")
+            self.task_data = pd.read_csv(f"{self.TASK_DATA_PATH}/day_{curr_d}.csv")
 
-        start = (curr_t + START_DELAY_H)*MICROSEC_PER_HOUR
-        end = (curr_t + START_DELAY_H + 1)*MICROSEC_PER_HOUR
+        start = (curr_t + self.START_DELAY_H)*self.MICROSEC_PER_HOUR
+        end = (curr_t + self.START_DELAY_H + 1)*self.MICROSEC_PER_HOUR
 
         tasks = []
         new_task_data = self.task_data[(start <= self.task_data['time']) & (self.task_data['time'] < end)]
         for _, row in new_task_data.iterrows():
             task_duration = (row['duration'] // self.time_window) + 1  # calculate number of timesteps tasks lasts
             new_task = Task(row['task_id'], task_duration, row['cpu'])
-            if row["priority"] < PRIORITY_THRESH:  # it's a flexible task
+            if row["priority"] < self.PRIORITY_THRESH:  # it's a flexible task
                 tasks.append(new_task)
             self.update_daily_capacity_req(curr_t, new_task)
 
