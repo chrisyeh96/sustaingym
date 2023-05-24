@@ -1,5 +1,20 @@
 # SustainGym: Reinforcement learning environments for sustainability applications
 
+## Folder structure
+
+```
+examples/               # example code for running each environment
+sustaingym/             # main Python package
+    algorithms/
+        {env}/          # per-env algorithms
+    data/
+        moer/           # marginal carbon emission rates
+        {env}/          # per-env data files
+    envs/
+        {env}/          # per-env modules
+```
+
+
 ## Development Guide
 
 1. Install [miniconda3](https://docs.conda.io/en/latest/miniconda.html).
