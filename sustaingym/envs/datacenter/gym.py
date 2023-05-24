@@ -9,16 +9,16 @@ HOURS_PER_DAY = 24
 MICROSEC_PER_HOUR = 60*60*1000000
 START_DELAY = 600  # trace period starts at 600 seconds
 START_DELAY_H = 600 / 3600  # measured in hours
-SIM_START_TIME = datetime(2019, 5, 1)
-SIM_END_TIME = datetime(2019, 6, 1)
 BALANCING_AUTHORITY = "SGIP_CAISO_PGE"
 PRIORITY_THRESH = 120  # priority values geq are considered inflexible
 
 
 class DatacenterGym(gym.Env):
-    def __init__(self, env_config={}):
-        self.datacenter = Cluster(SIMULATION_LENGTH, SIM_START_TIME,
-                                  SIM_END_TIME, BALANCING_AUTHORITY)
+    def __init__(self, env_config: dict):
+        self.datacenter = Cluster(SIMULATION_LENGTH,
+                                  env_config["sim_start_time"],
+                                  env_config["sim_end_time"],
+                                  BALANCING_AUTHORITY)
         self.action_space = gym.spaces.Box(low=0.0, high=1.0, shape=(1,), dtype=np.float32)
         self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(27,), dtype=np.float32)
         self.task_data = None
@@ -57,7 +57,6 @@ class DatacenterGym(gym.Env):
         reward = self.compute_reward()
 
         self.datacenter.t += 1
-        print(self.datacenter.t)
 
         terminated = self.datacenter.t >= self.episode_len
         truncated = False
@@ -65,7 +64,7 @@ class DatacenterGym(gym.Env):
 
         return obs, reward, terminated, truncated, info
 
-    def close(self) -> None:
+    def close(self):
         # TODO
         return super().close()
 
@@ -107,7 +106,6 @@ class DatacenterGym(gym.Env):
 
         if curr_t % HOURS_PER_DAY == 0:
             curr_d = curr_t // HOURS_PER_DAY
-            print(f"DAY#{curr_d}, t={curr_t}")
             self.task_data = pd.read_csv(f"{TASK_DATA_PATH}/day_{curr_d}.csv")
 
         start = (curr_t + START_DELAY_H)*MICROSEC_PER_HOUR
