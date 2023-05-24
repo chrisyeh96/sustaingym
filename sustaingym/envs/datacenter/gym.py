@@ -1,9 +1,16 @@
 from __future__ import annotations
 
+from typing import Any
+
 import gymnasium as gym
+import numpy as np
 import pandas as pd
 
-from sustaingym.envs.datacenter.cluster import *
+from sustaingym.envs.datacenter.cluster import Cluster
+from sustaingym.envs.datacenter.task import Task
+
+HOURS_PER_DAY = 24
+MICROSEC_PER_HOUR = 60*60*1000000
 
 
 class DatacenterGym(gym.Env):
@@ -23,8 +30,6 @@ class DatacenterGym(gym.Env):
     """
     TASK_DATA_PATH = "sustaingym/data/datacenter/daily_events"
     EPISODE_LEN = 672  # In hours
-    HOURS_PER_DAY = 24
-    MICROSEC_PER_HOUR = 60*60*1000000
     START_DELAY = 600  # trace period starts at 600 seconds
     START_DELAY_H = 600 / 3600  # measured in hours
     PRIORITY_THRESH = 120  # priority values geq are considered inflexible
@@ -52,8 +57,8 @@ class DatacenterGym(gym.Env):
             # avg_task_capacity
         })
 
-        self.task_data = None
-        self.time_window = self.MICROSEC_PER_HOUR
+        self.task_data: pd.DataFrame | None = None
+        self.time_window = MICROSEC_PER_HOUR
 
     def make(self):
         # TODO
@@ -66,17 +71,16 @@ class DatacenterGym(gym.Env):
         self.datacenter.t = 0
         self.datacenter.daily_capacity_req = [0 for _ in range(31)]  # 31 days
         obs = self.datacenter.get_state()
-        info = {}
+        info: dict[str, Any] = {}
         return obs, info
 
     def render(self):
         print(self.datacenter.get_state())
 
     def step(self, action: np.ndarray) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
-        VCC = action
-        assert VCC.shape == self.action_space.shape  # (1,)
+        assert action.shape == self.action_space.shape  # (1,)
+        VCC = action.item()  # only care about scalar
 
-        VCC = VCC[0] # only care about scalar
         self.datacenter.stop_finished_tasks()
 
         self.datacenter.set_VCC(VCC)
@@ -92,7 +96,7 @@ class DatacenterGym(gym.Env):
 
         terminated = (self.datacenter.t >= self.EPISODE_LEN)
         truncated = False
-        info = {}
+        info: dict[str, Any] = {}
 
         return obs, reward, terminated, truncated, info
 
@@ -139,9 +143,10 @@ class DatacenterGym(gym.Env):
         if curr_t % HOURS_PER_DAY == 0:
             curr_d = curr_t // HOURS_PER_DAY
             self.task_data = pd.read_csv(f"{self.TASK_DATA_PATH}/day_{curr_d}.csv")
+        assert self.task_data is not None
 
-        start = (curr_t + self.START_DELAY_H)*self.MICROSEC_PER_HOUR
-        end = (curr_t + self.START_DELAY_H + 1)*self.MICROSEC_PER_HOUR
+        start = (curr_t + self.START_DELAY_H) * MICROSEC_PER_HOUR
+        end = (curr_t + self.START_DELAY_H + 1) * MICROSEC_PER_HOUR
 
         tasks = []
         new_task_data = self.task_data[(start <= self.task_data['time']) & (self.task_data['time'] < end)]

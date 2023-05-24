@@ -1,20 +1,23 @@
-from sustaingym.envs.datacenter.task import Task
+from __future__ import annotations
+
 import random
+
+from sustaingym.envs.datacenter.task import Task
 
 
 class Machine:
-    def __init__(self, id, max_capacity):
+    def __init__(self, id: str, max_capacity: float):
         self.id = id
-        self.capacity = 0
+        self.capacity = 0.
         self.max_capacity = max_capacity
-        self.tasks = dict()  # Task.id -> Task object
-    
-    def start_task(self, task: Task):
+        self.tasks: dict[str, Task] = dict()  # Task.id -> Task object
+
+    def start_task(self, task: Task) -> None:
         assert self.capacity + task.capacity <= self.max_capacity
         self.capacity += task.capacity
         self.tasks[task.id] = task
-    
-    def stop_task(self, task_id) -> Task:
+
+    def stop_task(self, task_id: str) -> Task:
         """
         - Return: the stopped task object.
         """
@@ -23,7 +26,7 @@ class Machine:
         del self.tasks[task_id]
         return stopped_task
 
-    def select_task_to_evict(self):
+    def select_task_to_evict(self) -> str:
         """
         - Return: task ID of chosen task.
         """

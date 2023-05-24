@@ -3,19 +3,18 @@ from __future__ import annotations
 from collections.abc import Sequence
 from collections import deque
 from datetime import datetime, timedelta, timezone
-from heapq import *
+from heapq import heappop, heappush
 import random
 
 import pandas as pd
 import numpy as np
 
-from sustaingym.envs.datacenter.util.event import *
 from sustaingym.data.load_moer import load_moer
-from sustaingym.envs.datacenter.machine import *
-from sustaingym.envs.datacenter.task import *
+from sustaingym.envs.datacenter.machine import Machine
+from sustaingym.envs.datacenter.task import Task
+from sustaingym.envs.datacenter.util.event import Event, EventType, EventQueueEntry
 
 HOURS_PER_DAY = 24
-REMOVED_EVENT = 'R'
 MACHINE_EVENTS_PATH = "sustaingym/data/datacenter/machine_events_sample.json"
 MOER_PATH = "sustaingym/data/moer/"
 TZ_INFO = timezone(timedelta(0,0,0,0,0,0,0))  # corresponds to UTC
@@ -23,6 +22,8 @@ ONEDAY = timedelta(days=1)
 
 
 class Cluster:
+    REMOVED_EVENT = 'R'
+
     def __init__(self, start_time: datetime, end_time: datetime,
                  balancing_authority: str):
         self.VCC = np.zeros(1, dtype=np.float32)  # fraction of self.max_capacity that can be used
@@ -34,7 +35,7 @@ class Cluster:
         self.carbon_intensities = self.get_carbon_data(start_time, end_time, balancing_authority)
 
         # self.daily_capacity_req[d] = "total daily capacity required by all tasks in day 'd'"
-        self.daily_capacity_req = [0 for _ in range(31)]  # 31 days
+        self.daily_capacity_req = [0. for _ in range(31)]  # 31 days
 
         self.t = 0  # in hours
 
@@ -42,9 +43,9 @@ class Cluster:
         for machine in self.machines.values():
             self.max_capacity += machine.max_capacity
 
-        self.event_q = []  # Min heap with end times as priority
-        self.task_to_eq_entry = {}
-        self.task_q = deque()  # Holds tasks before being scheduled
+        self.event_q: list[EventQueueEntry] = []  # Min heap with end times as priority
+        self.task_to_eq_entry: dict[Task, EventQueueEntry] = {}
+        self.task_q = deque[Task]()  # Holds tasks before being scheduled
 
         # set up state
         self._num_queued_tasks = np.zeros(1, dtype=np.float32)  # always an int
@@ -63,7 +64,7 @@ class Cluster:
     def init_machines(self) -> dict[str, Machine]:
         """Returns mapping from machine_id to Machine object."""
         machines = {}
-        data = pd.read_json(MACHINE_EVENTS_PATH, lines=True)
+        data = pd.read_json(MACHINE_EVENTS_PATH, lines=True, dtype={'machine_id': str})
         for i in range(len(data)):
             # TODO: consider adding machines only if event is ADD
             machine_id = data.iloc[i]['machine_id']
@@ -72,7 +73,7 @@ class Cluster:
         return machines
 
     def get_carbon_data(self, start_time: datetime, end_time: datetime,
-                        balancing_authority: str):
+                        balancing_authority: str) -> np.ndarray:
         step_size = 60 // 5  # datacenter simulation is in hours, and MOER data every 5 mins
         data = load_moer(start_time, end_time, balancing_authority, MOER_PATH).values
         return data[::step_size, 0]  # column 0 has ground truth
@@ -96,14 +97,6 @@ class Cluster:
         self._num_queued_tasks[:] = len(self.task_q)
         self._moers[:] = self.carbon_intensities[self.t: self.t + 24]
         return self.state
-        # state = []
-
-        # state.append(self.VCC)
-        # state.append(self.capacity)
-        # state.append(len(self.task_q))
-        # state += list(self.carbon_intensities[self.t: self.t + 24])
-
-        # return np.array(state)
 
     def set_VCC(self, new_VCC: float) -> None:
         """
@@ -147,8 +140,10 @@ class Cluster:
         return pow_usage * carbon_intensity
 
     # *** INTERNAL DATACENTER FUNCTIONALITY ***
-    def select_machines_to_schedule(self):
-        return random.shuffle(list(self.machines.keys()))
+    def select_machines_to_schedule(self) -> list[str]:
+        all_machine_ids = list(self.machines.keys())
+        random.shuffle(all_machine_ids)
+        return all_machine_ids
 
     def schedule_task(self, task: Task) -> bool:
         """
@@ -173,7 +168,7 @@ class Cluster:
         task_end_time = self.t + task.duration
         task.end_time = task_end_time
 
-        assert not machine_id is None
+        assert machine_id is not None
         event = Event(EventType.TASK_FINISHED, machine_id, task.id)
 
         eq_entry = EventQueueEntry(task_end_time, event)
@@ -188,11 +183,14 @@ class Cluster:
         """
         failed_schedule = False
         while True:
-            # NOTE: if there is a huge task (in terms of capacity requirement) at the front of the queue,
-                # it will block potentially smaller tasks behind it from being scheduled.
-            if (failed_schedule or
+            # NOTE: if there is a huge task (in terms of capacity requirement)
+            # at the front of the queue, it will block potentially smaller
+            # tasks behind it from being scheduled.
+            if (
+                failed_schedule or
                 len(self.task_q) == 0 or
-                self.capacity.item() + self.task_q[0].capacity > self.VCC.item()):
+                self.capacity.item() + self.task_q[0].capacity > self.VCC.item()
+            ):
                 break
             task = self.task_q.popleft()
             failed_schedule = self.schedule_task(task)
@@ -210,7 +208,7 @@ class Cluster:
             event = eq_entry.event
             if end_time > self.t:
                 break
-            elif event == REMOVED_EVENT:
+            elif event == self.REMOVED_EVENT:
                 heappop(self.event_q)
             elif event.type == EventType.TASK_FINISHED:
                 heappop(self.event_q)
@@ -225,16 +223,14 @@ class Cluster:
         """
         self.task_q.extend(tasks)
 
-    def select_machine_to_evict(self) -> str:
-        attempt_counter = 0
-        while True:
-            machine_id = random.choice(list(self.machines.keys()))
+    def select_machine_to_evict(self) -> str | None:
+        all_machine_ids = list(self.machines.keys())
+        random.shuffle(all_machine_ids)
+
+        for machine_id in all_machine_ids:
             if len(self.machines[machine_id].tasks) > 0:
-                break
-            attempt_counter += 1
-            if attempt_counter > len(self.machines):
-                return None
-        return machine_id
+                return machine_id
+        return None
 
     def obey_vcc(self) -> None:
         """
@@ -252,7 +248,7 @@ class Cluster:
 
             # mark the entry as invalid in the priority queue
             eq_entry = self.task_to_eq_entry[evicted_task]
-            eq_entry.event = REMOVED_EVENT
+            eq_entry.event = self.REMOVED_EVENT
 
             # re-enqueue evicted task
             prev_end_time = eq_entry.end_time
@@ -260,10 +256,10 @@ class Cluster:
             new_task = Task(evicted_task.id, remaining_duration, evicted_task.capacity)
             self.task_q.append(new_task)
 
-    def add_daily_capacity_req(self, day, capacity):
+    def add_daily_capacity_req(self, day: int, capacity: float) -> None:
         self.daily_capacity_req[day] += capacity
 
-    def get_power_usage(self):
+    def get_power_usage(self) -> float:
         """Compute power usage at time 't'."""
         proportionality_constant = 1
         return self.capacity.item() * proportionality_constant

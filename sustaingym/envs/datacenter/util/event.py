@@ -1,7 +1,9 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
-from typing import Any
 from enum import Enum
-from sustaingym.envs.datacenter.task import *
+from typing import Any
+
 
 class EventType(Enum):
     TASK_FINISHED = 1
@@ -9,7 +11,7 @@ class EventType(Enum):
 
 class Event:
     """An element in an 'EventQueue'."""
-    def __init__(self, type, machine_id, task_id):
+    def __init__(self, type, machine_id: str, task_id):
         self.t = 0
         self.type = type
         self.machine_id = machine_id
@@ -19,4 +21,4 @@ class Event:
 @dataclass(order=True)
 class EventQueueEntry:
     end_time: int
-    event: Any=field(compare=False)
+    event: Any = field(compare=False)
