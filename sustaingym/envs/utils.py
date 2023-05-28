@@ -15,7 +15,7 @@ def solve_mosek(prob: cp.Problem, verbose: int = 0) -> None:
     except cp.SolverError:
         prob.solve(solver=cp.ECOS)
         if verbose >= 2:
-            print('Default MOSEK solver failed in action projection. Trying ECOS. ')
+            print('Default MOSEK solver failed. Trying ECOS.')
             if prob.status != 'optimal':
                 print(f'prob.status = {prob.status}')
         if 'infeasible' in prob.status:
