@@ -113,10 +113,10 @@ class EVChargingEnv(Env):
         self.project_action_in_env = project_action_in_env
         self.verbose = verbose
         if self.verbose < 2:
-            warnings.filterwarnings('ignore')
+            warnings.filterwarnings("ignore")
 
         # Reward factor constants: profit, constraint violation, and carbon costs
-        self.A_PERS_TO_KWH = self.A_MINS_TO_KWH * self.data_generator.TIME_STEP_DURATION  # (kWh / A * periods)
+        self.A_PERS_TO_KWH = self.A_MINS_TO_KWH * self.data_generator.TIME_STEP_DURATION  # (kWH / A * periods)
         self.PROFIT_FACTOR = self.A_PERS_TO_KWH * self.MARGINAL_PROFIT_PER_KWH  # $ / (A * period)
         self.VIOLATION_FACTOR = self.A_PERS_TO_KWH * self.VIOLATION_WEIGHT  # $ / (A * period)
         self.CARBON_COST_FACTOR = self.A_PERS_TO_KWH * (self.CO2_COST_PER_METRIC_TON / 1000)  # ($ * kV * hr) / (kg CO2 * period)
@@ -395,8 +395,7 @@ class EVChargingEnv(Env):
         return self._obs
 
     def _get_info(self, all: bool = False) -> dict[str, Any]:
-        """
-        Returns info. See step().
+        """Returns info. See step().
 
         Args:
             all: whether all information should be returned. Otherwise, only

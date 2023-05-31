@@ -18,7 +18,6 @@ from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 from sustaingym.envs.utils import solve_mosek
 
 
-
 class BaseEVChargingAlgorithm:
     """Base abstract class for EVChargingGym scheduling algorithms.
 

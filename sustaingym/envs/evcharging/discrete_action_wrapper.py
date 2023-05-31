@@ -1,12 +1,7 @@
-"""
-This module implements a wrapper supporting discrete actions in EVChargingEnv.
-"""
+"""Implements a wrapper supporting discrete actions in EVChargingEnv."""
 from __future__ import annotations
 
-# import gym
-# from gym import spaces, Env
 from gymnasium import ActionWrapper, spaces
-
 import numpy as np
 
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
@@ -26,7 +21,7 @@ class DiscreteActionWrapper(ActionWrapper):
     def __init__(self, env: EVChargingEnv):
         """
         Args:
-            env (EVChargingEnv): EV charging environment
+            env: EV charging environment
         """
         super().__init__(env)
         assert isinstance(env.action_space, spaces.Box), \
