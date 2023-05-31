@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 import os
 from typing import Any
 
-import gym
+import gymnasium as gym
 import numpy as np
 from tqdm.auto import tqdm
 
@@ -123,17 +123,16 @@ def congested_run_follow_offline_optimal(
 
     max_price = env.action_space.high[0][0, 0]
 
-    charge_action = np.zeros((2,1))
-    charge_action[:, 0] = np.array([max_price, max_price])
-    charge_action = np.array([[*charge_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+    zero_action = np.zeros((2,1))
 
-    discharge_action = np.zeros((2,1))
-    discharge_action[:, 0] = np.array([0.001*max_price, 0.001*max_price])
-    discharge_action = np.array([[*discharge_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+    charge_action = np.array([[*zero_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+    charge_action[:, 0, 0] = np.array([max_price*0.95, max_price/0.95])
 
-    no_action = np.zeros((2,1))
-    no_action[:, 0] = np.array([0, max_price])
-    no_action = np.array([[*no_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+    discharge_action = np.array([[*zero_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+    discharge_action[:, 0, 0] = np.array([0, -max_price/0.95])
+
+    no_action = np.array([[*zero_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+    no_action[:, 0, 0] = np.array([-max_price*0.95, max_price/0.95])
 
     for ep, seed in enumerate(tqdm(seeds)):
         obs = env.reset(seed=seed)
@@ -157,9 +156,56 @@ def congested_run_follow_offline_optimal(
         'energy': energy
     }
 
+def run_mpc(seeds: Sequence[int], env: gym.Env
+                        ) -> dict[str, np.ndarray]:
+    """Get model predictive control reward for a number of episodes.
+
+    Args:
+        seeds: seeds for environment reset, length is number of episodes to evaluate for
+        env: environment to evaluate the model on
+
+    Returns:
+        results dict, keys are ['rewards', 'prices', 'net_prices', 'energy', 'dispatch'],
+            values are arrays of shape [num_episodes, num_steps]
+    """
+
+    num_episodes = len(seeds)
+    all_results = {
+        k: np.zeros((num_episodes, env.MAX_STEPS_PER_EPISODE))
+        for k in ['rewards', 'prices', 'net_prices', 'energy', 'dispatch']
+    }
+
+    for i, seed in enumerate(tqdm(seeds)):
+        print("seed number: ", i)
+        env.reset(seed=seed)
+        curr_charge = env.battery_charge[-1]
+        ep_rewards = np.zeros(env.MAX_STEPS_PER_EPISODE)
+        ep_prices = np.zeros(env.MAX_STEPS_PER_EPISODE)
+        ep_net_prices = np.zeros(env.MAX_STEPS_PER_EPISODE)
+        ep_energy = np.zeros(env.MAX_STEPS_PER_EPISODE)
+        ep_dispatch = np.zeros(env.MAX_STEPS_PER_EPISODE)
+
+
+        for count in range(env.MAX_STEPS_PER_EPISODE):
+            print("calculating baseline no agent prices...")
+            lookahead_prices = env._calculate_lookahead_prices_without_agent(count)
+            ep_prices[i] = lookahead_prices[0]
+
+            print("calculating MPC optimal...")
+            ep_results = env._calculate_price_taking_optimal(
+                prices=lookahead_prices, init_charge=curr_charge, final_charge=0, steps=env.load_forecast_steps+1)
+            
+            ep_rewards[count] = ep_results['rewards'][0]
+            ep_net_prices[count] = ep_results['net_prices'][0]
+            ep_energy[count] = ep_results['energy'][0]
+            ep_dispatch[count] = ep_results['dispatch'][0]
+
+            # update battery charge
+            curr_charge = ep_results['energy'][0]
+
+    return all_results
 
 def run_random(seeds: Sequence[int], env: gym.Env, discrete: bool) -> dict[str, np.ndarray]:
-    print("here")
     num_eps = len(seeds)
     rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
     energy = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))

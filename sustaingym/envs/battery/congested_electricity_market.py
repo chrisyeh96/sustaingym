@@ -11,11 +11,9 @@ import pkgutil
 from typing import Any
 
 import cvxpy as cp
-from gym import Env, spaces
+from gymnasium import Env, spaces
 import numpy as np
 import pandas as pd
-import pandapower.networks as pn
-from pandapower.auxiliary import pandapowerNet
 import pytz
 
 from sustaingym.data.load_moer import MOERLoader
@@ -87,28 +85,28 @@ class Case24_ieee_rts_network:
         # bus, Pg, Qg, Qmax, Qmin, Vg, mBase, status, Pmax, Pmin, Pc1, Pc2,
         # Qc1min, Qc1max, Qc2min, Qc2max, ramp_agc, ramp_10, ramp_30, ramp_q, apf
         ppc["gen"] = np.array([
-            [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
-            [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
-            [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
-            [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
-            [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
-            [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
-            [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
-            [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
-            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
-            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
-            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
-            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
-            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
-            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
+            [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
+            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
+            [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
+            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
+            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
+            [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
             [14, 0,   35.3, 200, -50, 0.98,  100, 1,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # SynCond
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
-            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
-            [15, 155,  0,    80, -50, 1.014, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
-            [16, 155,  0,    80, -50, 1.017, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            [15, 155,  0,    80, -50, 1.014, 100, 1, 155,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            [16, 155,  0,    80, -50, 1.017, 100, 1, 155,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
             [18, 400,  0,   200, -50, 1.05,  100, 1, 400, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U400
             [21, 400,  0,   200, -50, 1.05,  100, 1, 400, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U400
             [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
@@ -120,6 +118,30 @@ class Case24_ieee_rts_network:
             [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
             [23, 155,  0,    80, -50, 1.05,  100, 1, 155,  0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
             [23, 350,  0,   150, -25, 1.05,  100, 1, 350, 0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]   # U350
+            # [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            # [1,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            # [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            # [1,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            # [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            # [2,  10,   0,    10,   0, 1.035, 100, 1,  20,  16,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U20
+            # [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            # [2,  76,   0,    30, -25, 1.035, 100, 1,  76,  15.2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U76
+            # [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
+            # [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
+            # [7,  80,   0,    60,   0, 1.025, 100, 1, 100,  25,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U100
+            # [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
+            # [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
+            # [13, 95.1, 0,    80,   0, 1.02,  100, 1, 197,  69,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U197
+            # [14, 0,   35.3, 200, -50, 0.98,  100, 1,   0,   0,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # SynCond
+            # [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            # [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            # [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            # [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            # [15, 12,   0,     6,   0, 1.014, 100, 1,  12,   2.4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U12
+            # [15, 155,  0,    80, -50, 1.014, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            # [16, 155,  0,    80, -50, 1.017, 100, 1, 155,  54.3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U155
+            # [18, 400,  0,   200, -50, 1.05,  100, 1, 400, 100,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U400
+            # [21, 400,  0,   200, -50, 1.05,  100, 1, 400, 100,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], # U400
             # [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
             # [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
             # [22, 50,   0,    16, -10, 1.05,  100, 1,  50,  10,   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],  # U50
@@ -420,8 +442,8 @@ class CongestedMarketOperator:
         self.p_min = cp.Parameter((N_D + N_G + 2*N_B, h+1), name='minimum power')  # minimum power output
         self.p_max = cp.Parameter((N_D + N_G + 2*N_B, h+1), nonneg=True, name='maximum power')  # maximum power output
         self.cgen = cp.Parameter((N_G, 2), nonneg=True, name='generator production costs')  # assume time invariant
-        self.cbat_d = cp.Parameter((N_B, h + 1), nonneg=True, name='battery discharge costs')  # discharge cost
-        self.cbat_c = cp.Parameter((N_B, h + 1), nonneg=True, name='battery charge costs')  # charge cost
+        self.cbat_d = cp.Parameter((N_B, h + 1), name='battery discharge costs')  # discharge cost
+        self.cbat_c = cp.Parameter((N_B, h + 1), name='battery charge costs')  # charge cost
         self.soc_final = cp.Parameter(N_B, nonneg=True, name='soc final')  # final charge SOC(s)
         self.soc_max = cp.Parameter(N_B, nonneg=True, name='soc maximum')  # maximum SOC(s)
 
@@ -431,9 +453,8 @@ class CongestedMarketOperator:
             0 <= self.soc,
             self.soc <= self.soc_max,
 
-            # initial and final soc
+            # initial soc
             self.soc[:, 0] == self.env.battery_charge,
-            self.soc[:, -1] >= self.soc_final,
 
             # charging dynamics
             self.soc[:, 1:] == self.soc[:, :-1] + self.env.CHARGE_EFFICIENCY * bat_c - (1. / self.env.DISCHARGE_EFFICIENCY) * bat_d,
@@ -699,10 +720,10 @@ class CongestedElectricityMarketEnv(Env):
         assert (self.bats_base_costs >= 0).all()
 
         # determine the maximum possible cost of energy ($ / MWh)
-        max_cost = 1.25 * max(max(self.network.cgen[:, 1]), self.network.cgen[-1, 0], self.network.cgen[-1, 1]) # edit for general n battery case later!!!
+        self.max_cost = 1.25 * max(max(self.network.cgen[:, 1]), self.network.cbat[-1, 0], self.network.cbat[-1, 1]) # edit for general n battery case later!!!
 
         # action space is two values for the charging and discharging costs
-        self.action_space = spaces.Box(low=0, high=max_cost, shape=(2, self.N_B, self.settlement_interval + 1), dtype=np.float32)
+        self.action_space = spaces.Box(low=0, high=self.max_cost, shape=(2, self.N_B, self.settlement_interval + 1), dtype=np.float32)
 
         # observation space is current energy level, current time, previous (a, b, x)
         # from dispatch and previous load demand value
@@ -717,7 +738,7 @@ class CongestedElectricityMarketEnv(Env):
             'demand forecast': spaces.Box(low=0, high=np.inf, shape=(load_forecast_steps,), dtype=float),
             'moer previous': spaces.Box(low=0, high=1, shape=(1,), dtype=float),
             'moer forecast': spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=float),
-            'price previous': spaces.Box(low=0, high=max_cost, shape=(1,), dtype=float)
+            'price previous': spaces.Box(low=0, high=self.max_cost, shape=(1,), dtype=float)
         })
         self.init = False
         self.df_demand = self._get_demand_data()
@@ -735,7 +756,7 @@ class CongestedElectricityMarketEnv(Env):
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
-            csv_path = os.path.join('data', 'demand_data', f'REAL_TIME_regional_Load.csv')
+            csv_path = os.path.join('data', 'demand_data', 'REAL_TIME_regional_Load.csv')
             bytes_data = pkgutil.get_data('sustaingym', csv_path)
             assert bytes_data is not None
             df_demand = pd.read_csv(BytesIO(bytes_data), index_col=0)
@@ -752,7 +773,7 @@ class CongestedElectricityMarketEnv(Env):
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
         else:
-            csv_path = os.path.join('data', 'demand_data', f'REAL_TIME_regional_Load.csv')
+            csv_path = os.path.join('data', 'demand_data', 'DAY_AHEAD_regional_Load.csv')
             bytes_data = pkgutil.get_data('sustaingym', csv_path)
             assert bytes_data is not None
             df_demand_forecast = pd.read_csv(BytesIO(bytes_data), index_col=0)
@@ -784,19 +805,56 @@ class CongestedElectricityMarketEnv(Env):
         Returns:
             array of shape [lookahead_steps], net demands for the given lookahead
         """
-        num_days_total = self.df_demand_forecast.shape[0]
+
+        num_hrs_total = self.df_demand_forecast.shape[0]
         start = self.idx * self.MAX_STEPS_PER_EPISODE + count
 
-        if count > num_days_total: # outside of bounds
-            return np.array([np.nan]*lookahead_steps)
+        # get current hour
+        start_hour = start // 12
 
-        elif count + lookahead_steps > num_days_total:  # part of lookahead outside of bounds
-            return np.concatenate([
-                self.df_demand['1'].iloc[start:],
-                [self.df_demand['1'].iloc[-1]] * (lookahead_steps + count - num_days_total)
-            ])
+        # how far in this hour
+        start_left = start % 12
+
+        # lookahead steps left
+        lookahead_steps_left = lookahead_steps
+
+        if start_hour > num_hrs_total: # outside of bounds
+            return np.array([np.nan]*lookahead_steps)
+        
         else:
-            return self.df_demand['1'].iloc[start:start + lookahead_steps].values
+            res = np.zeros(lookahead_steps)
+
+            idx = 0 # index within res to add from
+
+            if start_left > 0:
+                res[:(12 - start_left)] = np.full(12 - start_left,
+                    self.df_demand_forecast['1'].iloc[start_hour])
+                
+                lookahead_steps_left -= (12 - start_left)
+
+                idx = 12 - start_left
+            
+            # hours in lookahead
+            lookahead_hour = lookahead_steps_left // 12
+
+            # leftover in lookahead in 5 minute intervals
+            lookahead_left = lookahead_steps_left % 12
+
+            for hour in range(lookahead_hour):
+                if start_hour + hour + 1 > num_hrs_total:
+                    res[idx:] = np.full(lookahead_steps_left - idx, np.nan)
+                    return res
+                else:
+                    res[idx : idx + 12] = np.full(12, self.df_demand_forecast['1'].iloc[start_hour + hour + 1])
+                
+                lookahead_steps_left -= 12
+                idx += 12
+            
+            if lookahead_left > 0:
+                res[idx:] = np.full(lookahead_left,
+                                     self.df_demand_forecast['1'].iloc[start_hour + lookahead_hour + 1])
+            
+            return res
 
     def _get_time(self) -> float:
         """Determine the fraction of the day that has elapsed based on the current
@@ -807,7 +865,7 @@ class CongestedElectricityMarketEnv(Env):
         """
         return self.count / self.MAX_STEPS_PER_EPISODE
 
-    def reset(self, seed: int | None = None, return_info: bool = False,
+    def reset(self, seed: int | None = None, return_info: bool = True,
               options: dict | None = None
               ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an instance of an episode for the CongestedElectricityMarketEnv.
@@ -831,7 +889,7 @@ class CongestedElectricityMarketEnv(Env):
 
         date = datetime.strptime(f'{self.date}-{day:02d}', '%Y-%m-%d').replace(tzinfo=pytz.timezone('America/Los_Angeles'))
         self.moer_arr = self.moer_loader.retrieve(date).astype(np.float32)
-        self.load_arr = self._generate_load_forecast_data(1, self.load_forecast_steps)
+        # self.load_arr = self._generate_load_forecast_data(1, self.load_forecast_steps)
 
         self.action = np.zeros((2, self.network.N_B, self.settlement_interval + 1), dtype=np.float32)
         self.dispatch = np.zeros(self.N_B, dtype=np.float32)
@@ -875,7 +933,7 @@ class CongestedElectricityMarketEnv(Env):
             'carbon reward': None,
             'terminal reward': None
         }
-        return self.obs if not return_info else (self.obs, info)
+        return (self.obs, info) if return_info else self.obs
 
     def step(self, action: np.ndarray) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
         """Executes a single time step in the environments current trajectory.
@@ -906,11 +964,12 @@ class CongestedElectricityMarketEnv(Env):
         #             self.action[1, i, j] = action[0, i, j]
 
         self.demand[:] = self._generate_load_data(self.count)
+        self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1, self.load_forecast_steps)
         self.moer[:] = self.moer_arr[self.count:self.count + 1, 0]
 
-        _, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(self.congestion)
+        _, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(self.congestion, verbose=False)
         self.dispatch = np.array(x_bat_d - x_bat_c)
-        print(f'discharge: {x_bat_d}, charge: {x_bat_c}')
+        # print(f'discharge: {x_bat_d}, charge: {x_bat_c}')
         # print("dispatch: ", self.dispatch)
         self.price[:] = prices[self.bat_idx]
 
@@ -921,7 +980,6 @@ class CongestedElectricityMarketEnv(Env):
 
         # get forecasts for next time step
         self.time[:] = self._get_time()
-        self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1, self.load_forecast_steps)
         self.moer_forecast[:] = self.moer_arr[self.count, 1:self.moer_forecast_steps + 1]
 
         energy_reward = prices[self.bat_idx] * self.dispatch[0]
@@ -954,10 +1012,13 @@ class CongestedElectricityMarketEnv(Env):
             'carbon reward': carbon_reward,
             'terminal cost': terminal_cost,
         }
-        return self.obs, reward, done, info
+
+        truncated = False # always False due to no intermediate stopping conditions
+        terminated = done # replaces terminated flag in gymansium API
+        return self.obs, reward, terminated, truncated, info
 
     def _calculate_dispatch_without_agent(
-            self, count: int
+            self, count: int, demand: float or None = None
             ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """Calculates market price and dispatch at given time step, without
         agent participation.
@@ -966,6 +1027,7 @@ class CongestedElectricityMarketEnv(Env):
 
         Args:
             count: time step
+            demand: current time step demand/load
 
         Returns:
             x_gens: array of shape [num_gens, h+1], generator dispatch values
@@ -973,8 +1035,13 @@ class CongestedElectricityMarketEnv(Env):
             x_bat_c: array of shape [num_bats], battery charge amounts
             price: array of shape [num_buses], nodal prices
         """
-        self.demand[:] = self._generate_load_data(count)
-        x_gens, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(agent_control=False)
+        
+        if demand is None:
+            self.demand[:] = self._generate_load_data(count)
+        else:
+            self.demand[:] = demand
+
+        x_gens, x_bat_d, x_bat_c, prices = self.market_op.get_dispatch(agent_control=False, verbose=False)
 
         # sanity checks
         assert np.all(0 <= prices), 'prices should be nonnegative'
@@ -1010,9 +1077,35 @@ class CongestedElectricityMarketEnv(Env):
         self.battery_charge = battery_charge_save
         return prices
 
+    def _calculate_lookahead_prices_without_agent(self, count: int):
+        load = self._generate_load_data(count)
+        load_forecast = self._generate_load_forecast_data(count, self.load_forecast_steps)
+
+        assert load_forecast.shape == (self.load_forecast_steps, )
+
+        battery_charge_save = self.battery_charge.copy()
+        prices = np.zeros(self.load_forecast_steps + 1)
+
+        for step in range(count, count + self.load_forecast_steps + 1):
+            if step == count: # current step
+                demand = load
+            else:
+                demand = load_forecast[step - count]
+            
+            _, x_bat_d, x_bat_c, bus_prices = self._calculate_dispatch_without_agent(count, demand)
+            prices[step - count] = bus_prices[int(self.network.bat_idx - 1)]
+
+            # update battery charges
+            self.battery_charge += self.CHARGE_EFFICIENCY * x_bat_c
+            self.battery_charge -= (1. / self.DISCHARGE_EFFICIENCY) * x_bat_d
+            self.battery_charge[:] = self.battery_charge.clip(0, self.bats_capacity)
+
+        self.battery_charge = battery_charge_save
+        return prices
+
     def _calculate_price_taking_optimal(
             self, prices: np.ndarray, init_charge: float,
-            final_charge: float) -> dict[str, np.ndarray]:
+            final_charge: float, steps: int or None = None) -> dict[str, np.ndarray]:
         """Calculates optimal episode, under price-taking assumption.
 
         Args:
@@ -1020,14 +1113,22 @@ class CongestedElectricityMarketEnv(Env):
             init_charge: float in [0, self.bats_capacity[-1]],
                 initial energy level for agent battery
             final_charge: float, minimum final energy level of agent battery
+            steps: int, optional value representing the number of steps to
+            optimize over
 
         Returns:
             results dict, keys are ['rewards', 'dispatch', 'energy', 'net_prices'],
                 values are arrays of shape [num_steps].
                 'net_prices' is prices + carbon cost
         """
-        c = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # charging (in MWh)
-        d = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # discharging (in MWh)
+
+        if steps is None:
+            c = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # charging (in MWh)
+            d = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # discharging (in MWh)
+        else:
+            c = cp.Variable(steps)  # charging (in MWh)
+            d = cp.Variable(steps)  # discharging (in MWh)
+
         x = d * self.DISCHARGE_EFFICIENCY - c / self.CHARGE_EFFICIENCY  # dispatch (in MWh)
         delta_energy = cp.cumsum(c) - cp.cumsum(d)
 
@@ -1061,7 +1162,7 @@ class CongestedElectricityMarketEnv(Env):
         """Calculates terminal cost term.
 
         Args:
-            agent_energy_level: initial energy level (MWh) in the
+            agent_energy_level: current energy level (MWh) in the
                 agent-controlled battery
 
         Returns:
