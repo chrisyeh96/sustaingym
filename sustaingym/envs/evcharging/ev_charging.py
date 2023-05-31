@@ -51,15 +51,15 @@ class EVChargingEnv(Env):
     Attributes:
         # attributes required by gym.Env
         action_space: spaces.Box, structure of actions expected by env
-        observation_space: spaces.Dict, structure of observations returned by env
+        observation_space: spaces.Dict, structure of observations
         reward_range: tuple[float, float], min and max rewards
         spec: EnvSpec, info used to initialize env from gymnasium.make()
         metadata: dict[str, Any], unused
         np_random: np.random.Generator, random number generator for the env
 
         # attributes specific to EVChargingEnv
-        data_generator: AbstractTraceGenerator, generator for sampling
-            EV charging events and MOER forecasting
+        data_generator: AbstractTraceGenerator, generator for sampling EV
+            charging events and MOER forecasting
         max_timestep: int, maximum timestep in a day's simulation
         moer_forecast_steps: int, number of steps of MOER forecast to include
         project_action_in_env: bool, whether gym should project action to obey
@@ -82,7 +82,7 @@ class EVChargingEnv(Env):
     OPERATING_MARGIN = 0.20  # profit / revenue as a %
     MARGINAL_PROFIT_PER_KWH = MARGINAL_REVENUE_PER_KWH * OPERATING_MARGIN  # $ / kWh
     CO2_COST_PER_METRIC_TON = 30.85  # carbon cost in $ / 1000 kg CO2
-    A_MINS_TO_KWH = (1 / 60) * (VOLTAGE / 1000)  # (kWH / A * mins)
+    A_MINS_TO_KWH = (1 / 60) * (VOLTAGE / 1000)  # (kWh / A * mins)
     VIOLATION_WEIGHT = 0.001  # cost in $ / kWh of violation
 
     def __init__(self, data_generator: AbstractTraceGenerator,
@@ -91,8 +91,8 @@ class EVChargingEnv(Env):
                  verbose: int = 0):
         """
         Args:
-            data_generator: (AbstractTraceGenerator) generator for sampling
-                EV charging events and MOER forecasting.
+            data_generator: generator for sampling EV charging events and MOER
+                forecasts
             moer_forecast_steps: number of steps of MOER forecast to include,
                 minimum of 1 and maximum of 36. Each step is 5 mins, for a
                 maximum of 3 hrs.
@@ -116,7 +116,7 @@ class EVChargingEnv(Env):
             warnings.filterwarnings("ignore")
 
         # Reward factor constants: profit, constraint violation, and carbon costs
-        self.A_PERS_TO_KWH = self.A_MINS_TO_KWH * self.data_generator.TIME_STEP_DURATION  # (kWH / A * periods)
+        self.A_PERS_TO_KWH = self.A_MINS_TO_KWH * self.data_generator.TIME_STEP_DURATION  # (kWh / A * periods)
         self.PROFIT_FACTOR = self.A_PERS_TO_KWH * self.MARGINAL_PROFIT_PER_KWH  # $ / (A * period)
         self.VIOLATION_FACTOR = self.A_PERS_TO_KWH * self.VIOLATION_WEIGHT  # $ / (A * period)
         self.CARBON_COST_FACTOR = self.A_PERS_TO_KWH * (self.CO2_COST_PER_METRIC_TON / 1000)  # ($ * kV * hr) / (kg CO2 * period)
@@ -173,8 +173,7 @@ class EVChargingEnv(Env):
             id='sustaingym/EVCharging-v0',
             entry_point='sustaingym.envs:EVChargingEnv',
             nondeterministic=False,
-            max_episode_steps=288,
-        )
+            max_episode_steps=288)
 
         # Set up action projection
         if self.project_action_in_env:
@@ -467,10 +466,6 @@ class EVChargingEnv(Env):
         self._reward_breakdown['excess_charge'] += excess_charge
 
         return total_reward
-
-    def render(self) -> None:
-        """Render environment."""
-        raise NotImplementedError
 
     def close(self) -> None:
         """Close the environment. Delete internal variables."""
