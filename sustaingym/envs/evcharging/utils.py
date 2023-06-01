@@ -24,7 +24,7 @@ import sklearn.mixture as mixture
 # API Token for ACN-Data
 API_TOKEN = 'DEMO_TOKEN'
 # Folder name when creating new GMMs
-GMM_DEFAULT_DIR = 'gmms'
+GMMS_DIR = 'gmms'
 
 # Timezones for converting charging events in ACN-Data
 AM_LA = pytz.timezone('America/Los_Angeles')
@@ -235,7 +235,7 @@ def save_gmm_model(site: SiteStr, gmm: mixture.GaussianMixture,
         n_components: number of GMM components
     """
     # create directory as needed
-    save_dir = os.path.join(GMM_DEFAULT_DIR, site)
+    save_dir = os.path.join(GMMS_DIR, site)
     if not os.path.exists(save_dir):
         print('Creating directory:', save_dir)
         os.makedirs(save_dir, exist_ok=True)
@@ -255,7 +255,7 @@ def load_gmm_model(site: SiteStr, begin: datetime, end: datetime,
     """Load pickled GMM and other data from folder.
 
     If searching for a custom model, searches relative to the current
-    working directory in ``GMM_DEFAULT_DIR``. If searching for a
+    working directory in ``GMMS_DIR``. If searching for a
     default model, searches inside the data folder.
 
     Args:
@@ -271,7 +271,7 @@ def load_gmm_model(site: SiteStr, begin: datetime, end: datetime,
             'count' (np.ndarray): session counts per day
             'station_usage' (np.ndarray): stations' usage counts for date range
     """
-    folder_path = os.path.join(GMM_DEFAULT_DIR, site)
+    folder_path = os.path.join(GMMS_DIR, site)
     filename = get_model_name(begin, end, n_components)
     # search through custom folders
     if os.path.exists(folder_path):
@@ -279,7 +279,7 @@ def load_gmm_model(site: SiteStr, begin: datetime, end: datetime,
             return pickle.load(f)
     # search through default models
     else:
-        mpath = os.path.join('data', 'evcharging', GMM_DEFAULT_DIR, site, filename)
+        mpath = os.path.join('data', 'evcharging', GMMS_DIR, site, filename)
         data = pkgutil.get_data('sustaingym', mpath)
         assert data is not None
         return pickle.loads(data)

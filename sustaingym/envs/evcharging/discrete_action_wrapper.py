@@ -9,12 +9,12 @@ from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 
 class DiscreteActionWrapper(ActionWrapper):
     """Discrete action wrapper.
-    
+
     This wrapper maps discrete actions to normalized continuous actions on the
     EVChargingEnv. Using discrete actions guarantees that non-zero actions will
     not get zeroed out as in the continuous case (see _to_schedule() in
     EVChargingEnv).
-    
+
     Attributes:
         action_space: tructure of actions expected by environment, now discrete
     """
@@ -30,7 +30,7 @@ class DiscreteActionWrapper(ActionWrapper):
         self._shape = env.action_space.shape
         self._n = self._shape[0]
         self.action_space = spaces.MultiDiscrete([5] * self._n)
-    
+
     def __repr__(self) -> str:
         """Returns environment representation."""
         return repr(self.env)

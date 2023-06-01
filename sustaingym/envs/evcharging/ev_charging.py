@@ -162,8 +162,8 @@ class EVChargingEnv(Env):
         self._simulator: acns.Simulator = None
 
         # Define action space for the pilot signals
-        self.action_space = spaces.Box(low=0, high=1.0,
-                                       shape=(self.num_stations,), dtype=np.float32)
+        self.action_space = spaces.Box(
+            low=0, high=1.0, shape=(self.num_stations,), dtype=np.float32)
 
         # Define reward range
         self.reward_range = (-np.inf, self.PROFIT_FACTOR * 32 * self.num_stations)
@@ -182,24 +182,24 @@ class EVChargingEnv(Env):
     def _init_action_projection(self) -> None:
         """Initializes optimization problem, parameters, and variables."""
         # Projected action to be sent as actual pilot signal
-        self.projected_action = cp.Variable(self.num_stations, nonneg=True)
+        self._projected_action = cp.Variable(self.num_stations, nonneg=True)
 
         # Aggregate magnitude (A) must be less than observation magnitude (A)
         phase_factor = np.exp(1j * np.deg2rad(self.cn._phase_angles))
         A_tilde = self.cn.constraint_matrix * phase_factor[None, :]
-        agg_magnitude = cp.abs(A_tilde @ self.projected_action) * self.ACTION_SCALE_FACTOR  # convert to A
+        agg_magnitude = cp.abs(A_tilde @ self._projected_action) * self.ACTION_SCALE_FACTOR  # convert to A
 
         # Parameters to be set when stepping through environment
-        self.agent_action = cp.Parameter((self.num_stations,), nonneg=True)
-        self.demands_cvx = cp.Parameter((self.num_stations,), nonneg=True)
+        self._agent_action = cp.Parameter(self.num_stations, nonneg=True)
+        self._demands_cvx = cp.Parameter(self.num_stations, nonneg=True)
 
         # Action cannot exceed maximum pilot signal or total demand of vehicle
-        max_action = cp.minimum(1.,
-                                self.demands_cvx / self.A_PERS_TO_KWH / self.ACTION_SCALE_FACTOR)
+        max_action = cp.minimum(
+            1., self._demands_cvx / self.A_PERS_TO_KWH / self.ACTION_SCALE_FACTOR)
 
-        objective = cp.Minimize(cp.norm(self.projected_action - self.agent_action, p=2))
+        objective = cp.Minimize(cp.norm(self._projected_action - self._agent_action, p=2))
         constraints = [
-            self.projected_action <= max_action,
+            self._projected_action <= max_action,
             agg_magnitude <= self.cn.magnitudes,
         ]
         self.prob = cp.Problem(objective, constraints)
@@ -217,18 +217,19 @@ class EVChargingEnv(Env):
                 is provided than is demanded. It is the action in the feasible space
                 that minimizes the L2 norm between it and the suggested action.
         """
-        self.agent_action.value = action
-        self.demands_cvx.value = self._demands
+        self._agent_action.value = action
+        self._demands_cvx.value = self._demands
         solve_mosek(self.prob, self.verbose)
-        action = self.projected_action.value
+        action = self._projected_action.value
         return action
 
     def __repr__(self) -> str:
         """Returns the string representation of charging gym."""
-        return (f'EVChargingGym (action projection = {self.project_action_in_env}, moer forecast steps = {self.moer_forecast_steps}) '
+        return (f'EVChargingGym (action projection = {self.project_action_in_env}, '
+                f'moer forecast steps = {self.moer_forecast_steps}) '
                 f'using {self.data_generator.__repr__()}')
 
-    def step(self, action: np.ndarray, return_info: bool = False
+    def step(self, action: np.ndarray, return_all_info: bool = False
              ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         """Steps the environment.
 
@@ -238,8 +239,8 @@ class EVChargingEnv(Env):
         Args:
             action: action: shape [num_stations], normalized charging rate
                 for each charging station between 0 and 1.
-            return_info: info is always returned, but if return_info is set
-                to False, only 'max_profit' and 'reward_breakdown' are
+            return_all_info: info is always returned, but if return_all_info is
+                set to False, only 'max_profit' and 'reward_breakdown' are
                 returned.
 
         Returns:
@@ -289,7 +290,7 @@ class EVChargingEnv(Env):
         # Retrieve environment information
         observation = self._get_observation()
         reward = self._get_reward(schedule)
-        info = self._get_info(return_info)
+        info = self._get_info(return_all_info)
 
         # terminated, truncated at end of day
         return observation, reward, done, done, info
@@ -320,12 +321,13 @@ class EVChargingEnv(Env):
 
         # Initialize network, events, MOER data, simulator, interface, and timestep
         self.cn = site_str_to_site(self.data_generator.site)
-        self.events, self.evs, num_plugs = self.data_generator.get_event_queue()
+        events, self._evs, num_plugs = self.data_generator.get_event_queue()
         self.moer = self.data_generator.get_moer()
-        self._simulator = acns.Simulator(network=self.cn, scheduler=None,
-                                         events=self.events, start=self.data_generator.day,
-                                         period=self.data_generator.TIME_STEP_DURATION, verbose=False)
-        self.interface = acns.Interface(self._simulator)
+        self._simulator = acns.Simulator(
+            network=self.cn, scheduler=None, events=events,
+            start=self.data_generator.day,
+            period=self.data_generator.TIME_STEP_DURATION, verbose=False)
+        self._interface = acns.Interface(self._simulator)
         self.timestep = 0
 
         # Restart information tracking for reward component
@@ -382,7 +384,7 @@ class EVChargingEnv(Env):
         """Returns observations for the current state of simulation."""
         self._est_departures.fill(0)
         self._demands.fill(0)
-        for session_info in self.interface.active_sessions():
+        for session_info in self._interface.active_sessions():
             station_idx = self._evse_name_to_idx[session_info.station_id]
             self._est_departures[station_idx] = session_info.estimated_departure - self.timestep
             self._demands[station_idx] = session_info.remaining_demand  # kWh
@@ -400,31 +402,29 @@ class EVChargingEnv(Env):
             all: whether all information should be returned. Otherwise, only
                 'max_profit' and 'reward_breakdown' are returned.
         """
+        info = {
+            'max_profit': self._calculate_max_profit(),
+            'reward_breakdown': self._reward_breakdown
+        }
         if all:
-            return {
-                'num_evs': len(self.evs),
+            info.update({
+                'num_evs': len(self._evs),
                 'avg_plugin_time': self._calculate_avg_plugin_time(),
-                'max_profit': self._calculate_max_profit(),
-                'reward_breakdown': self._reward_breakdown,
-                'evs': self.evs,
+                'evs': self._evs,
                 'active_evs': self._simulator.get_active_evs(),
                 'moer': self.moer,
-                'pilot_signals': self._simulator.pilot_signals_as_df(),
-            }
-        else:
-            return {
-                'max_profit': self._calculate_max_profit(),
-                'reward_breakdown': self._reward_breakdown,
-            }
+                'pilot_signals': self._simulator.pilot_signals_as_df()
+            })
+        return info
 
     def _calculate_avg_plugin_time(self) -> float:
         """Calculate average plug-in times for evs in periods."""
-        return np.mean(np.array([ev.departure - ev.arrival for ev in self.evs]))
+        return np.mean([ev.departure - ev.arrival for ev in self._evs])
 
     def _calculate_max_profit(self) -> float:
         """Calculate max profits without regards to network constraints."""
-        requested_energy = np.array([ev.requested_energy for ev in self.evs])
-        duration_in_periods = np.array([ev.departure - ev.arrival for ev in self.evs])
+        requested_energy = np.array([ev.requested_energy for ev in self._evs])
+        duration_in_periods = np.array([ev.departure - ev.arrival for ev in self._evs])
         max_kwh_in_duration = duration_in_periods * 32 * self.A_PERS_TO_KWH
         max_kwh_to_provide = np.minimum(requested_energy, max_kwh_in_duration)
         max_profit = np.sum(max_kwh_to_provide * self.MARGINAL_PROFIT_PER_KWH)
@@ -469,7 +469,7 @@ class EVChargingEnv(Env):
 
     def close(self) -> None:
         """Close the environment. Delete internal variables."""
-        del self._simulator, self.interface, self.events, self.cn
+        del self._simulator, self._interface, self.cn
 
 
 if __name__ == '__main__':
