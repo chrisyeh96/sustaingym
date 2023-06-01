@@ -168,8 +168,7 @@ class AbstractTraceGenerator:
             battery = acns.Linear2StageBattery(
                 capacity=self.BATTERY_CAPACITY,
                 init_charge=max(0, self.BATTERY_CAPACITY - requested_energy),
-                max_power=self.MAX_POWER
-            )
+                max_power=self.MAX_POWER)
 
             # Create electric vehicle
             ev = acns.EV(
@@ -179,8 +178,7 @@ class AbstractTraceGenerator:
                 station_id=samples['station_id'].iloc[i],
                 session_id=samples['session_id'].iloc[i],
                 battery=battery,
-                estimated_departure=samples['estimated_departure'].iloc[i]
-            )
+                estimated_departure=samples['estimated_departure'].iloc[i])
 
             # Add PluginEvent and let the simulator take care of UnplugEvent
             event = acns.PluginEvent(samples['arrival'].iloc[i], ev)
@@ -266,7 +264,7 @@ class RealTraceGenerator(AbstractTraceGenerator):
     def set_seed(self, seed: int | None) -> None:
         """If days are sequential, sets the day. Otherwise, sets the random number generator."""
         if self.sequential:
-            if seed:
+            if seed is not None:
                 self.day = self.date_range[0] + timedelta(days=seed % self.num_days_in_date_range)
         else:
             super().set_seed(seed)
@@ -330,26 +328,24 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         *See AbstractTraceGenerator for more attributes
 
     Notes about saved GMMs:
-        package default gmm directory: in package sustaingym.envs.evcharging.
-            The folder structure is as follows:
-            gmms_ev_charging
+        default gmm directory: in package sustaingym/data/evcharging/gmms
+            gmms
             |----caltech
-            |   |--------2019-05-01 2019-08-31 30
-            |   |--------2019-09-01 2019-12-31 30
-            |   |--------2020-02-01 2020-05-31 30
-            |   |--------2021-05-01 2021-08-31 30
+            |   |---2019-05-01 2019-08-31 30.pkl
+            |   |---2019-09-01 2019-12-31 30.pkl
+            |   |---2020-02-01 2020-05-31 30.pkl
+            |   |---2021-05-01 2021-08-31 30.pkl
             |----jpl
-            |   |--------2019-05-01 2019-08-31 30
-            |   |--------2019-09-01 2019-12-31 30
-            |   |--------2020-02-01 2020-05-31 30
-            |   |--------2021-05-01 2021-08-31 30
-            Each folder contains a 'model.pkl' file containing a trained GMM,
-                station usage count, and daily session count corresponding to
-                the folder name.
+            |   |---2019-05-01 2019-08-31 30.pkl
+            |   |---2019-09-01 2019-12-31 30.pkl
+            |   |---2020-02-01 2020-05-31 30.pkl
+            |   |---2021-05-01 2021-08-31 30.pkl
+            Each '*.pkl' file containing a trained GMM, station usage count,
+                and daily session count.
         custom gmm directory: GMMs can also be trained on custom date ranges
-            and number components. These are saved in the folder
-            'gmms_ev_charging' relative to the current working directory. See
-            train_gmm_model.py for how to train GMMs from the command line.
+            and number components. These are saved in the 'gmms' folder
+            relative to the current working directory. See train_gmm_model.py
+            for how to train GMMs from the command line.
     """
     ARRCOL, DEPCOL, ESTCOL, EREQCOL = 0, 1, 2, 3
 
