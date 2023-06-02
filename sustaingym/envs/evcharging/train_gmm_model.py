@@ -1,6 +1,12 @@
 """
 GMM training script.
 
+The GMMs are fitted to 4 feature dimensions. The 4 features are, in order,
+- 'arrival_time': minute of day, normalized to [0, 1)
+- 'departure_time': minute of day, normalized to [0, 1)
+- 'estimated_departure_time': minute of day, normalized to [0, 1)
+- 'requested_energy': energy requested; multiply by 100 to get kWh
+
 Example command line usage
 python -m sustaingym.envs.evcharging.train_gmm_model --site caltech --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
 python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31

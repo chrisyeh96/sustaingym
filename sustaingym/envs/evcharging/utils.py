@@ -77,7 +77,7 @@ STATION_USAGE_KEY = 'station_usage'
 
 def to_la_dt(s: str) -> datetime:
     """Converts string '%Y-%m-%d' to datetime localized in LA Time."""
-    return datetime.strptime(s, DATE_FORMAT).astimezone(tz=AM_LA)
+    return datetime.strptime(s, DATE_FORMAT).replace(tzinfo=AM_LA)
 
 
 def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
