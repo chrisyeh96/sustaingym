@@ -10,14 +10,14 @@ from ray.rllib.algorithms import a2c, ppo, sac
 from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from ray.tune.registry import register_env
 
-from sustaingym.envs.evcharging import EVChargingEnv, RealTraceGenerator, \
-    GMMsTraceGenerator, DiscreteActionWrapper, MultiAgentEVChargingEnv
 from sustaingym.algorithms.evcharging.baselines import RLLibAlgorithm
+from sustaingym.envs.evcharging import (EVChargingEnv, RealTraceGenerator,
+    GMMsTraceGenerator, DiscreteActionWrapper, MultiAgentEVChargingEnv)
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
 from sustaingym.envs.evcharging.utils import DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, SiteStr
 
 
-###
+# shortened periods (14 days, instead of 3-month ranges)
 SAMPLE_EVAL_PERIODS = {
     'Summer 2019':   ('2019-07-01', '2019-07-14'),
     'Fall 2019':     ('2019-11-04', '2019-11-17'),
@@ -25,7 +25,7 @@ SAMPLE_EVAL_PERIODS = {
     'Summer 2021':   ('2021-07-05', '2021-07-18'),
 }
 
-ENV_NAME = "evcharging"
+ENV_NAME = 'evcharging'
 
 SPB = 10_000  # steps per batch
 TOTAL_STEPS = 250_000  # 10_000
@@ -59,15 +59,15 @@ def parse_args() -> dict:
     args = parser.parse_args()
 
     config = {
-        "algo": args.algo,
-        "dp": ' '.join(args.train_date_period),
-        "site": args.site,
-        "discrete": args.discrete,
-        "multiagent": args.multiagent,
-        "periods_delay": args.periods_delay,
-        "seed": args.seed
+        'algo': args.algo,
+        'dp': ' '.join(args.train_date_period),
+        'site': args.site,
+        'discrete': args.discrete,
+        'multiagent': args.multiagent,
+        'periods_delay': args.periods_delay,
+        'seed': args.seed
     }
-    print("Config: ", config)
+    print('Config: ', config)
     return config
 
 
