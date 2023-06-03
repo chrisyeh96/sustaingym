@@ -39,7 +39,6 @@ class MultiAgentEVChargingEnv(ParallelEnv):
                  periods_delay: int = 0,
                  moer_forecast_steps: int = 36,
                  project_action_in_env: bool = True,
-                 vectorize_obs: bool = True,
                  discrete: bool = False,
                  verbose: int = 0):
         self.periods_delay = periods_delay
