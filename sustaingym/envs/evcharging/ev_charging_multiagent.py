@@ -10,6 +10,7 @@ from gymnasium import spaces
 import numpy as np
 from pettingzoo import ParallelEnv
 
+from sustaingym.envs.evcharging.discrete_action_wrapper import DiscreteActionWrapper
 from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
 
@@ -38,6 +39,11 @@ class MultiAgentEVChargingEnv(ParallelEnv):
                  periods_delay: int = 0,
                  moer_forecast_steps: int = 36,
                  project_action_in_env: bool = True,
+<<<<<<< Updated upstream
+=======
+                 vectorize_obs: bool = True,
+                 discrete: bool = False,
+>>>>>>> Stashed changes
                  verbose: int = 0):
         self.periods_delay = periods_delay
 
@@ -48,6 +54,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             moer_forecast_steps=moer_forecast_steps,
             project_action_in_env=project_action_in_env,
             verbose=verbose)
+        if discrete:
+            self.single_env = DiscreteActionWrapper(self.single_env)
 
         # Petting zoo API
         self.agents = self.single_env.cn.station_ids[:]
@@ -60,9 +68,18 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         self.observation_spaces = {
             agent: spaces.flatten_space(self._dict_observation_spaces[agent])
             for agent in self.agents}  # flattened observations
+<<<<<<< Updated upstream
         self.action_spaces = {
             agent: spaces.Box(0., 1., shape=(1,))
             for agent in self.agents}  # singular actions
+=======
+        
+        if discrete:
+            self.action_spaces = {agent: spaces.MultiDiscrete([5]) for agent in self.agents}
+        else:
+            self.action_spaces = {agent: spaces.Box(0.0, 1.0, shape=(1,)) \
+                    for agent in self.agents}  # singular actions
+>>>>>>> Stashed changes
 
         # Create queue of previous observations to implement time-delay
         self._past_obs_agg = deque[dict[str, Any]](maxlen=self.periods_delay)
@@ -131,8 +148,12 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             actions_agg[i] = action[agent]
 
         # Use internal single-agent environment
+<<<<<<< Updated upstream
         obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(
             actions_agg, return_all_info=return_all_info)
+=======
+        obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(actions_agg)
+>>>>>>> Stashed changes
         rew = rews_agg / self.num_agents
         obs = self._create_dict_from_obs_agg(obs_agg)
 

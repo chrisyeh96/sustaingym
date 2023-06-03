@@ -105,9 +105,11 @@ class BaseEVChargingAlgorithm:
             while not done:
                 action = self.get_action(obs)
                 obs, reward, terminated, truncated, info = self.env.step(action)
-                if type(reward) == dict:
+                if type(reward) == dict:  # then it's multiagent
                     reward = sum(reward.values())
-                done = terminated or truncated
+                    done = terminated['__all__'] or truncated['__all__']
+                else:
+                    done = terminated or truncated
                 episode_reward += reward
 
             # Collect reward info from environment

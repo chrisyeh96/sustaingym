@@ -27,9 +27,10 @@ SAMPLE_EVAL_PERIODS = {
 
 ENV_NAME = 'evcharging'
 
-SPB = 10_000  # steps per batch
-TOTAL_STEPS = 250_000  # 10_000
-EVAL_EPISODES = 14  # 2
+SPB = 10_000  # 1_000  # steps per batch
+TOTAL_STEPS = 250_000  # 2_000
+EVAL_EPISODES = 0  # 14
+ROLLOUT_FRAGMENT_LENGTH = 1_000  # 'auto'
 RLLIB_PATH = 'logs/RLLib'
 TRAIN_RESULTS, TEST_RESULTS = 'train_results.csv', 'test_results.csv'
 
@@ -56,16 +57,20 @@ def parse_args() -> dict:
     parser.add_argument(
         '-r', '--seed', type=int, default=123,
         help='Random seed')
+    parser.add_argument(
+        '-l', '--lr', type=float, default=5e-5,
+        help='Learning rate')
     args = parser.parse_args()
 
     config = {
-        'algo': args.algo,
-        'dp': ' '.join(args.train_date_period),
-        'site': args.site,
-        'discrete': args.discrete,
-        'multiagent': args.multiagent,
-        'periods_delay': args.periods_delay,
-        'seed': args.seed
+        "algo": args.algo,
+        "dp": ' '.join(args.train_date_period),
+        "site": args.site,
+        "discrete": args.discrete,
+        "multiagent": args.multiagent,
+        "periods_delay": args.periods_delay,
+        "seed": args.seed,
+        "lr": args.lr,
     }
     print('Config: ', config)
     return config
@@ -108,7 +113,9 @@ def get_env(full: bool, real_trace: bool, dp: str, site: SiteStr, discrete: bool
         
         if discrete:
             if multiagent:
-                raise ValueError("discrete = True and multiagent = True currently not supported")
+                return ParallelPettingZooEnv(
+                    MultiAgentEVChargingEnv(gen, periods_delay=periods_delay, discrete=True)
+                )
             else:
                 return DiscreteActionWrapper(gym.wrappers.FlattenObservation(EVChargingEnv(gen)))
         else:
@@ -140,35 +147,40 @@ def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
         raise ValueError(f"{config['algo']} not in ['ppo', 'sac', 'a2c']")
     del config['algo']
 
+    lr = config['lr']
+    del config['lr']
+
     config['full'], config['real_trace'] = True, False
     train_config = (
         train_config
         .environment(ENV_NAME, env_config=config)
-        .training(train_batch_size=SPB)
+        .training(train_batch_size=SPB, lr=lr)
+        .resources(num_gpus=1)
     )
     if config['multiagent']:
-        train_config = train_config.rollouts(rollout_fragment_length=200)
+        train_config = train_config.rollouts(rollout_fragment_length=ROLLOUT_FRAGMENT_LENGTH)
     algo = train_config.build(env=ENV_NAME)
 
-    # running eval environment
-    config['full'], config['real_trace'], config['dp'], config['seed'] = False, True, 'Summer 2021', 0
-    env = get_env(**config)()
+    # # running eval environment
+    # config['full'], config['real_trace'], config['dp'], config['seed'] = False, True, 'Summer 2021', 0
+    # env = get_env(**config)()
 
-    train_results = []
+    # train_results = []
     for i in range(TOTAL_STEPS // SPB):
         print(f"Iteration {i}")
         algo.train()
         algo.save()
         num_steps += SPB
 
-        env = get_env(**config)()
-        rllib_algo = RLLibAlgorithm(env, algo, multiagent=config['multiagent'])
-        reward_breakdown = rllib_algo.run(EVAL_EPISODES).to_dict('list')
-        print(reward_breakdown)
-        train_results.append(reward_breakdown)
+        # env = get_env(**config)()
+        # rllib_algo = RLLibAlgorithm(env, algo, multiagent=config['multiagent'])
+        # reward_breakdown = rllib_algo.run(EVAL_EPISODES).to_dict('list')
+        # print(reward_breakdown)
+        # train_results.append(reward_breakdown)
 
-    train_results_df = pd.DataFrame(train_results, index=range(1 * SPB, TOTAL_STEPS + SPB, SPB))
-    train_results_df.to_csv(os.path.join(SAVE_PATH, TRAIN_RESULTS))
+    # train_results_df = pd.DataFrame(train_results, index=range(1 * SPB, TOTAL_STEPS + SPB, SPB))
+    # train_results_df.to_csv(os.path.join(SAVE_PATH, TRAIN_RESULTS))
+    train_results_df = None
 
     # eval
     config['full'], config['real_trace'], config['dp'], config['seed'] = True, True, 'Summer 2021', 0
@@ -184,8 +196,14 @@ def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
 
 def read_experiment(env_config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     s = config_to_str(env_config)
-    train_results_df = pd.read_csv(os.path.join(RLLIB_PATH, s, TRAIN_RESULTS), index_col=0)
-    test_results_df = pd.read_csv(os.path.join(RLLIB_PATH, s, TEST_RESULTS), index_col=0)
+    try:
+        train_results_df = pd.read_csv(os.path.join(RLLIB_PATH, s, TRAIN_RESULTS), index_col=0)
+    except Exception as e:
+        train_results_df = None
+    try:
+        test_results_df = pd.read_csv(os.path.join(RLLIB_PATH, s, TEST_RESULTS), index_col=0)
+    except:
+        test_results_df = None
     return train_results_df, test_results_df
 
 
