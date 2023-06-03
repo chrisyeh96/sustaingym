@@ -1,31 +1,32 @@
+# TO RUN, copy-paste in terminal:
 # ./sustaingym/scripts/evcharging/run_train_rllib_lr5e-6.sh
 
 
 # --- PPO ---
 
-# Single-agent continuous
-python -m sustaingym.scripts.evcharging.train_rllib -a ppo -t Summer 2021 -s caltech -r 123 --lr 5e-6
+# # DONE: Single-agent continuous
+# python -m sustaingym.scripts.evcharging.train_rllib -a ppo -t Summer 2021 -s caltech -r 123 --lr 5e-6
 
-# Single-agent discrete
-python -m sustaingym.scripts.evcharging.train_rllib -a ppo -t Summer 2021 -s caltech -r 123 --lr 5e-6 -d
+# # DONE: Single-agent discrete
+# python -m sustaingym.scripts.evcharging.train_rllib -a ppo -t Summer 2021 -s caltech -r 123 --lr 5e-6 -d
 
-# Multi-agent continuous
+# NOT WORKING: Multi-agent continuous
 python -m sustaingym.scripts.evcharging.train_rllib -a ppo -t Summer 2021 -s caltech -r 123 --lr 5e-6 -m
 
-# Multi-agent discrete
+# NOT WORKING: Multi-agent discrete
 python -m sustaingym.scripts.evcharging.train_rllib -a ppo -t Summer 2021 -s caltech -r 123 --lr 5e-6 -m -d
 
 
 # --- SAC ---
 
-# Single-agent continuous
-python -m sustaingym.scripts.evcharging.train_rllib -a sac -t Summer 2021 -s caltech -r 123 --lr 5e-6
+# # DONE: Single-agent continuous
+# python -m sustaingym.scripts.evcharging.train_rllib -a sac -t Summer 2021 -s caltech -r 123 --lr 5e-6
 
-# Single-agent discrete
+# NOT WORKING: Single-agent discrete
 python -m sustaingym.scripts.evcharging.train_rllib -a sac -t Summer 2021 -s caltech -r 123 --lr 5e-6 -d
 
-# Multi-agent continuous
+# NOT WORKING: Multi-agent continuous
 python -m sustaingym.scripts.evcharging.train_rllib -a sac -t Summer 2021 -s caltech -r 123 --lr 5e-6 -m
 
-# Multi-agent discrete
+# NOT WORKING: Multi-agent discrete
 python -m sustaingym.scripts.evcharging.train_rllib -a sac -t Summer 2021 -s caltech -r 123 --lr 5e-6 -m -d

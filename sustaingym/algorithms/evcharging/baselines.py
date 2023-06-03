@@ -117,8 +117,7 @@ class BaseEVChargingAlgorithm:
             if 'reward_breakdown' not in info:
                 # assume multiagent, so extract a single agent's info dict
                 station = list(info.keys())[0]
-                info = info[station]
-            if 'reward_breakdown' in info:
+w            if 'reward_breakdown' in info:
                 for rb in info['reward_breakdown']:
                     reward_breakdown[rb].append(info['reward_breakdown'][rb])
                 reward_breakdown['max_profit'].append(info['max_profit'])
