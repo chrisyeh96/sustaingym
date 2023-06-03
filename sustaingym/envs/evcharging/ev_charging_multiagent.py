@@ -39,11 +39,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
                  periods_delay: int = 0,
                  moer_forecast_steps: int = 36,
                  project_action_in_env: bool = True,
-<<<<<<< Updated upstream
-=======
-                 vectorize_obs: bool = True,
                  discrete: bool = False,
->>>>>>> Stashed changes
                  verbose: int = 0):
         self.periods_delay = periods_delay
 
@@ -68,18 +64,14 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         self.observation_spaces = {
             agent: spaces.flatten_space(self._dict_observation_spaces[agent])
             for agent in self.agents}  # flattened observations
-<<<<<<< Updated upstream
-        self.action_spaces = {
-            agent: spaces.Box(0., 1., shape=(1,))
-            for agent in self.agents}  # singular actions
-=======
         
         if discrete:
-            self.action_spaces = {agent: spaces.MultiDiscrete([5]) for agent in self.agents}
+            self.action_spaces = {
+                 agent: spaces.Discrete(5) for agent in self.agents}
         else:
-            self.action_spaces = {agent: spaces.Box(0.0, 1.0, shape=(1,)) \
-                    for agent in self.agents}  # singular actions
->>>>>>> Stashed changes
+            # singular actions
+            self.action_spaces = {
+                agent: spaces.Box(0., 1., shape=(1,)) for agent in self.agents}
 
         # Create queue of previous observations to implement time-delay
         self._past_obs_agg = deque[dict[str, Any]](maxlen=self.periods_delay)
@@ -128,13 +120,6 @@ class MultiAgentEVChargingEnv(ParallelEnv):
                 td_obs[agent] = spaces.flatten(self._dict_observation_spaces[agent], td_obs[agent])
             return td_obs
 
-    def _create_dict_from_infos_agg(self, infos_agg: dict[str, Any]) -> dict[str, dict[str, Any]]:
-        """Every agent gets global information."""
-        infos = {}
-        for agent in self.agents:
-            infos[agent] = infos_agg
-        return infos
-
     def step(self, action: dict[str, np.ndarray],
              return_all_info: bool = False) -> tuple[
             dict[str, np.ndarray], dict[str, float], dict[str, bool],
@@ -148,12 +133,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             actions_agg[i] = action[agent]
 
         # Use internal single-agent environment
-<<<<<<< Updated upstream
         obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(
             actions_agg, return_all_info=return_all_info)
-=======
-        obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(actions_agg)
->>>>>>> Stashed changes
         rew = rews_agg / self.num_agents
         obs = self._create_dict_from_obs_agg(obs_agg)
 
@@ -183,7 +164,9 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         self.agents = self.possible_agents[:]
 
         if return_info:
-            return obs, self._create_dict_from_infos_agg(info_agg)
+            # every agent gets same global information
+            infos = {agent: info_agg for agent in self.agents}
+            return obs, infos
         else:
             return obs
 

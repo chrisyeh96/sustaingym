@@ -37,4 +37,4 @@ class DiscreteActionWrapper(ActionWrapper):
 
     def action(self, act: np.ndarray) -> np.ndarray:
         """Converts {0, 1, 2, 3, 4} to {0.0, 0.25, 0.5, 0.75, 1.0}."""
-        return act / 4
+        return act.astype(np.float32) / 4
