@@ -133,6 +133,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             actions_agg[i] = action[agent]
 
         # Use internal single-agent environment
+        # - agents split the reward evenly
         obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(
             actions_agg, return_all_info=return_all_info)
         rew = rews_agg / self.num_agents
