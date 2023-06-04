@@ -18,7 +18,7 @@ import sklearn.mixture as mixture
 
 from .train_gmm_model import create_gmms
 from .utils import (COUNT_KEY, DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, GMM_KEY,
-                    REQ_ENERGY_SCALE, STATION_USAGE_KEY, AM_LA,
+                    MINS_IN_DAY, REQ_ENERGY_SCALE, STATION_USAGE_KEY, AM_LA,
                     DefaultPeriodStr, SiteStr, load_gmm_model,
                     site_str_to_site, get_real_events)
 from sustaingym.data.load_moer import MOERLoader
@@ -124,7 +124,7 @@ class AbstractTraceGenerator:
         self.rng = np.random.default_rng(seed=seed)
 
     def _create_events(self) -> pd.DataFrame:
-        """Creates a DataFrame of charging events information.
+        """Creates a DataFrame of charging events for a single day.
 
         Returns:
             DataFrame containing charging info.
@@ -265,6 +265,18 @@ class RealTraceGenerator(AbstractTraceGenerator):
 
     def set_seed(self, seed: int | None) -> None:
         """If days are sequential, sets the day. Otherwise, sets the random number generator."""
+        # TODO(chris): issue when using sequential. The typical usage is
+        # generator.set_seed(seed=1)
+        # event_queue, evs, num_plug_events = generator.get_event_queue()
+        #   -> which calls generator._create_events()
+        #        -> which calls generator._update_day(). This increments the
+        #           day from the seed we set earlier!
+        #
+        # So the following sequence of calls would lead to MOER values offset
+        # from the event_queue by 1 day:
+        # generator.set_seed(seed=1)
+        # moer = generator.get_moer()
+        # event_queue, evs, num_plug_events = generator.get_event_queue()
         if self.sequential:
             if seed is not None:
                 self.day = self.date_range[0] + timedelta(days=seed % self.num_days_in_date_range)
@@ -423,7 +435,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
 
             # rescale arrival, departure, estimated departure
             samples[:, [self.ARRCOL, self.DEPCOL, self.ESTCOL]] = (
-                self.MAX_STEPS_OF_TRACE * samples[:, [self.ARRCOL, self.DEPCOL, self.ESTCOL]]
+                MINS_IN_DAY * samples[:, [self.ARRCOL, self.DEPCOL, self.ESTCOL]]
                 // self.TIME_STEP_DURATION)
 
             # discard sample if arrival >= departure or arrival >= estimated_departure
@@ -441,7 +453,7 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         return np.concatenate(all_samples, axis=0)[:n]
 
     def _create_events(self) -> pd.DataFrame:
-        """Creates artificial events for the event queue.
+        """Creates artificial events for the event queue for a single day.
 
         This method first calls _sample() to generate the arrival, departure,
         estimated departure, and requested energy fields. Then, it fills
