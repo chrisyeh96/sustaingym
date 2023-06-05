@@ -185,7 +185,6 @@ def run_mpc(seeds: Sequence[int], env: gym.Env
         ep_energy = np.zeros(env.MAX_STEPS_PER_EPISODE)
         ep_dispatch = np.zeros(env.MAX_STEPS_PER_EPISODE)
 
-
         for count in range(env.MAX_STEPS_PER_EPISODE):
             print("calculating baseline no agent prices...")
             lookahead_prices = env._calculate_lookahead_prices_without_agent(count)

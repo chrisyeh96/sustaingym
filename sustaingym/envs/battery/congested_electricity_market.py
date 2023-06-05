@@ -1034,7 +1034,6 @@ class CongestedElectricityMarketEnv(Env):
             x_bat_c: array of shape [num_bats], battery charge amounts
             price: array of shape [num_buses], nodal prices
         """
-        
         if demand is None:
             self.demand[:] = self._generate_load_data(count)
         else:
@@ -1076,7 +1075,15 @@ class CongestedElectricityMarketEnv(Env):
         self.battery_charge = battery_charge_save
         return prices
 
-    def _calculate_lookahead_prices_without_agent(self, count: int):
+    def _calculate_lookahead_prices_without_agent(self, count: int) -> np.ndarray:
+        """
+        Args:
+            count: int, which day of month
+
+        Returns:
+            prices: array, shape [self.load_forecast_steps + 1], prices under
+                price-taking assumption
+        """
         load = self._generate_load_data(count)
         load_forecast = self._generate_load_forecast_data(count, self.load_forecast_steps)
 
@@ -1104,7 +1111,7 @@ class CongestedElectricityMarketEnv(Env):
 
     def _calculate_price_taking_optimal(
             self, prices: np.ndarray, init_charge: float,
-            final_charge: float, steps: int or None = None) -> dict[str, np.ndarray]:
+            final_charge: float, steps: int | None = None) -> dict[str, np.ndarray]:
         """Calculates optimal episode, under price-taking assumption.
 
         Args:
@@ -1113,14 +1120,13 @@ class CongestedElectricityMarketEnv(Env):
                 initial energy level for agent battery
             final_charge: float, minimum final energy level of agent battery
             steps: int, optional value representing the number of steps to
-            optimize over
+                optimize over
 
         Returns:
             results dict, keys are ['rewards', 'dispatch', 'energy', 'net_prices'],
                 values are arrays of shape [num_steps].
                 'net_prices' is prices + carbon cost
         """
-
         if steps is None:
             c = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # charging (in MWh)
             d = cp.Variable(self.MAX_STEPS_PER_EPISODE)  # discharging (in MWh)
