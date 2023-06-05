@@ -273,6 +273,8 @@ class RealTraceGenerator(AbstractTraceGenerator):
         number generator.
         """
         if self.sequential:
+            if seed is None:
+                seed = 0
             self.day = self.date_range[0] + timedelta(days=seed % self.num_days_in_date_range)
         else:
             super().set_seed(seed)

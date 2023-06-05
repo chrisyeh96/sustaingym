@@ -1,20 +1,26 @@
+from __future__ import annotations
+
 import argparse
+from collections import defaultdict
+from collections.abc import Callable
 from datetime import datetime
 import os
 import string
-from typing import Callable
+from typing import Any
 
 import gymnasium as gym
 import pandas as pd
-from ray.rllib.algorithms import a2c, ppo, sac
+from ray.rllib.algorithms import ppo, sac
 from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from ray.tune.registry import register_env
+from tqdm import tqdm
 
 from sustaingym.algorithms.evcharging.baselines import RLLibAlgorithm
 from sustaingym.envs.evcharging import (EVChargingEnv, RealTraceGenerator,
     GMMsTraceGenerator, DiscreteActionWrapper, MultiAgentEVChargingEnv)
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
-from sustaingym.envs.evcharging.utils import DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, SiteStr
+from sustaingym.envs.evcharging.utils import (
+    DATE_FORMAT, DEFAULT_PERIOD_TO_RANGE, SiteStr)
 
 
 # shortened periods (14 days, instead of 3-month ranges)
@@ -27,30 +33,33 @@ SAMPLE_EVAL_PERIODS = {
 
 ENV_NAME = 'evcharging'
 
-SPB = 10_000  # 1_000  # steps per batch
-TOTAL_STEPS = 250_000  # 2_000
+SPB = 4_000  # steps per batch
+TOTAL_STEPS = 250_000
 EVAL_EPISODES = 0  # 14
 ROLLOUT_FRAGMENT_LENGTH = 1_000  # 'auto'
-RLLIB_PATH = 'logs/RLLib'
+SAVE_BASE_DIR = 'logs/evcharging/rllib'
 TRAIN_RESULTS, TEST_RESULTS = 'train_results.csv', 'test_results.csv'
 
 
-def parse_args() -> dict:
+def parse_args() -> dict[str, Any]:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(
         description='train RLLib models on EVChargingEnv',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
-        '-a', '--algo', type=str, default='ppo',
-        help="'ppo', 'a2c', or 'sac'")
+        '-a', '--algo', default='ppo',
+        choices=['ppo', 'sac'],
+        help="'ppo' or 'sac'")
     parser.add_argument(
-        '-t', '--train_date_period', type=str, nargs='+', default='Summer 2019',  ##
-        help="Season. 'Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer 2021'")
+        '-t', '--train_date_period', default='Summer 2021',
+        choices=['Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer 2021'],
+        help='Season.')
     parser.add_argument(
-        '-s', '--site', type=str, default='caltech',
+        '-s', '--site', default='caltech',
+        choices=['caltech', 'jpl'],
         help='site of garage. caltech or jpl')
-    parser.add_argument('-d', '--discrete', action=argparse.BooleanOptionalAction)
-    parser.add_argument('-m', '--multiagent', action=argparse.BooleanOptionalAction)
+    parser.add_argument('-d', '--discrete', action='store_true')
+    parser.add_argument('-m', '--multiagent', action='store_true')
     parser.add_argument(
         '-p', '--periods_delay', type=int, default=0,
         help='communication delay in multiagent setting. Ignored for single agent.')
@@ -64,7 +73,7 @@ def parse_args() -> dict:
 
     config = {
         "algo": args.algo,
-        "dp": ' '.join(args.train_date_period),
+        "dp": args.train_date_period,
         "site": args.site,
         "discrete": args.discrete,
         "multiagent": args.multiagent,
@@ -72,7 +81,7 @@ def parse_args() -> dict:
         "seed": args.seed,
         "lr": args.lr,
     }
-    print('Config: ', config)
+    print('Config:', config)
     return config
 
 
@@ -83,8 +92,9 @@ def num_days_in_period(full: bool, dp: str) -> int:
     return (dts[1] - dts[0]).days + 1
 
 
-def get_env(full: bool, real_trace: bool, dp: str, site: SiteStr, discrete: bool = False,
-            multiagent: bool = True, periods_delay: int = 0, seed: int= None) -> Callable:
+def get_env(full: bool, real_trace: bool, dp: str, site: SiteStr,
+            discrete: bool = False, multiagent: bool = True,
+            periods_delay: int = 0, seed: int | None = None) -> Callable:
     """Return environment.
 
     Args:
@@ -105,7 +115,7 @@ def get_env(full: bool, real_trace: bool, dp: str, site: SiteStr, discrete: bool
     """
     date_period = DEFAULT_PERIOD_TO_RANGE[dp] if full else SAMPLE_EVAL_PERIODS[dp]
 
-    def _get_env():
+    def _get_env() -> Any:
         if real_trace:
             gen: AbstractTraceGenerator = RealTraceGenerator(site, date_period)
         else:
@@ -132,7 +142,7 @@ def config_to_str(config: dict) -> str:
     return savedir
 
 
-def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+def run_algo(config: dict, save_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     num_steps = 0
 
     # train environment
@@ -141,10 +151,8 @@ def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
         train_config = ppo.PPOConfig()
     elif config['algo'] == 'sac':
         train_config = sac.SACConfig()
-    elif config['algo'] == 'a2c':
-        train_config = a2c.A2CConfig()
     else:
-        raise ValueError(f"{config['algo']} not in ['ppo', 'sac', 'a2c']")
+        raise ValueError(f"{config['algo']} not in ['ppo', 'sac']")
     del config['algo']
 
     lr = config['lr']
@@ -155,6 +163,7 @@ def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
         train_config
         .environment(ENV_NAME, env_config=config)
         .training(train_batch_size=SPB, lr=lr)
+        .rollouts(num_rollout_workers=2, num_envs_per_worker=2)
         .resources(num_gpus=1)
     )
     if config['multiagent']:
@@ -165,11 +174,15 @@ def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     # config['full'], config['real_trace'], config['dp'], config['seed'] = False, True, 'Summer 2021', 0
     # env = get_env(**config)()
 
-    # train_results = []
-    for i in range(TOTAL_STEPS // SPB):
-        print(f"Iteration {i}")
-        algo.train()
-        algo.save()
+    train_info = defaultdict(list)
+    for i in tqdm(range(TOTAL_STEPS // SPB)):
+        results = algo.train()
+        algo.save(checkpoint_dir=save_dir)
+
+        train_info['iter'].append(i)
+        train_info['episode_reward_mean'].append(results['episode_reward_mean'])
+        train_info['num_env_steps_trained'].append(results['num_env_steps_trained'])
+        train_info['episodes_total'].append(results['episodes_total'])
         num_steps += SPB
 
         # env = get_env(**config)()
@@ -180,16 +193,16 @@ def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     # train_results_df = pd.DataFrame(train_results, index=range(1 * SPB, TOTAL_STEPS + SPB, SPB))
     # train_results_df.to_csv(os.path.join(SAVE_PATH, TRAIN_RESULTS))
-    train_results_df = None
+    train_results_df = pd.DataFrame(train_info)
+    train_results_df.to_csv(os.path.join(save_dir, TRAIN_RESULTS))
 
     # eval
     config['full'], config['real_trace'], config['dp'], config['seed'] = True, True, 'Summer 2021', 0
     eval_env = get_env(**config)()
     rllib_algo = RLLibAlgorithm(eval_env, algo, multiagent=config['multiagent'])
     ndip = num_days_in_period(True, 'Summer 2021')
-    reward_breakdown = rllib_algo.run(ndip).to_dict('list')
-    test_results_df = pd.DataFrame(reward_breakdown)
-    test_results_df.to_csv(os.path.join(SAVE_PATH, TEST_RESULTS))
+    test_results_df = rllib_algo.run(ndip)
+    test_results_df.to_csv(os.path.join(save_dir, TEST_RESULTS))
 
     return train_results_df, test_results_df
 
@@ -197,11 +210,11 @@ def run_algo(config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
 def read_experiment(env_config: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
     s = config_to_str(env_config)
     try:
-        train_results_df = pd.read_csv(os.path.join(RLLIB_PATH, s, TRAIN_RESULTS), index_col=0)
+        train_results_df = pd.read_csv(os.path.join(SAVE_BASE_DIR, s, TRAIN_RESULTS), index_col=0)
     except Exception as e:
         train_results_df = None
     try:
-        test_results_df = pd.read_csv(os.path.join(RLLIB_PATH, s, TEST_RESULTS), index_col=0)
+        test_results_df = pd.read_csv(os.path.join(SAVE_BASE_DIR, s, TEST_RESULTS), index_col=0)
     except:
         test_results_df = None
     return train_results_df, test_results_df
@@ -288,7 +301,6 @@ def plot_violins() -> None:
     import numpy as np
     import seaborn as sns
     from sustaingym.scripts.evcharging.plot_utils import read_baseline
-    from sustaingym.scripts.evcharging.train_rllib import get_best_seeds
     algs = ['offline_optimal', 'greedy', 'random', 'random_discrete']
 
     # Find best MPC
@@ -343,14 +355,23 @@ def plot_violins() -> None:
 if __name__ == '__main__':
 
     # plot_violins()
-    # # plot_reward_curve_separate()
+    # plot_reward_curve_separate()
 
     register_env(ENV_NAME, lambda config: get_env(**config)())
     config = parse_args()
-    config_str = config_to_str(config)
-    SAVE_PATH = os.path.join(RLLIB_PATH, config_str)
-    if not os.path.exists(SAVE_PATH):
-        os.makedirs(SAVE_PATH)
 
-    run_algo(config)
-    train_results_df, test_results_df = read_experiment(config)
+    algo_name = config['algo']
+    if config['multiagent']:
+        delay = config['periods_delay']
+        algo_name = f'ma{delay}-{algo_name}'
+    if config['discrete']:
+        algo_name = f'{algo_name}-discrete'
+
+    # 'logs/evcharging/rllib/{site}_{algo_name}_{train_period}_lr{lr}_seed{seed}'
+    folder_name = f'{config["site"]}_{algo_name}_{config["dp"]}_lr{config["lr"]}_seed{config["seed"]}'
+    save_dir = os.path.join(SAVE_BASE_DIR, folder_name)
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    run_algo(config, save_dir)
+    # train_results_df, test_results_df = read_experiment(config)
