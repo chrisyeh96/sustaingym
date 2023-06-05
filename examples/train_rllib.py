@@ -1,7 +1,7 @@
 """Script to train RL models on ElectricityMarketEnv.
 
 Usage:
-    python train_rllib.py -m MONTH [-v EVAL_MONTH] [-d] [-i] -a ALGORITHM -l LR [-g GAMMA] [-e EVAL_EPISODES] [-o LOG_DIR]
+    python train_rllib.py -m MONTH [-v EVAL_MONTH] [-d] [-i] -a ALGORITHM -l LR [-g GAMMA] [-e EVAL_FREQ] [-n EVAL_EPISODES] [-o LOG_DIR]
 
 Arguments:
     -m MONTH, --month MONTH  month of environment data for training (default: None)
@@ -15,8 +15,10 @@ Arguments:
     -l LR, --lr LR        learning rate (default: None)
     -g GAMMA, --gamma GAMMA
                           discount factor, between 0 and 1 (default: 0.9999)
-    -e EVAL_EPISODES, --eval-episodes EVAL_EPISODES
-                          # of episodes between eval/saving model during training (default: 10)
+    -e EVAL_FREQ, --eval-freq EVAL_FREQ
+                          # of episodes between eval/saving model during training (default: 20)
+    -n EVAL_EPISODES, --eval-episodes EVAL_EPISODES
+                          # of episodes algorithm evaluated on during training (default: 5)
     -o LOG_DIR, --log-dir LOG_DIR
                           directory for saving logs and models (default: .)
 
@@ -31,6 +33,7 @@ Example:
 from __future__ import annotations
 
 import argparse
+from collections import defaultdict
 import os
 import sys
 from typing import Callable, Union
@@ -39,19 +42,27 @@ sys.path.append('..')
 import gymnasium as gym
 from gymnasium.wrappers import FlattenObservation
 import pandas as pd
+import ray
 from ray.rllib.algorithms import a2c, ppo, sac, dqn, ddpg
 from ray.tune.registry import register_env
+from tqdm import tqdm
 
+import sustaingym
 from sustaingym.envs.battery.algorithm import RLLibAlgorithm
 from sustaingym.envs import CongestedElectricityMarketEnv
 from sustaingym.envs.battery.wrapped import CongestedDiscreteActions, DiscreteActions, FlattenActions
 
+ray.init(runtime_env={"py_modules": [sustaingym]})
+
 ENV_NAME = "congested_market"
 TOTAL_STEPS = 250_000
-IN_DIST_TRAIN_RESULTS = 'train_results_in_dist.csv'
-OUT_DIST_TRAIN_RESULTS = 'train_results_out_dist.csv'
-IN_DIST_TEST_RESULTS = 'test_in_dist_results.csv'
-OUT_DIST_TEST_RESULTS = 'test_out_dist_results.csv'
+# IN_DIST_TRAIN_RESULTS = 'train_results_in_dist.csv'
+# OUT_DIST_TRAIN_RESULTS = 'train_results_out_dist.csv'
+# IN_DIST_TEST_RESULTS = 'test_in_dist_results.csv'
+# OUT_DIST_TEST_RESULTS = 'test_out_dist_results.csv'
+TRAIN_RESULTS = 'train_results.csv'
+TEST_RESULTS = 'test_results.csv'
+SAVE_BASE_DIR = 'logs/battery/rllib'
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -82,8 +93,11 @@ def parse_args() -> argparse.Namespace:
         '-g', '--gamma', type=float, default=0.9999,
         help='discount factor, between 0 and 1')
     parser.add_argument(
-        '-e', '--eval-episodes', type=int, default=5,
-        help='# of episodes between eval/saving model during training')
+        '-e', '--eval-freq', type=int, default=20,
+        help='frequency in episodes of eval/saving model during training')
+    parser.add_argument(
+        '-n', '--eval-episodes', type=int, default=5,
+        help='number of episodes to evaluate algorithm on during training')
     parser.add_argument(
         '-o', '--log-dir', default='.',
         help='directory for saving logs and models')
@@ -95,13 +109,13 @@ def parse_args() -> argparse.Namespace:
         "eval month": args.eval_month,
         "discrete": args.discrete,
         "interm_rewards": args.intermediate_rewards,
-
     }
 
     model_config = {
         "algo": args.algo,
         "lr": args.lr,
         "gamma": args.gamma,
+        "eval freq": args.eval_freq,
         "eval episodes": args.eval_episodes,
         "log_dir": args.log_dir 
     }
@@ -194,6 +208,7 @@ def run_algo(env_config: dict, model_config: dict) -> Union[tuple[
     # training env config
     training_env_config = env_config.copy()
     del training_env_config['eval month']
+    env = get_env(**training_env_config)()
 
     if env_config['eval month']:
         # evaluation env config
@@ -201,12 +216,6 @@ def run_algo(env_config: dict, model_config: dict) -> Union[tuple[
         del eval_env_config['month']
         del eval_env_config['eval month']
         eval_env_config['month'] = env_config['eval month']
-    
-    # running train environment call
-    env = get_env(**training_env_config)()
-
-    if env_config['eval month']:
-        # running eval environment call
         eval_env = get_env(**eval_env_config)()
 
     steps_per_ep = env.MAX_STEPS_PER_EPISODE
@@ -219,68 +228,88 @@ def run_algo(env_config: dict, model_config: dict) -> Union[tuple[
         train_config
         .environment(ENV_NAME, env_config=training_env_config)
         .training(gamma=model_config['gamma'], lr=model_config['lr'], train_batch_size=steps_per_ep)
+        .rollouts(num_rollout_workers=2, num_envs_per_worker=2)
+        .resources(num_gpus=1)
     )
     algo = train_config.build(env=ENV_NAME)
 
-    train_results = []
+    # train_results = []
     
-    if env_config['eval month']:
-        train_out_dist_results = []
+    # if env_config['eval month']:
+    #     train_out_dist_results = []
 
-    for i in range(TOTAL_STEPS // steps_per_ep):
-        print(f"Iteration {i}")
-        algo.train()
-        algo.save()
+    train_info = defaultdict(list)
+
+    # save_dir = os.path.join(
+    #         SAVE_BASE_DIR,
+    #         f'{model_config["algo"]}_lr{model_config["lr"]}_month{env_config["month"]}')
+
+    for i in tqdm(range(TOTAL_STEPS // steps_per_ep)):
+        # print(f"Iteration {i}")
+        results = algo.train()
+        algo.save(checkpoint_dir=save_path)
+
+        train_info['iter'].append(i)
+        train_info['episode_reward_mean'].append(results['episode_reward_mean'])
+        train_info['num_env_steps_trained'].append(results['num_env_steps_trained'])
+        train_info['episodes_total'].append(results['episodes_total'])
         num_steps += steps_per_ep
 
         # running train environment call
-        train_env = get_env(**training_env_config)()
+        # train_env = get_env(**training_env_config)()
 
-        if env_config['eval month'] and i % 20 == 0:
-            # running eval environment call
-            eval_env = get_env(**eval_env_config)()
+        # if env_config['eval month']:
+        #     # running eval environment call
+        #     eval_env = get_env(**eval_env_config)()
 
-        rllib_algo_in_dist = RLLibAlgorithm(train_env, algo)
-        reward_breakdown = rllib_algo_in_dist.run(model_config['eval episodes']).to_dict('list')
+        # if i % model_config['eval freq'] == 0:
+        #     path_to_checkpoint = algo.save()
+        #     print(
+        #         "An Algorithm checkpoint has been created inside directory: "
+        #         f"'{path_to_checkpoint}'."
+        #     )
+        #     rllib_algo_in_dist = RLLibAlgorithm(train_env, algo)
+        #     reward_breakdown = rllib_algo_in_dist.run(model_config['eval episodes']).to_dict('list')
 
-        # print(reward_breakdown)
-        train_results.append(reward_breakdown)
+        #     train_results.append(reward_breakdown)
 
-        if env_config['eval month'] and i % 20 == 0:
-            rllib_algo_out_dist = RLLibAlgorithm(eval_env, algo)
-            reward_breakdown_out = rllib_algo_out_dist.run(model_config['eval episodes']).to_dict('list')
-            train_out_dist_results.append(reward_breakdown_out)
+        #     if env_config['eval month']:
+        #         rllib_algo_out_dist = RLLibAlgorithm(eval_env, algo)
+        #         reward_breakdown_out = rllib_algo_out_dist.run(model_config['eval episodes']).to_dict('list')
+        #         train_out_dist_results.append(reward_breakdown_out)
 
-    train_results_df = pd.DataFrame(train_results, index=range(1 * steps_per_ep, TOTAL_STEPS + steps_per_ep, steps_per_ep))
-    train_results_df.to_csv(os.path.join(save_path, IN_DIST_TRAIN_RESULTS))
+    train_results_df = pd.DataFrame(train_info)
+    train_results_df.to_csv(os.path.join(save_path, TRAIN_RESULTS))
 
-    if env_config['eval month']:
-        train_results_out_df = pd.DataFrame(train_out_dist_results, index=range(1 * steps_per_ep, TOTAL_STEPS + steps_per_ep, steps_per_ep))
-        train_results_out_df.to_csv(os.path.join(save_path, OUT_DIST_TRAIN_RESULTS))
+    # if env_config['eval month']:
+    #     train_results_out_df = pd.DataFrame(train_out_dist_results, index=range(1 * steps_per_ep, TOTAL_STEPS + steps_per_ep, model_config['eval freq']*steps_per_ep))
+    #     train_results_out_df.to_csv(os.path.join(save_path, OUT_DIST_TRAIN_RESULTS))
 
 
     # evaluate
 
-    # running in-dist eval environment call
-    in_env = get_env(**training_env_config)()
+    if env_config['eval month'] is None:
+        eval_env = get_env(**training_env_config)()
+    else:
+        eval_env = get_env(**eval_env_config)()
 
-    rllib_algo_in = RLLibAlgorithm(in_env, algo)
+    rllib_algo_in = RLLibAlgorithm(eval_env, algo)
     reward_breakdown = rllib_algo_in.run(model_config['eval episodes']).to_dict('list')
 
     test_results_df = pd.DataFrame(reward_breakdown)
-    test_results_df.to_csv(os.path.join(save_path, IN_DIST_TEST_RESULTS))
+    test_results_df.to_csv(os.path.join(save_path, TEST_RESULTS))
 
-    if env_config['eval month']:
-        # running out-dist eval environment call
-        out_env = get_env(**eval_env_config)()
+    # if env_config['eval month']:
+    #     # running out-dist eval environment call
+    #     out_env = get_env(**eval_env_config)()
         
-        rllib_algo_out = RLLibAlgorithm(out_env, algo)
-        reward_breakdown = rllib_algo_out.run(model_config['eval episodes']).to_dict('list')
+    #     rllib_algo_out = RLLibAlgorithm(out_env, algo)
+    #     reward_breakdown = rllib_algo_out.run(model_config['eval episodes']).to_dict('list')
 
-        test_results_out_df = pd.DataFrame(reward_breakdown)
-        test_results_out_df.to_csv(os.path.join(save_path, OUT_DIST_TEST_RESULTS))
+    #     test_results_out_df = pd.DataFrame(reward_breakdown)
+    #     test_results_out_df.to_csv(os.path.join(save_path, OUT_DIST_TEST_RESULTS))
 
-    return train_results_df, test_results_df if env_config['eval month'] else train_results_df, train_results_out_df, test_results_df, test_results_out_df
+    return train_results_df, test_results_df # if env_config['eval month'] else train_results_df, train_results_out_df, test_results_df, test_results_out_df
 
 
 # def get_best_seeds() -> dict:
