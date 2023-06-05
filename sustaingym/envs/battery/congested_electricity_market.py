@@ -545,7 +545,7 @@ class CongestedMarketOperator:
             p_max[-2*N_B:] = 0
 
         # sanity checks
-        assert np.array_equal(p_min[:N_D], p_max[:N_D])
+        assert np.array_equal(p_min[:N_D], p_max[:N_D]), f"arrays {p_min[:N_D]} and {p_max[:N_D]} are not equivalent"
         assert (p_min[N_D:] <= p_max[N_D:]).all()
 
         self.p_min.value = p_min
@@ -767,8 +767,7 @@ class CongestedElectricityMarketEnv(Env):
 
     def _get_demand_forecast_data(self) -> pd.DataFrame:
         """
-        Load demand forecast data from compressed csv file.
-        Assume perfect forecasts (i.e. same as actual demand data for future time steps).
+        Load day ahead demand forecast data from compressed csv file..
         """
         if self.LOCAL_PATH is not None:
             return pd.read_csv(self.LOCAL_PATH)
@@ -795,7 +794,7 @@ class CongestedElectricityMarketEnv(Env):
         return self.df_demand['1'].iloc[self.idx * self.MAX_STEPS_PER_EPISODE + count]
 
     def _generate_load_forecast_data(self, count: int, lookahead_steps: int) -> np.ndarray:
-        """Generate hour ahead forecast of the net demand for the time step associated
+        """Generate [lookahead_steps] forecast of the net demand for the time step associated
         with the given count.
 
         Args:
@@ -803,7 +802,7 @@ class CongestedElectricityMarketEnv(Env):
             lookahead_steps: integer representing number of time steps to look ahead
 
         Returns:
-            array of shape [lookahead_steps], net demands for the given lookahead
+            array of shape [lookahead_steps], day ahead demand forecasts for the given time step
         """
 
         num_hrs_total = self.df_demand_forecast.shape[0]
@@ -819,7 +818,7 @@ class CongestedElectricityMarketEnv(Env):
         lookahead_steps_left = lookahead_steps
 
         if start_hour > num_hrs_total: # outside of bounds
-            return np.array([np.nan]*lookahead_steps)
+            return np.array([self.df_demand_forecast['1'].iloc[-1]]*lookahead_steps)
         
         else:
             res = np.zeros(lookahead_steps)
@@ -841,8 +840,8 @@ class CongestedElectricityMarketEnv(Env):
             lookahead_left = lookahead_steps_left % 12
 
             for hour in range(lookahead_hour):
-                if start_hour + hour + 1 > num_hrs_total:
-                    res[idx:] = np.full(lookahead_steps_left - idx, np.nan)
+                if start_hour + hour + 1 >= num_hrs_total:
+                    res[idx:] = np.full(lookahead_steps_left, self.df_demand_forecast['1'].iloc[-1])
                     return res
                 else:
                     res[idx : idx + 12] = np.full(12, self.df_demand_forecast['1'].iloc[start_hour + hour + 1])
@@ -1149,7 +1148,7 @@ class CongestedElectricityMarketEnv(Env):
 
         moers = self.moer_arr[:-1, 0]
         net_price = prices + self.CARBON_PRICE * moers
-        obj = net_price @ x
+        obj = net_price @ x + prices[-1] * cp.minimum(0, delta_energy[-1])
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
         solve_mosek(prob)

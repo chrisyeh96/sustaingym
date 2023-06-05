@@ -556,7 +556,7 @@ class ElectricityMarketEnv(Env):
         delta_energy = cp.cumsum(c) - cp.cumsum(d)
 
         constraints = [
-            c[0] == 0, d[0] == 0,  # do nothing on 1st time step
+            # c[0] == 0, d[0] == 0,  # do nothing on 1st time step
 
             0 <= init_charge + delta_energy,
             init_charge + delta_energy <= self.bats_capacity[-1],
