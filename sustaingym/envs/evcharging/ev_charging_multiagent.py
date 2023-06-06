@@ -65,11 +65,12 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             agent: spaces.flatten_space(self._dict_observation_spaces[agent])
             for agent in self.agents}  # flattened observations
         
+        # per-agent action space
         if discrete:
-            self.action_spaces = {agent: spaces.Discrete(5) for agent in self.agents}
+            action_space = spaces.Discrete(5)
         else:
-            self.action_spaces = {
-                agent: spaces.Box(0., 1., shape=(1,)) for agent in self.agents}  # singular actions
+            action_space = spaces.Box(0., 1., shape=(1,))
+        self.action_spaces = {agent: action_space for agent in self.agents}
 
         # Create queue of previous observations to implement time-delay
         self._past_obs_agg = deque[dict[str, Any]](maxlen=self.periods_delay)

@@ -115,14 +115,15 @@ def run_batch(sites: list[SiteStr], periods: list[DefaultPeriodStr],
                     name = f'{site}_{period}_{bl}'
                     future = pool.submit(run_bl_on_period, bl, period, site)
                     future_to_name[future] = name
-    for future in futures.as_completed(future_to_name):
-        name = future_to_name[future]
-        try:
-            future.result()
-        except Exception as e:
-            time = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
-            with open('log.txt', 'a') as f:
-                f.write(f'{time}: {name} generated an exception: {e}')
+
+        for future in futures.as_completed(future_to_name):
+            name = future_to_name[future]
+            try:
+                future.result()
+            except Exception as e:
+                time = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')
+                with open('log.txt', 'a') as f:
+                    f.write(f'{time}: {name} generated an exception: {e}')
 
 
 if __name__ == '__main__':
