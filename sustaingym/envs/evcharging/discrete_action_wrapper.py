@@ -4,7 +4,7 @@ from __future__ import annotations
 from gymnasium import ActionWrapper, spaces
 import numpy as np
 
-from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
+from sustaingym.envs.evcharging.env import EVChargingEnv
 
 
 class DiscreteActionWrapper(ActionWrapper):

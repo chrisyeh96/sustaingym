@@ -3,159 +3,55 @@ This module implements baseline algorithms for the EVChargingEnv.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 import cvxpy as cp
 from gymnasium import spaces
 import numpy as np
-import pandas as pd
 # from stable_baselines3.common.base_class import BaseAlgorithm
-from ray.rllib.algorithms.algorithm import Algorithm
-from tqdm import tqdm
 
-from sustaingym.envs.evcharging import EVChargingEnv, MultiAgentEVChargingEnv
-from sustaingym.envs.evcharging.ev_charging import magnitude_constraint
+from sustaingym.algorithms.base import BaseAlgorithm
+from sustaingym.envs.evcharging import EVChargingEnv
+from sustaingym.envs.evcharging.env import magnitude_constraint
 from sustaingym.envs.utils import solve_mosek
 
-
-class BaseEVChargingAlgorithm:
-    """Base abstract class for EVChargingGym scheduling algorithms.
-
-    Subclasses are expected to implement the get_action() method.
-
-    Attributes:
-        env (EVChargingEnv): EV charging environment
-        continuous_action_space (bool): type of action output so the gym's
-            DiscreteActionWrapper may be used.
-    """
-    # Default maximum action for gym (default continuous action space)
-    MAX_ACTION = 1
-
-    # Discrete maximum action for action wrapper
-    D_MAX_ACTION = 4
-
-    def __init__(self, env: EVChargingEnv | MultiAgentEVChargingEnv, multiagent: bool = False):
-        """
-        Args:
-            env (EVChargingEnv): EV charging environment
-        """
-        self.env = env
-        self.multiagent = multiagent
-        self.continuous_action_space = isinstance(env.action_space, spaces.Box)
-
-    def _get_max_action(self) -> int:
-        """Returns maximum action depending on type of action space."""
-        return self.MAX_ACTION if self.continuous_action_space else self.D_MAX_ACTION
-
-    def get_action(self, observation: dict[str, Any]) -> np.ndarray | dict[str, np.ndarray]:
-        """Returns an action based on gym observations.
-
-        Args:
-            observation: observation from EVChargingEnv.
-
-        Returns:
-            (np.ndarray) pilot signals for current timestep
-        """
-        raise NotImplementedError
-
-    def reset(self) -> None:
-        """Resets the algorithm at the end of each episode."""
-        pass
-
-    def run(self, seeds: Sequence[int] | int) -> pd.DataFrame:
-        """Runs the scheduling algorithm and returns the resulting rewards.
-
-        Runs the scheduling algorithm for the date period of event generation
-        and returns the resulting reward.
-
-        Args:
-            seeds: if a list, on each episode run, EVChargingEnv is reset using
-                the seed. If an integer, a list is created using np.arange(seeds)
-                and used to reset the env instead. If the data generator is a
-                RealTraceGenerator with sequential set to True and the input to
-                seeds is an integer, this method runs the algorithm on each day
-                in the period sequentially.
-
-        Returns:
-            DataFrame of length len(seeds) or seeds containing reward info.
-                return                    float64
-                profit                    float64
-                carbon_cost               float64
-                excess_charge             float64
-                max_profit                float64
-            See EVChargingEnv for more info.
-        """
-        if isinstance(seeds, int):
-            seeds = list(range(seeds))
-
-        results: dict[str, list[float]] = {
-            'seed': [], 'return': [], 'profit': [], 'carbon_cost': [],
-            'excess_charge': [], 'max_profit': []
-        }
-
-        for seed in tqdm(seeds):
-            results['seed'].append(seed)
-            ep_return = 0.0
-
-            # Reset environment
-            obs, _ = self.env.reset(seed=seed)
-
-            # Reset algorithm
-            self.reset()
-
-            # Run episode until finished
-            done = False
-            while not done:
-                action = self.get_action(obs)
-                obs, reward, terminated, truncated, info = self.env.step(action)
-                assert (type(reward) == dict) == self.multiagent
-                if self.multiagent:
-                    reward = sum(reward.values())
-                    done = any(terminated.values()) or any(truncated.values())
-                else:
-                    done = terminated or truncated
-                ep_return += reward
-            results['return'].append(ep_return)
-
-            # Collect reward info from environment
-            if 'reward_breakdown' not in info:
-                # assume multiagent, so extract a single agent's info dict
-                station = list(info.keys())[0]
-                info = info[station]
-            if 'reward_breakdown' in info:
-                for rb in info['reward_breakdown']:
-                    results[rb].append(info['reward_breakdown'][rb])
-                results['max_profit'].append(info['max_profit'])
-
-        return pd.DataFrame(results)
+MAX_ACTION = 1  # Default maximum action for gym (default continuous action space)
+D_MAX_ACTION = 4  # Discrete maximum action for action wrapper
 
 
-class GreedyAlgorithm(BaseEVChargingAlgorithm):
+class GreedyAlgorithm(BaseAlgorithm):
     """
     Per-time step greedy charging. Whether the action space is continuous or
     discrete, GreedyAlgorithm outputs the maximum pilot signal allowed.
     """
+    def __init__(self, env: EVChargingEnv):
+        super().__init__(env, multiagent=False)
+        self.continuous_action_space = isinstance(env.action_space, spaces.Box)
+        self.max_action = MAX_ACTION if self.continuous_action_space else D_MAX_ACTION
+
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """Returns greedy charging action."""
         # Send full charging rate wherever demands are non-zero
-        return np.where(observation['demands'] > 0, self._get_max_action(), 0)
+        return np.where(observation['demands'] > 0, self.max_action, 0)
 
 
-class RandomAlgorithm(BaseEVChargingAlgorithm):
+class RandomAlgorithm(BaseAlgorithm):
     """Random action."""
+    def __init__(self, env: EVChargingEnv):
+        super().__init__(env, multiagent=False)
+        self.continuous_action_space = isinstance(env.action_space, spaces.Box)
+        self.rng = np.random.default_rng()
+
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """Returns random charging action."""
         if self.continuous_action_space:
-            action = np.random.random(size=self.env.num_stations)
+            action = self.rng.random(size=self.env.num_stations)
         else:
-            action = np.random.randint(
-                0, self.D_MAX_ACTION + 1, size=self.env.num_stations
-                ).astype(float)
-        return action
+            action = self.rng.choice(D_MAX_ACTION + 1, size=self.env.num_stations)
+        return action.astype(np.float32)
 
 
-class MPC(BaseEVChargingAlgorithm):
+class MPC(BaseAlgorithm):
     """Model predictive control.
 
     Attributes:
@@ -171,7 +67,7 @@ class MPC(BaseEVChargingAlgorithm):
             lookahead: number of timesteps to forecast future trajectory
         """
         super().__init__(env)
-        assert self.continuous_action_space, \
+        assert isinstance(env.action_space, spaces.Box), \
             "MPC only supports continuous action space"
         assert lookahead <= env.moer_forecast_steps, \
             "MPC lookahead must be less than forecasted timesteps"
@@ -224,18 +120,15 @@ class MPC(BaseEVChargingAlgorithm):
         mask = np.zeros((self.env.num_stations, self.lookahead))
         for i in range(self.env.num_stations):
             # Max action capped at 1 always
-            mask[i, :cur_est_dep[i]] = self.MAX_ACTION
+            mask[i, :cur_est_dep[i]] = MAX_ACTION
         self.mask.value = mask
 
         solve_mosek(self.prob)
         return self.traj.value[:, 0]  # take first action
 
 
-class OfflineOptimal(BaseEVChargingAlgorithm):
+class OfflineOptimal(BaseAlgorithm):
     """Calculates best performance of a controller that knows the future.
-
-    Attributes:
-        *See BaseEVChargingAlgorithm for more attributes.
     """
     TOTAL_TIMESTEPS = 288
 
@@ -245,7 +138,7 @@ class OfflineOptimal(BaseEVChargingAlgorithm):
             env (EVChargingEnv): EV charging environment
         """
         super().__init__(env)
-        assert self.continuous_action_space, \
+        assert isinstance(env.action_space, spaces.Box), \
             "Offline optimal only supports continuous action space"
 
         # Optimization problem setup similar to MPC
@@ -300,7 +193,7 @@ class OfflineOptimal(BaseEVChargingAlgorithm):
             for ev in env._evs:
                 ev_idx = station_idx[ev.station_id]
                 # Set mask using true arrival and departures
-                mask[ev_idx, ev.arrival:ev.departure] = self.MAX_ACTION
+                mask[ev_idx, ev.arrival:ev.departure] = MAX_ACTION
 
                 # Set starting demand constraints
                 self._constraints.append(
@@ -357,31 +250,3 @@ class OfflineOptimal(BaseEVChargingAlgorithm):
 #             *See get_action() in BaseEVChargingAlgorithm.
 #         """
 #         return self.rl_model.predict(observation, deterministic=True)[0]
-
-
-class RLLibAlgorithm(BaseEVChargingAlgorithm):
-    """Wrapper for RLLib RL agent."""
-    def __init__(self, env: EVChargingEnv, algo: Algorithm, multiagent: bool = False):
-        """
-            env (EVChargingEnv): EV charging environment
-            algo (Algorithm): RL Lib model
-        """
-        super().__init__(env, multiagent=multiagent)
-        self.algo = algo
-
-    def get_action(self, observation: dict[str, Any]) -> np.ndarray | dict[str, np.ndarray]:
-        """Returns output of RL model.
-
-        Args:
-            *See get_action() in BaseEVChargingAlgorithm.
-
-        Returns:
-            *See get_action() in BaseEVChargingAlgorithm.
-        """
-        if self.multiagent:
-            action = {}
-            for agent in observation:
-                action[agent] = self.algo.compute_single_action(observation[agent], explore=False)
-            return action
-        else:
-            return self.algo.compute_single_action(observation, explore=False)

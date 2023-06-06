@@ -11,7 +11,7 @@ import numpy as np
 from pettingzoo import ParallelEnv
 
 from sustaingym.envs.evcharging.discrete_action_wrapper import DiscreteActionWrapper
-from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
+from sustaingym.envs.evcharging.env import EVChargingEnv
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
 
 
@@ -127,8 +127,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             infos[agent] = infos_agg
         return infos
 
-    def step(self, action: dict[str, np.ndarray],
-             return_all_info: bool = False) -> tuple[
+    def step(self, action: dict[str, np.ndarray]) -> tuple[
             dict[str, np.ndarray], dict[str, float], dict[str, bool],
             dict[str, bool], dict[str, dict[str, Any]]]:
         """
@@ -140,8 +139,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             actions[i] = action[agent]
 
         # Use internal single-agent environment
-        obs, reward, terminated, truncated, info = self.single_env.step(
-            actions, return_all_info=return_all_info)
+        obs, reward, terminated, truncated, info = self.single_env.step(actions)
 
         obss = self._create_dict_from_obs_agg(obs)
         rewards, terminateds, truncateds, infos = {}, {}, {}, {}
