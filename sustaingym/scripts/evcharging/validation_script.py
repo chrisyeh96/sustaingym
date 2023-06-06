@@ -7,31 +7,6 @@ import random
 random.seed(42)
 
 
-# Test trace generation
-def validate_trace_generation() -> None:
-    in_covid = ('2020-02-01', '2020-05-31')
-    pre_covid = ('2019-05-01', '2019-08-31')
-    pre_covid_str = 'Summer 2019'
-
-    atg1 = GMMsTraceGenerator('caltech', date_period='Summer 2019', n_components=30, period=5)
-    atg2 = GMMsTraceGenerator('caltech', date_period='Summer 2019', n_components=30, period=10)
-    rtg3 = RealTraceGenerator('jpl', date_period='Spring 2020', period=5)
-    rtg4 = RealTraceGenerator('jpl', date_period='Spring 2020', period=10)
-
-    avg_events = [0] * 4
-    generators = [atg1, atg2, rtg3, rtg4]
-    for seed in range(5):
-        for i in range(4):
-            generator = generators[i]
-            generator.set_random_seed(seed)
-            eq, evs, num_events = generator.get_event_queue()
-            a = generator.get_moer()
-            b, c = a[240, 1], a[20, 0]
-            print("num events: ", num_events, b, c, evs[0].arrival, evs[1].departure)
-            avg_events[i] += num_events
-    print('num events avg: ', [avg_event / 5 for avg_event in avg_events])
-
-
 def get_action(num_stations: int, type: str = 'random') -> np.ndarray:
     if type == 'random':
         return np.random.randint(size=num_stations, low=0, high=5)
@@ -75,7 +50,5 @@ def validate_environment() -> None:
 
 
 if __name__ == '__main__':
-    print("Validating event generation: ")
-    validate_trace_generation()
     print("Validating environment: ")
     validate_environment()
