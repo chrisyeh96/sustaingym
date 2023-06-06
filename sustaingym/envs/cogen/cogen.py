@@ -77,9 +77,9 @@ class CogenEnv(gym.Env):
         assert (self.forecast_horizon >= 0 and self.forecast_horizon < self.timesteps_per_day - 1), "forecast_horizon must be between 0 and timesteps_per_day - 1"
 
         # load the onnx model and parameters
-        self._model = rt.InferenceSession('sustaingym/sustaingym/data/cogen/onnx_model/model.onnx')  # TODO(Chris): pkgutil
+        self._model = rt.InferenceSession('sustaingym/data/cogen/onnx_model/model.onnx')  # TODO(Chris): pkgutil
         # Load the JSON file
-        with open('sustaingym/sustaingym/data/cogen/onnx_model/model.json', 'r') as f:  # TODO(Chris): pkgutil
+        with open('sustaingym/data/cogen/onnx_model/model.json', 'r') as f:  # TODO(Chris): pkgutil
             json_data = json.load(f)
         # I/O labels
         input_labels = [json_data['inputs'][i]['id'] for i in range(len(json_data['inputs']))]
@@ -129,6 +129,17 @@ class CogenEnv(gym.Env):
             'Energy_Price': gym.spaces.Box(low=0., high=1500., shape=(forecast_horizon+1,), dtype=np.float32),
             'Gas_Price': gym.spaces.Box(low=0., high=7., shape=(forecast_horizon+1,), dtype=np.float32)
         })
+        self.obs = {
+            'Time': np.zeros(1, dtype=np.float32),
+            'Prev_Action': self.action_space.sample(),
+            'TAMB': np.zeros(forecast_horizon+1, dtype=np.float32),
+            'PAMB': np.zeros(forecast_horizon+1, dtype=np.float32),
+            'RHAMB': np.zeros(forecast_horizon+1, dtype=np.float32),
+            'Target_Power': np.zeros(forecast_horizon+1, dtype=np.float32),
+            'Target_Steam': np.zeros(forecast_horizon+1, dtype=np.float32),
+            'Energy_Price': np.zeros(forecast_horizon+1, dtype=np.float32),
+            'Gas_Price': np.zeros(forecast_horizon+1, dtype=np.float32)
+        }
 
         # define the current info
         self.current_info = None
@@ -142,10 +153,10 @@ class CogenEnv(gym.Env):
         # fix so that if the slice is not long enough, it will take the first values of the next day
         # TODO: figure out what to do if we're on the last day and there is no next day
         if len(slice) < self.forecast_horizon + 1:
-            slice = slice.append(self.ambients_dfs[day+1].iloc[:self.forecast_horizon + 1 - len(slice)])
-        return (slice['Ambient Temperature'].to_list(), slice['Ambient Pressure'].to_list(), slice['Ambient rel. Humidity'].to_list(),
-                slice['Target Net Power'].to_list(), slice['Target Process Steam'].to_list(), slice['Energy Price'].to_list(),
-                slice['Gas Price'].to_list())
+            slice = pd.concat([slice, self.ambients_dfs[day+1].iloc[:self.forecast_horizon + 1 - len(slice)]])
+        return (slice['Ambient Temperature'].to_numpy(), slice['Ambient Pressure'].to_numpy(), slice['Ambient rel. Humidity'].to_numpy(),
+                slice['Target Net Power'].to_numpy(), slice['Target Process Steam'].to_numpy(), slice['Energy Price'].to_numpy(),
+                slice['Gas Price'].to_numpy())
     
     def reset(self, seed: int | None = None, options: dict | None = None) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an instance of an episode for the Cogen environment.
@@ -180,7 +191,7 @@ class CogenEnv(gym.Env):
 
         # set up initial observation
         self.obs = {
-            'Time': self.step / self.timesteps_per_day,
+            'Time': np.array([self.current_timestep / self.timesteps_per_day], dtype=np.float32),
             'Prev_Action': self.current_action,
             'TAMB': forecast_values[0],
             'PAMB': forecast_values[1],
@@ -265,8 +276,9 @@ class CogenEnv(gym.Env):
             action['GT3_PAC_FFU'], action['GT3_EVC_FFU'], action['GT3_PWR'][0],
             action['HR1_HPIP_M_PROC'][0], action['HR2_HPIP_M_PROC'][0], action['HR3_HPIP_M_PROC'][0],
             action['ST_PWR'][0], action['IPPROC_M'][0], action['CT_NrBays']], dtype=np.float32)
-        model_output = self._model.run(None, {'input': model_input})[0]
-
+        
+        model_output = self._model.run(None, {self._model.get_inputs()[0].name: [model_input]})[0][0]
+        # print(model_output)
         # extract the fuel consumption (klb/hr)
         total_fuel = model_output[-8]
 
@@ -322,7 +334,7 @@ class CogenEnv(gym.Env):
         forecast_values = self._forecast_values_from_time(self.current_day, self.current_timestep)
 
         self.obs = {
-            'Time': self.current_timestep / self.timesteps_per_day,
+            'Time': np.array([self.current_timestep / self.timesteps_per_day], dtype=np.float32),
             'Prev_Action': self.current_action,
             'TAMB': forecast_values[0],
             'PAMB': forecast_values[1],
@@ -337,7 +349,10 @@ class CogenEnv(gym.Env):
         self.current_terminated = self._terminated()
 
         # update the current info
-        self.current_info = None
+        self.current_info = {
+            'Operating constraint violation': None,
+            'Demand constraint violation': None
+        }
 
         # always False due to no intermediate stopping conditions
         truncated = False 

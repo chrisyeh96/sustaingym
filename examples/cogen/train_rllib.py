@@ -5,24 +5,38 @@ from collections import defaultdict
 from collections.abc import Callable
 import os
 from typing import Any
-
+import gymnasium as gym
+from gymnasium.wrappers import FlattenObservation#, FlattenAction
 import pandas as pd
 from ray.rllib.algorithms import ppo, sac
 from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from ray.tune.registry import register_env
 from tqdm import tqdm
 
-from sustaingym.envs.your_env import YourEnv
+from sustaingym.envs.cogen.cogen import CogenEnv
 from sustaingym.algorithms.base import RLLibAlgorithm
 
 
-ENV_NAME = 'your-env-name'
+ENV_NAME = 'cogen'
 
 SPB = 4_000  # steps per batch
 TOTAL_STEPS = 250_000
 ROLLOUT_FRAGMENT_LENGTH = 1_000  # 'auto'
 SAVE_BASE_DIR = f'logs/{ENV_NAME}/rllib'
 TRAIN_RESULTS, TEST_RESULTS = 'train_results.csv', 'test_results.csv'
+
+
+class FlattenAction(gym.ActionWrapper):
+    """Action wrapper that flattens the action."""
+    def __init__(self, env):
+        super(FlattenAction, self).__init__(env)
+        self.action_space = gym.spaces.utils.flatten_space(self.env.action_space)
+        
+    def action(self, action):
+        return gym.spaces.utils.unflatten(self.env.action_space, action)
+
+    def reverse_action(self, action):
+        return gym.spaces.utils.flatten(self.env.action_space, action)
 
 
 def parse_args() -> dict[str, Any]:
@@ -45,7 +59,6 @@ def parse_args() -> dict[str, Any]:
 
     config = {
         'algo': args.algo,
-        'discrete': args.discrete,
         'multiagent': args.multiagent,
         'seed': args.seed,
         'lr': args.lr,
@@ -54,7 +67,7 @@ def parse_args() -> dict[str, Any]:
     return config
 
 
-def get_env(multiagent: bool = False) -> Callable:
+def get_env(multiagent: bool = False, **kwargs) -> Callable:
     """Return environment.
 
     Args:
@@ -67,7 +80,10 @@ def get_env(multiagent: bool = False) -> Callable:
         if multiagent:
             raise NotImplementedError
         else:
-            return YourEnv()
+            env = CogenEnv()
+            env = FlattenObservation(env)
+            # env = FlattenAction(env)
+            return env
     return _get_env
 
 
@@ -94,6 +110,7 @@ def run_algo(config: dict, save_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         .training(train_batch_size=SPB, lr=lr)
         .rollouts(num_rollout_workers=2, num_envs_per_worker=2)
         .resources(num_gpus=1)
+        .framework('torch')
     )
     if config['multiagent']:
         train_config = train_config.rollouts(rollout_fragment_length=ROLLOUT_FRAGMENT_LENGTH)

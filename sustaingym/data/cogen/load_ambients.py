@@ -13,7 +13,7 @@ def construct_df(renewables_magnitude: float = None) -> list[pd.DataFrame]:
     Constructs the dataframe of all ambient conditions
     Adding renewables (scaled by magnitude input) is currently not implemented TODO?
     """
-    save_dir = 'sustaingym/systaingym/data/cogen/ambients_data/'
+    save_dir = 'sustaingym/data/cogen/ambients_data/'
 
     # try to load the dataframe
     try:
