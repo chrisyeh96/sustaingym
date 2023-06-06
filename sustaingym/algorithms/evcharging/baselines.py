@@ -35,12 +35,13 @@ class BaseEVChargingAlgorithm:
     # Discrete maximum action for action wrapper
     D_MAX_ACTION = 4
 
-    def __init__(self, env: EVChargingEnv | MultiAgentEVChargingEnv):
+    def __init__(self, env: EVChargingEnv | MultiAgentEVChargingEnv, multiagent: bool = False):
         """
         Args:
             env (EVChargingEnv): EV charging environment
         """
         self.env = env
+        self.multiagent = multiagent
         self.continuous_action_space = isinstance(env.action_space, spaces.Box)
 
     def _get_max_action(self) -> int:
@@ -108,7 +109,8 @@ class BaseEVChargingAlgorithm:
             while not done:
                 action = self.get_action(obs)
                 obs, reward, terminated, truncated, info = self.env.step(action)
-                if type(reward) == dict:  # then it's multiagent
+                assert (type(reward) == dict) == self.multiagent
+                if self.multiagent:
                     reward = sum(reward.values())
                     done = any(terminated.values()) or any(truncated.values())
                 else:
@@ -364,9 +366,8 @@ class RLLibAlgorithm(BaseEVChargingAlgorithm):
             env (EVChargingEnv): EV charging environment
             algo (Algorithm): RL Lib model
         """
-        super().__init__(env)
+        super().__init__(env, multiagent=multiagent)
         self.algo = algo
-        self.multiagent = multiagent
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray | dict[str, np.ndarray]:
         """Returns output of RL model.

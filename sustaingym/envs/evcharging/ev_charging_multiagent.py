@@ -134,7 +134,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         Returns: obs, reward, terminateds, truncateds, infos
         """
         # Build action
-        actions_agg = np.empty([self.num_agents], dtype=np.float32)
+        actions_agg = np.zeros(self.num_agents, dtype=np.float32)
         for i, agent in enumerate(self.agents):
             actions_agg[i] = action[agent]
 
@@ -152,7 +152,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
 
         # Delete all agents when day is finished
         if terminated or truncated:
-            self.agents = []
+            pass
+            # self.agents = []
 
         return obs, reward, terminateds, truncateds, infos
 
