@@ -3,15 +3,18 @@ This module implements the CogenEnv class
 """
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
-import onnxruntime as rt
+import json
+from typing import Any
 
-from gym import Env, spaces
-from typing import Literal, Any
+import gymnasium as gym
+import numpy as np
+import onnxruntime as rt
+import pandas as pd
+
 from sustaingym.data.cogen import load_ambients
 
-class CogenEnv(Env):
+
+class CogenEnv(gym.Env):
     """
     Actions:
         Type: Dict(Box(1), Discrete(2), Discrete(2), Box(1),
@@ -37,10 +40,10 @@ class CogenEnv(Env):
 
     Observation:
         Type: Dict(Box(1), Action_Dict, 
-                   Box(forecast_length + 1), Box(forecast_length + 1),
-                   Box(forecast_length + 1), Box(forecast_length + 1),
-                   Box(forecast_length + 1), Box(forecast_length + 1),
-                   Box(forecast_length + 1))
+                   Box(forecast_horizon + 1), Box(forecast_horizon + 1),
+                   Box(forecast_horizon + 1), Box(forecast_horizon + 1),
+                   Box(forecast_horizon + 1), Box(forecast_horizon + 1),
+                   Box(forecast_horizon + 1))
         Observation                   Min                 Max
         Time (fraction of day)        0                   1
         Previous action (dict)        see above           see above
@@ -54,30 +57,33 @@ class CogenEnv(Env):
     """
     def __init__(self, 
                 renewables_magnitude: float = None, # TODO: implement renewables
+                ramp_penalty: float = 2.0,
+                supply_imbalance_penalty: float = 1000,
                 constraint_violation_penalty: float = 1000,
-                forecast_length: int = 12,
+                forecast_horizon: int = 12,
                 forecast_noise_std: float = 0.1,
-                seed: int | None = None,
-                LOCAL_FILE_PATH: str | None = None
                 ):
         """
         Constructs the CogenEnv object
         """
-        self.forecast_length = forecast_length
+        self.ramp_penalty = ramp_penalty
+        self.supply_imbalance_penalty = supply_imbalance_penalty
+        self.constraint_violation_penalty = constraint_violation_penalty
+        self.forecast_horizon = forecast_horizon
         # load the ambient conditions dataframes
         self.ambients_dfs = load_ambients.construct_df(renewables_magnitude=renewables_magnitude)
         self.n_days = len(self.ambients_dfs)
-        self.timesteps_per_day = float(len(self.ambients_dfs[0]))
-        assert (self.forecast_length >= 0 and self.forecast_length < self.timesteps_per_day - 1), "forecast_length must be between 0 and timesteps_per_day - 1"
+        self.timesteps_per_day = len(self.ambients_dfs[0])
+        assert (self.forecast_horizon >= 0 and self.forecast_horizon < self.timesteps_per_day - 1), "forecast_horizon must be between 0 and timesteps_per_day - 1"
 
         # load the onnx model and parameters
-        self.model = rt.InferenceSession('sustaingym/sustaingym/data/cogen/onnx_model/model.onnx')
+        self._model = rt.InferenceSession('sustaingym/sustaingym/data/cogen/onnx_model/model.onnx')  # TODO(Chris): pkgutil
         # Load the JSON file
-        with open('sustaingym/sustaingym/data/cogen/onnx_model/model.json', 'r') as f:
+        with open('sustaingym/sustaingym/data/cogen/onnx_model/model.json', 'r') as f:  # TODO(Chris): pkgutil
             json_data = json.load(f)
         # I/O labels
         input_labels = [json_data['inputs'][i]['id'] for i in range(len(json_data['inputs']))]
-        output_labels = [json_data['outputs'][i]['id'] for i in range(len(json_data['outputs']))]
+        # output_labels = [json_data['outputs'][i]['id'] for i in range(len(json_data['outputs']))]
 
         # Upper and lower bounds on inputs
         lower_bound = [json_data['inputs'][i]['min'] for i in range(len(json_data['inputs']))]
@@ -88,77 +94,41 @@ class CogenEnv(Env):
         data_type = [json_data['inputs'][i]['data_type'] for i in range(len(json_data['inputs']))]
 
         inputs_table = pd.DataFrame({'Label': input_labels, 'unit': unit, 'data type': data_type, 'min': lower_bound, 'max': upper_bound})
-        inputs_table = inputs_table.set_index('Label')
-
-        self.rng = np.random.default_rng(seed)
+        inputs_table.set_index('Label', inplace=True)
 
         # action space is power output, evaporative cooler switch, power augmentation switch, and equivalent
         # process steam flow for generators 1, 2, and 3, as well as steam turbine power output, steam flow
         # through condenser, and number of cooling bays employed
-        self.action_space = spaces.Dict({
-            'GT1_PWR': spaces.Box(low=inputs_table.loc['GT1_PWR', 'min'], high=inputs_table.loc['GT1_PWR', 'max'], shape=(1,), dtype=float),
-            'GT1_PAC_FFU': spaces.Discrete(2),
-            'GT1_EVC_FFU': spaces.Discrete(2),
-            'HR1_HPIP_M_PROC': spaces.Box(low=inputs_table.loc['HR1_HPIP_M_PROC', 'min'], high=inputs_table.loc['HR1_HPIP_M_PROC', 'max'], shape=(1,), dtype=float),
-            'GT2_PWR': spaces.Box(low=inputs_table.loc['GT2_PWR', 'min'], high=inputs_table.loc['GT2_PWR', 'max'], shape=(1,), dtype=float),
-            'GT2_PAC_FFU': spaces.Discrete(2),
-            'GT2_EVC_FFU': spaces.Discrete(2),
-            'HR2_HPIP_M_PROC': spaces.Box(low=inputs_table.loc['HR2_HPIP_M_PROC', 'min'], high=inputs_table.loc['HR2_HPIP_M_PROC', 'max'], shape=(1,), dtype=float),
-            'GT3_PWR': spaces.Box(low=inputs_table.loc['GT3_PWR', 'min'], high=inputs_table.loc['GT3_PWR', 'max'], shape=(1,), dtype=float),
-            'GT3_PAC_FFU': spaces.Discrete(2),
-            'GT3_EVC_FFU': spaces.Discrete(2),
-            'HR3_HPIP_M_PROC': spaces.Box(low=inputs_table.loc['HR3_HPIP_M_PROC', 'min'], high=inputs_table.loc['HR3_HPIP_M_PROC', 'max'], shape=(1,), dtype=float),
-            'ST_PWR': spaces.Box(low=inputs_table.loc['ST_PWR', 'min'], high=inputs_table.loc['ST_PWR', 'max'], shape=(1,), dtype=float),
-            'IPPROC_M': spaces.Box(low=inputs_table.loc['IPPROC_M', 'min'], high=inputs_table.loc['IPPROC_M', 'max'], shape=(1,), dtype=float),
-            'CT_NrBays': spaces.Discrete(12, start=1)
+        self.action_space = gym.spaces.Dict({
+            'GT1_PWR': gym.spaces.Box(low=inputs_table.loc['GT1_PWR', 'min'], high=inputs_table.loc['GT1_PWR', 'max'], shape=(1,), dtype=np.float32),
+            'GT1_PAC_FFU': gym.spaces.Discrete(2),
+            'GT1_EVC_FFU': gym.spaces.Discrete(2),
+            'HR1_HPIP_M_PROC': gym.spaces.Box(low=inputs_table.loc['HR1_HPIP_M_PROC', 'min'], high=inputs_table.loc['HR1_HPIP_M_PROC', 'max'], shape=(1,), dtype=np.float32),
+            'GT2_PWR': gym.spaces.Box(low=inputs_table.loc['GT2_PWR', 'min'], high=inputs_table.loc['GT2_PWR', 'max'], shape=(1,), dtype=np.float32),
+            'GT2_PAC_FFU': gym.spaces.Discrete(2),
+            'GT2_EVC_FFU': gym.spaces.Discrete(2),
+            'HR2_HPIP_M_PROC': gym.spaces.Box(low=inputs_table.loc['HR2_HPIP_M_PROC', 'min'], high=inputs_table.loc['HR2_HPIP_M_PROC', 'max'], shape=(1,), dtype=np.float32),
+            'GT3_PWR': gym.spaces.Box(low=inputs_table.loc['GT3_PWR', 'min'], high=inputs_table.loc['GT3_PWR', 'max'], shape=(1,), dtype=np.float32),
+            'GT3_PAC_FFU': gym.spaces.Discrete(2),
+            'GT3_EVC_FFU': gym.spaces.Discrete(2),
+            'HR3_HPIP_M_PROC': gym.spaces.Box(low=inputs_table.loc['HR3_HPIP_M_PROC', 'min'], high=inputs_table.loc['HR3_HPIP_M_PROC', 'max'], shape=(1,), dtype=np.float32),
+            'ST_PWR': gym.spaces.Box(low=inputs_table.loc['ST_PWR', 'min'], high=inputs_table.loc['ST_PWR', 'max'], shape=(1,), dtype=np.float32),
+            'IPPROC_M': gym.spaces.Box(low=inputs_table.loc['IPPROC_M', 'min'], high=inputs_table.loc['IPPROC_M', 'max'], shape=(1,), dtype=np.float32),
+            'CT_NrBays': gym.spaces.Discrete(12, start=1)
         })
 
         # define the observation space
-        self.observation_space = spaces.Dict({
-            'Time': spaces.Box(low=0, high=1, shape=(1,), dtype=float),
-            'Prev_Action': spaces.Dict({
-                'GT1_PWR': spaces.Box(low=inputs_table.loc['GT1_PWR', 'min'], high=inputs_table.loc['GT1_PWR', 'max'], shape=(1,), dtype=float),
-                'GT1_PAC_FFU': spaces.Discrete(2),
-                'GT1_EVC_FFU': spaces.Discrete(2),
-                'HR1_HPIP_M_PROC': spaces.Box(low=inputs_table.loc['HR1_HPIP_M_PROC', 'min'], high=inputs_table.loc['HR1_HPIP_M_PROC', 'max'], shape=(1,), dtype=float),
-                'GT2_PWR': spaces.Box(low=inputs_table.loc['GT2_PWR', 'min'], high=inputs_table.loc['GT2_PWR', 'max'], shape=(1,), dtype=float),
-                'GT2_PAC_FFU': spaces.Discrete(2),
-                'GT2_EVC_FFU': spaces.Discrete(2),
-                'HR2_HPIP_M_PROC': spaces.Box(low=inputs_table.loc['HR2_HPIP_M_PROC', 'min'], high=inputs_table.loc['HR2_HPIP_M_PROC', 'max'], shape=(1,), dtype=float),
-                'GT3_PWR': spaces.Box(low=inputs_table.loc['GT3_PWR', 'min'], high=inputs_table.loc['GT3_PWR', 'max'], shape=(1,), dtype=float),
-                'GT3_PAC_FFU': spaces.Discrete(2),
-                'GT3_EVC_FFU': spaces.Discrete(2),
-                'HR3_HPIP_M_PROC': spaces.Box(low=inputs_table.loc['HR3_HPIP_M_PROC', 'min'], high=inputs_table.loc['HR3_HPIP_M_PROC', 'max'], shape=(1,), dtype=float),
-                'ST_PWR': spaces.Box(low=inputs_table.loc['ST_PWR', 'min'], high=inputs_table.loc['ST_PWR', 'max'], shape=(1,), dtype=float),
-                'IPPROC_M': spaces.Box(low=inputs_table.loc['IPPROC_M', 'min'], high=inputs_table.loc['IPPROC_M', 'max'], shape=(1,), dtype=float),
-                'CT_NrBays': spaces.Discrete(12, start=1)
-            }),
-            'TAMB': spaces.Box(low=inputs_table.loc['TAMB', 'min'], high=inputs_table.loc['TAMB', 'max'], shape=(forecast_length+1,), dtype=float),
-            'PAMB': spaces.Box(low=inputs_table.loc['PAMB', 'min'], high=inputs_table.loc['PAMB', 'max'], shape=(forecast_length+1,), dtype=float),
-            'RHAMB': spaces.Box(low=inputs_table.loc['RHAMB', 'min'], high=inputs_table.loc['RHAMB', 'max'], shape=(forecast_length+1,), dtype=float),
-            'Target_Power': spaces.Box(low=0., high=700., shape=(forecast_length+1,), dtype=float),
-            'Target_Steam': spaces.Box(low=0., high=1300., shape=(forecast_length+1,), dtype=float),
-            'Energy_Price': spaces.Box(low=0., high=1500., shape=(forecast_length+1,), dtype=float),
-            'Gas_Price': spaces.Box(low=0., high=7., shape=(forecast_length+1,), dtype=float)
+        self.observation_space = gym.spaces.Dict({
+            'Time': gym.spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            'Prev_Action': self.action_space,
+            'TAMB': gym.spaces.Box(low=inputs_table.loc['TAMB', 'min'], high=inputs_table.loc['TAMB', 'max'], shape=(forecast_horizon+1,), dtype=np.float32),
+            'PAMB': gym.spaces.Box(low=inputs_table.loc['PAMB', 'min'], high=inputs_table.loc['PAMB', 'max'], shape=(forecast_horizon+1,), dtype=np.float32),
+            'RHAMB': gym.spaces.Box(low=inputs_table.loc['RHAMB', 'min'], high=inputs_table.loc['RHAMB', 'max'], shape=(forecast_horizon+1,), dtype=np.float32),
+            'Target_Power': gym.spaces.Box(low=0., high=700., shape=(forecast_horizon+1,), dtype=np.float32),
+            'Target_Steam': gym.spaces.Box(low=0., high=1300., shape=(forecast_horizon+1,), dtype=np.float32),
+            'Energy_Price': gym.spaces.Box(low=0., high=1500., shape=(forecast_horizon+1,), dtype=np.float32),
+            'Gas_Price': gym.spaces.Box(low=0., high=7., shape=(forecast_horizon+1,), dtype=np.float32)
         })
-
-        # define the timestep
-        self.timestep = timestep
-
-        # define the current timestep
-        self.current_timestep = 0
-
-        # define the current state
-        self.current_state = None
-
-        # define the current action
-        self.current_action = None
-
-        # define the current reward
-        self.current_reward = None
-
-        # define the current done
-        self.current_done = None
 
         # define the current info
         self.current_info = None
@@ -167,17 +137,17 @@ class CogenEnv(Env):
                                                                             list[float], list[float], list[float],
                                                                             list[float]]:
         """Returns the forecast values starting at the given day and time step
-        for the following self.forecast_length + 1 time steps."""
-        slice = self.ambients_dfs[day].iloc[time_step:min(time_step+self.forecast_length+1, self.timesteps_per_day)]
+        for the following self.forecast_horizon + 1 time steps."""
+        slice = self.ambients_dfs[day].iloc[time_step:min(time_step+self.forecast_horizon+1, self.timesteps_per_day)]
         # fix so that if the slice is not long enough, it will take the first values of the next day
-        if len(slice) < self.forecast_length + 1:
-            slice = slice.append(self.ambients_dfs[day+1].iloc[:self.forecast_length + 1 - len(slice)])
+        # TODO: figure out what to do if we're on the last day and there is no next day
+        if len(slice) < self.forecast_horizon + 1:
+            slice = slice.append(self.ambients_dfs[day+1].iloc[:self.forecast_horizon + 1 - len(slice)])
         return (slice['Ambient Temperature'].to_list(), slice['Ambient Pressure'].to_list(), slice['Ambient rel. Humidity'].to_list(),
                 slice['Target Net Power'].to_list(), slice['Target Process Steam'].to_list(), slice['Energy Price'].to_list(),
                 slice['Gas Price'].to_list())
     
-    def reset(self, seed: int | None = None, return_info: bool = False,
-              options: dict | None = None) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
+    def reset(self, seed: int | None = None, options: dict | None = None) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an instance of an episode for the Cogen environment.
 
         Args:
@@ -189,19 +159,24 @@ class CogenEnv(Env):
         Returns:
             tuple containing the initial observation for env's episode
         """
-        self.rng = np.random.default_rng(seed=seed)
+        super().reset(seed=seed)
 
         # randomly pick a day for the episode
-        self.current_day = self.rng.integers(low=0, high=self.n_days)
+        # subtract 1 as temporary fix to make sure we don't go over the number of days with lookahead window
+        if seed is None:
+            self.current_day = self.np_random.integers(low=0, high=self.n_days-1)
+        else:
+            self.current_day = seed % self.n_days
 
-        self.init = True # no clue what this is for
-        self.step = 0 # keeps track of which timestep we are on
+        self.current_timestep = 0 # keeps track of which timestep we are on
+        self.current_terminated = False
+        self.current_reward = None
 
         # initial action is drawn randomly from the action space
         # not sure if this is reasonable, TODO: check this
         self.current_action = self.action_space.sample()
 
-        forecast_values = self._forecast_values_from_time(self.current_day, self.step)
+        forecast_values = self._forecast_values_from_time(self.current_day, self.current_timestep)
 
         # set up initial observation
         self.obs = {
@@ -220,46 +195,154 @@ class CogenEnv(Env):
             'Operating constraint violation': None,
             'Demand constraint violation': None
         }
-        return self.obs if not return_info else (self.obs, info)
+        return self.obs, info
     
-    def _compute_reward(self) -> float:
-        """Computes the reward for the current timestep."""
-        raise NotImplementedError
+    def _dyn_constraint_volation(self, input_data: np.ndarray, output_data: np.ndarray) -> np.ndarray:
+        """
+        Computes the dynamic operating constraint violation for one
+        timestep of plant operation.
+
+        Args:
+            input_data: shape [18], plant model inputs for the current timestep
+            output_data: shape [29], plant model outputs for the current timestep
+
+        Returns:
+            cv: shape [16], constraint violations for the current timestep
+        """
+        cv = np.zeros(16)
+
+        # GT1_PWR
+        cv[0] = max(0,output_data[9] - input_data[5]) # min violation
+        cv[1] = max(0,input_data[5] - output_data[10]) # max violation
+        # GT1_HR
+        cv[2] = max(0,output_data[15] - input_data[12]) # min violation
+        cv[3] = max(0,input_data[12] - output_data[16]) # max violation
+
+        # GT2_PWR
+        cv[4] = max(0,output_data[11] - input_data[8]) # min violation
+        cv[5] = max(0,input_data[8] - output_data[12]) # max violation
+        # GT2_HR
+        cv[6] = max(0,output_data[17] - input_data[13]) # min violation
+        cv[7] = max(0,input_data[13] - output_data[18]) # max violation
+        
+        # GT3_PWR
+        cv[8] = max(0,output_data[13] - input_data[11]) # min violation
+        cv[9] = max(0,input_data[11] - output_data[14]) # max violation
+        # GT3_HR
+        cv[10] = max(0,output_data[19] - input_data[14]) # min violation
+        cv[11] = max(0,input_data[14] - output_data[20]) # max violation
+
+        # ST_PWR
+        cv[12] = max(0,output_data[24] - input_data[15]) # min violation
+        cv[13] = max(0,input_data[15] - output_data[25]) # max violation
+        # IPPROC
+        cv[14] = max(0,input_data[16] - output_data[22]) # max violation
+        cv[15] = max(0,input_data[16] - output_data[23]) # max violation
+
+        return cv
     
-    def step(self, action: dict[str, float | int]) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
+    def _compute_reward(self, obs: dict[str, Any], action: dict[str, Any]) -> float:
+        """Computes the reward for the current timestep.
+        
+        Reward is currently the negative of the sum of the four following components:
+        - total generation fuel consumption 
+        - total ramp cost 
+        - penalty for steam/energy non-delivery
+        - penalty for dynamic operating constraint violation
+
+        Args:
+            obs: the current state observation
+            action: the current action
+
+        Returns:
+            reward: the reward for the current timestep
+        """
+        # run the cc model on the action 
+        model_input = np.array([
+            obs['TAMB'][0], obs['PAMB'][0], obs['RHAMB'][0],
+            action['GT1_PAC_FFU'], action['GT1_EVC_FFU'], action['GT1_PWR'][0],
+            action['GT2_PAC_FFU'], action['GT2_EVC_FFU'], action['GT2_PWR'][0],
+            action['GT3_PAC_FFU'], action['GT3_EVC_FFU'], action['GT3_PWR'][0],
+            action['HR1_HPIP_M_PROC'][0], action['HR2_HPIP_M_PROC'][0], action['HR3_HPIP_M_PROC'][0],
+            action['ST_PWR'][0], action['IPPROC_M'][0], action['CT_NrBays']], dtype=np.float32)
+        model_output = self._model.run(None, {'input': model_input})[0]
+
+        # extract the fuel consumption (klb/hr)
+        total_fuel = model_output[-8]
+
+        # compute the ramp cost
+        ramp = (np.abs(action['GT1_PWR'][0] - obs['Prev_Action']['GT1_PWR'][0])
+                + np.abs(action['GT2_PWR'][0] - obs['Prev_Action']['GT2_PWR'][0])
+                + np.abs(action['GT3_PWR'][0] - obs['Prev_Action']['GT3_PWR'][0])
+                + np.abs(action['ST_PWR'][0] - obs['Prev_Action']['ST_PWR'][0]))
+        ramp_cost = self.ramp_penalty * ramp
+
+        # compute the penalty for steam/energy non-delivery
+        # this will be a relu penalty, so if the target is not met, the penalty is the difference
+        # between the target and the actual value
+        steam_penalty = np.maximum(0, obs['Target_Steam'][0] - model_output[-1])
+        energy_penalty = np.maximum(0, obs['Target_Power'][0] - model_output[-2])
+        non_delivery_penalty = self.supply_imbalance_penalty * (steam_penalty + energy_penalty)
+
+        # compute the penalty for dynamic operating constraint violation
+        dyn_cv = self._dyn_constraint_volation(model_input, model_output).sum()
+        dyn_cv_penalty = self.constraint_violation_penalty * dyn_cv
+
+        # compute the total reward
+        reward = -(total_fuel + ramp_cost + non_delivery_penalty + dyn_cv_penalty)
+        return reward
+    
+    def _terminated(self) -> bool:
+        """Determines if the episode is terminated or not.
+
+        Returns:
+            terminated: True if the episode is terminated, False otherwise
+        """
+        return self.current_timestep > self.timesteps_per_day - 1
+
+    def step(self, action: dict[str, Any]) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
         """Run one timestep of the Cogen environment's dynamics.
 
         Args:
             action: an action provided by the environment
         
         Returns:
-            tuple containing the next observation, reward, done flag, and info dict
+            tuple containing the next observation, reward, terminated flag, truncated flag, and info dict
         """
+        # compute the loss of taking the action
+        self.current_reward = self._compute_reward(self.obs, action)
+
         # update the current action
         self.current_action = action
 
         # update the current timestep
-        self.step += 1
-
-        # update the current state
-        self.current_state = self.obs
-
-        # update the current reward
-        self.current_reward = self._compute_reward()
-
-        # update the current done
-        self.current_done = self._done()
-
-        # update the current info
-        self.current_info = self._info()
+        self.current_timestep += 1
 
         # update the current observation
-        self.obs = self._next_obs()
+        forecast_values = self._forecast_values_from_time(self.current_day, self.current_timestep)
 
-        return self.obs, self.current_reward, self.current_done, self.current_info
+        self.obs = {
+            'Time': self.current_timestep / self.timesteps_per_day,
+            'Prev_Action': self.current_action,
+            'TAMB': forecast_values[0],
+            'PAMB': forecast_values[1],
+            'RHAMB': forecast_values[2],
+            'Target_Power': forecast_values[3],
+            'Target_Steam': forecast_values[4],
+            'Energy_Price': forecast_values[5],
+            'Gas_Price': forecast_values[6]
+        }
 
-    def render(self):
-        raise NotImplementedError
+        # update the current done
+        self.current_terminated = self._terminated()
+
+        # update the current info
+        self.current_info = None
+
+        # always False due to no intermediate stopping conditions
+        truncated = False 
+
+        return self.obs, self.current_reward, self.current_terminated, truncated, self.current_info
 
     def close(self):
         return
