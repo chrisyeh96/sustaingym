@@ -41,6 +41,7 @@ sys.path.append('..')
 
 import gymnasium as gym
 from gymnasium.wrappers import FlattenObservation
+from gymnasium.wrappers.normalize import NormalizeObservation
 import pandas as pd
 import ray
 from ray.rllib.algorithms import a2c, ppo, sac, dqn, ddpg
@@ -55,7 +56,7 @@ from sustaingym.envs.battery.wrapped import CongestedDiscreteActions, DiscreteAc
 ray.init(runtime_env={"py_modules": [sustaingym]})
 
 ENV_NAME = "congested_market"
-TOTAL_STEPS = 250_000
+TOTAL_STEPS = 250000
 # IN_DIST_TRAIN_RESULTS = 'train_results_in_dist.csv'
 # OUT_DIST_TRAIN_RESULTS = 'train_results_out_dist.csv'
 # IN_DIST_TEST_RESULTS = 'test_in_dist_results.csv'
@@ -178,6 +179,9 @@ def get_env(month: int,
 
         # flatten observation space
         wrapped_env = FlattenObservation(wrapped_env)
+
+        # normalize observation space
+        wrapped_env = NormalizeObservation(wrapped_env)
         
         return wrapped_env
 

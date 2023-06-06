@@ -664,8 +664,6 @@ class CongestedElectricityMarketEnv(Env):
             bats_capacity: shape [num_bats], capacity of each battery (MWh)
             bats_costs: shape [num_bats - 1, 2], charging and discharging costs
                 for each battery, excluding the agent-controlled battery ($/MWh)
-            randomize_costs: list of str, chosen from ['gens', 'bats'], which
-                costs should be randomly scaled
             use_intermediate_rewards: bool, whether or not to calculate intermediate rewards
             month: year and month to load moer and net demand data from, format YYYY-MM
             moer_forecast_steps: number of steps of MOER forecast to include,
@@ -677,11 +675,9 @@ class CongestedElectricityMarketEnv(Env):
             seed: random seed
             LOCAL_FILE_PATH: string representing the relative path of personal dataset
         """
-
         if LOCAL_FILE_PATH is None:
             assert month[:4] == '2020' # make sure the month is in 2020
 
-        self.randomize_costs = randomize_costs
         self.use_intermediate_rewards = use_intermediate_rewards
         self.moer_forecast_steps = moer_forecast_steps
         self.load_forecast_steps = load_forecast_steps
@@ -692,9 +688,6 @@ class CongestedElectricityMarketEnv(Env):
         self.month = int(month[-2:])
         self.year = int(month[:4])
         self.date = month
-
-        self.rng = np.random.default_rng(seed)
-        rng = self.rng
 
         self.network = CongestedNetwork()
         self.N_B = self.network.N_B  # num batteries
@@ -711,36 +704,28 @@ class CongestedElectricityMarketEnv(Env):
         assert (self.bats_init_energy >= 0).all()
         assert (self.bats_init_energy <= self.bats_capacity).all()
 
-        self.bats_base_costs = np.zeros((self.N_B, 2))
-        if bats_costs is None:
-            self.bats_base_costs[:-1, 0] = rng.uniform(2.8, 3.2, size=self.N_B-1)  # discharging
-            self.bats_base_costs[:-1, 1] = 0.75 * self.bats_base_costs[:-1, 1]  # charging
-        else:
-            self.bats_base_costs[:-1] = bats_costs
-        assert (self.bats_base_costs >= 0).all()
-
         # determine the maximum possible cost of energy ($ / MWh)
         self.max_cost = 1.25 * max(max(self.network.cgen[:, 1]), self.network.cbat[-1, 0], self.network.cbat[-1, 1]) # edit for general n battery case later!!!
 
         # action space is two values for the charging and discharging costs
-        self.action_space = spaces.Box(low=0, high=self.max_cost, shape=(2, self.N_B, self.settlement_interval + 1), dtype=np.float32)
+        self.action_space = spaces.Box(low=0, high=self.max_cost,
+                                       shape=(2, self.N_B, self.settlement_interval + 1), dtype=np.float32)
 
         # observation space is current energy level, current time, previous (a, b, x)
         # from dispatch and previous load demand value
         self.observation_space = spaces.Dict({
-            'energy': spaces.Box(low=0, high=self.bats_capacity[-1], shape=(1,), dtype=float),
-            'time': spaces.Box(low=0, high=1, shape=(1,), dtype=float),
-            'previous action': spaces.Box(low=0, high=np.inf, shape=(2, self.N_B, self.settlement_interval+1), dtype=float),
+            'energy': spaces.Box(low=0, high=self.bats_capacity[-1], shape=(1,), dtype=np.float32),
+            'time': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            'previous action': spaces.Box(low=0, high=np.inf, shape=(2, self.N_B, self.settlement_interval+1), dtype=np.float32),
             'previous agent dispatch': spaces.Box(low=self.network.pmin[-1] * self.TIME_STEP_DURATION,
                                                   high=self.network.pmax[-1] * self.TIME_STEP_DURATION,
-                                                  shape=(1,), dtype=float),
-            'demand previous': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float),
-            'demand forecast': spaces.Box(low=0, high=np.inf, shape=(load_forecast_steps,), dtype=float),
-            'moer previous': spaces.Box(low=0, high=1, shape=(1,), dtype=float),
-            'moer forecast': spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=float),
-            'price previous': spaces.Box(low=0, high=self.max_cost, shape=(1,), dtype=float)
+                                                  shape=(1,), dtype=np.float32),
+            'demand previous': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.float32),
+            'demand forecast': spaces.Box(low=0, high=np.inf, shape=(load_forecast_steps,), dtype=np.float32),
+            'moer previous': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
+            'moer forecast': spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=np.float32),
+            'price previous': spaces.Box(low=0, high=self.max_cost, shape=(1,), dtype=np.float32)
         })
-        self.init = False
         self.df_demand = self._get_demand_data()
         self.df_demand_forecast = self._get_demand_forecast_data()
 
@@ -804,20 +789,20 @@ class CongestedElectricityMarketEnv(Env):
         Returns:
             array of shape [lookahead_steps], day ahead demand forecasts for the given time step
         """
-
         num_hrs_total = self.df_demand_forecast.shape[0]
+
         start = self.idx * self.MAX_STEPS_PER_EPISODE + count
 
         # get current hour
         start_hour = start // 12
 
         # how far in this hour
-        start_left = start % 12
+        start_left = (12 - (start % 12)) % 12
 
         # lookahead steps left
         lookahead_steps_left = lookahead_steps
 
-        if start_hour > num_hrs_total: # outside of bounds
+        if start_hour >= num_hrs_total: # outside of bounds
             return np.array([self.df_demand_forecast['1'].iloc[-1]]*lookahead_steps)
         
         else:
@@ -826,33 +811,31 @@ class CongestedElectricityMarketEnv(Env):
             idx = 0 # index within res to add from
 
             if start_left > 0:
-                res[:(12 - start_left)] = np.full(12 - start_left,
-                    self.df_demand_forecast['1'].iloc[start_hour])
-                
-                lookahead_steps_left -= (12 - start_left)
-
-                idx = 12 - start_left
+                res[:start_left] = self.df_demand_forecast['1'].iloc[start_hour]
+                lookahead_steps_left -= start_left
+                idx = start_left
             
             # hours in lookahead
-            lookahead_hour = lookahead_steps_left // 12
+            lookahead_hours = lookahead_steps_left // 12
 
             # leftover in lookahead in 5 minute intervals
             lookahead_left = lookahead_steps_left % 12
 
-            for hour in range(lookahead_hour):
+            for hour in range(lookahead_hours):
                 if start_hour + hour + 1 >= num_hrs_total:
-                    res[idx:] = np.full(lookahead_steps_left, self.df_demand_forecast['1'].iloc[-1])
+                    res[idx:] = self.df_demand_forecast['1'].iloc[-1]
                     return res
                 else:
-                    res[idx : idx + 12] = np.full(12, self.df_demand_forecast['1'].iloc[start_hour + hour + 1])
-                
-                lookahead_steps_left -= 12
+                    res[idx: idx + 12] = self.df_demand_forecast['1'].iloc[start_hour + hour + 1]
+
                 idx += 12
-            
+
             if lookahead_left > 0:
-                res[idx:] = np.full(lookahead_left,
-                                     self.df_demand_forecast['1'].iloc[start_hour + lookahead_hour + 1])
-            
+                if start_hour + lookahead_hours + 1 >= num_hrs_total:
+                    res[idx:] = self.df_demand_forecast['1'].iloc[-1]
+                else:
+                    res[idx:] = self.df_demand_forecast['1'].iloc[start_hour + lookahead_hours + 1]
+                
             return res
 
     def _get_time(self) -> float:
@@ -864,9 +847,8 @@ class CongestedElectricityMarketEnv(Env):
         """
         return self.count / self.MAX_STEPS_PER_EPISODE
 
-    def reset(self, seed: int | None = None, return_info: bool = True,
-              options: dict | None = None
-              ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
+    def reset(self, seed: int | None = None, options: dict | None = None
+              ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an instance of an episode for the CongestedElectricityMarketEnv.
 
         Args:
@@ -878,24 +860,24 @@ class CongestedElectricityMarketEnv(Env):
         Returns:
             tuple containing the initial observation for env's episode
         """
-        self.rng = np.random.default_rng(seed)
-        rng = self.rng
+        super().reset(seed=seed)
 
         # randomly pick a day for the episode, among the days with complete demand data
-
-        self.idx = rng.choice(int(len(self.df_demand) / 288))
+        num_days = int(len(self.df_demand) / 288)
+        if seed is None:
+            self.idx = self.np_random.choice(int(len(self.df_demand) / 288))
+        else:
+            self.idx = seed % num_days
         day = self.idx + 1
 
         date = datetime.strptime(f'{self.date}-{day:02d}', '%Y-%m-%d').replace(tzinfo=pytz.timezone('America/Los_Angeles'))
         self.moer_arr = self.moer_loader.retrieve(date).astype(np.float32)
-        # self.load_arr = self._generate_load_forecast_data(1, self.load_forecast_steps)
 
         self.action = np.zeros((2, self.network.N_B, self.settlement_interval + 1), dtype=np.float32)
         self.dispatch = np.zeros(self.N_B, dtype=np.float32)
         self.count = 0  # counter for the step in current episode
         self.battery_charge = self.bats_init_energy.copy()
 
-        self.init = True
         self.demand = np.array([self._generate_load_data(self.count)], dtype=np.float32)
         self.demand_forecast = np.array(self._generate_load_forecast_data(self.count+1, self.load_forecast_steps), dtype=np.float32)
         self.moer = self.moer_arr[0:1, 0]
@@ -932,7 +914,7 @@ class CongestedElectricityMarketEnv(Env):
             'carbon reward': None,
             'terminal reward': None
         }
-        return (self.obs, info) if return_info else self.obs
+        return self.obs, info
 
     def step(self, action: np.ndarray) -> tuple[dict[str, Any], float, bool, dict[str, Any]]:
         """Executes a single time step in the environments current trajectory.
@@ -949,18 +931,12 @@ class CongestedElectricityMarketEnv(Env):
             done: whether the episode is done
             info: additional info (currently empty)
         """
-        assert self.init
         assert action.shape == (2, self.network.N_B, self.settlement_interval+1)
 
         self.count += 1
 
         # ensure selling cost (discharging) is at least as large as buying cost (charging)
         self.action[:] = action
-
-        # for i in range(self.action.shape[1]):
-        #     for j in range(self.action.shape[2]):
-        #         if action[1, i, j] < action[0, i, j]:
-        #             self.action[1, i, j] = action[0, i, j]
 
         self.demand[:] = self._generate_load_data(self.count)
         self.demand_forecast[:] = self._generate_load_forecast_data(self.count + 1, self.load_forecast_steps)
@@ -1190,9 +1166,6 @@ class CongestedElectricityMarketEnv(Env):
         future_return = np.sum(future_rewards)
         potential_return = np.sum(potential_rewards)
         return max(0, potential_return - future_return) + penalty
-
-    def render(self):
-        raise NotImplementedError
 
     def close(self):
         return
