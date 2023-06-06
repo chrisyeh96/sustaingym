@@ -45,7 +45,6 @@ def parse_args() -> dict[str, Any]:
 
     config = {
         'algo': args.algo,
-        'discrete': args.discrete,
         'multiagent': args.multiagent,
         'seed': args.seed,
         'lr': args.lr,

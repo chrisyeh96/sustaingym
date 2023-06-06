@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
@@ -52,9 +53,7 @@ class BaseAlgorithm:
         if isinstance(seeds, int):
             seeds = list(range(seeds))
 
-        results: dict[str, list[float]] = {
-            'seed': [], 'return': []
-        }
+        results = defaultdict[str, list](list)
 
         for seed in tqdm(seeds):
             results['seed'].append(seed)
@@ -79,6 +78,14 @@ class BaseAlgorithm:
                     done = terminated or truncated
                 ep_return += reward
             results['return'].append(ep_return)
+
+            # in multiagent setting, assume that all agents get same info
+            if self.multiagent:
+                agent = list(info.keys())[0]
+                info = info[agent]
+
+            for key, value in info.items():
+                results[key].append(value)
 
         return pd.DataFrame(results)
 

@@ -135,27 +135,27 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         Returns: obs, reward, terminateds, truncateds, infos
         """
         # Build action
-        actions_agg = np.zeros(self.num_agents, dtype=np.float32)
+        actions = np.zeros(self.num_agents, dtype=np.float32)
         for i, agent in enumerate(self.agents):
-            actions_agg[i] = action[agent]
+            actions[i] = action[agent]
 
         # Use internal single-agent environment
-        obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(actions_agg)
-        rew = rews_agg / self.num_agents
-        obs = self._create_dict_from_obs_agg(obs_agg)
+        obs, reward, terminated, truncated, info = self.single_env.step(
+            actions, return_all_info=return_all_info)
 
-        reward, terminateds, truncateds, infos = {}, {}, {}, {}
+        obss = self._create_dict_from_obs_agg(obs)
+        rewards, terminateds, truncateds, infos = {}, {}, {}, {}
         for agent in self.agents:
-            reward[agent] = rew  # every agent gets same global reward signal
+            rewards[agent] = reward / self.num_agents  # every agent gets same global reward signal
             terminateds[agent] = terminated
             truncateds[agent] = truncated
-            infos[agent] = infos_agg  # same as info
+            infos[agent] = info  # same as info
 
         # Delete all agents when day is finished
         if terminated or truncated:
             self.agents = []
 
-        return obs, reward, terminateds, truncateds, infos
+        return obss, rewards, terminateds, truncateds, infos
 
     # TODO: once we update to a newer version of PettingZoo (>=1.23), the
     # reset() function definition may need to change
