@@ -53,9 +53,10 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         if discrete:
             self.single_env = DiscreteActionWrapper(self.single_env)
 
-        # Petting zoo API
+        # PettingZoo API
         self.agents = self.single_env.cn.station_ids[:]
         self.possible_agents = self.agents
+        self.metadata = {}
 
         # Create observation spaces w/ dictionary to help in flattening
         self._dict_observation_spaces = {
@@ -152,8 +153,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
 
         # Delete all agents when day is finished
         if terminated or truncated:
-            pass
-            # self.agents = []
+            self.agents = []
 
         return obs, reward, terminateds, truncateds, infos
 
@@ -166,8 +166,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
               ) -> dict[str, np.ndarray]:
         """Resets the environment."""
         obs_agg, info_agg = self.single_env.reset(seed=seed, options=options)
-        obs = self._create_dict_from_obs_agg(obs_agg, init=True)
         self.agents = self.possible_agents[:]
+        obs = self._create_dict_from_obs_agg(obs_agg, init=True)
 
         if return_info:
             return obs, self._create_dict_from_infos_agg(info_agg)
