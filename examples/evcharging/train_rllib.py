@@ -36,7 +36,7 @@ ENV_NAME = 'evcharging'
 SPB = 4_000  # steps per batch
 TOTAL_STEPS = 250_000
 EVAL_EPISODES = 0  # 14
-ROLLOUT_FRAGMENT_LENGTH = 1_000  # 'auto'
+ROLLOUT_FRAGMENT_LENGTH = 500  # 'auto'
 SAVE_BASE_DIR = 'logs/evcharging/rllib'
 TRAIN_RESULTS, TEST_RESULTS = 'train_results.csv', 'test_results.csv'
 
@@ -49,7 +49,7 @@ def parse_args() -> dict[str, Any]:
     parser.add_argument(
         '-a', '--algo', default='ppo',
         choices=['ppo', 'sac'],
-        help="'ppo' or 'sac'")
+        help='RL algorithm')
     parser.add_argument(
         '-t', '--train_date_period', default='Summer 2021',
         choices=['Summer 2019', 'Fall 2019', 'Spring 2020', 'Summer 2021'],
@@ -72,14 +72,14 @@ def parse_args() -> dict[str, Any]:
     args = parser.parse_args()
 
     config = {
-        "algo": args.algo,
-        "dp": args.train_date_period,
-        "site": args.site,
-        "discrete": args.discrete,
-        "multiagent": args.multiagent,
-        "periods_delay": args.periods_delay,
-        "seed": args.seed,
-        "lr": args.lr,
+        'algo': args.algo,
+        'dp': args.train_date_period,
+        'site': args.site,
+        'discrete': args.discrete,
+        'multiagent': args.multiagent,
+        'periods_delay': args.periods_delay,
+        'seed': args.seed,
+        'lr': args.lr,
     }
     print('Config:', config)
     return config
@@ -136,12 +136,6 @@ def get_env(full: bool, real_trace: bool, dp: str, site: SiteStr,
     return _get_env
 
 
-def config_to_str(config: dict) -> str:
-    s = str(config)
-    savedir = s.translate(str.maketrans('', '', string.punctuation + ' '))
-    return savedir
-
-
 def run_algo(config: dict, save_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
     num_steps = 0
 
@@ -163,7 +157,7 @@ def run_algo(config: dict, save_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         train_config
         .environment(ENV_NAME, env_config=config)
         .training(train_batch_size=SPB, lr=lr)
-        .rollouts(num_rollout_workers=2, num_envs_per_worker=2)
+        .rollouts(num_rollout_workers=2, num_envs_per_worker=2)  # create_env_on_local_worker=True
         .resources(num_gpus=1)
     )
     if config['multiagent']:
