@@ -42,17 +42,16 @@ class CongestedDiscreteActions(gym.ActionWrapper):
         super().__init__(env)
         max_price = env.action_space.high[0][0, 0]
 
-        charge_action = np.zeros((2,1))
-        charge_action[:, 0] = np.array([max_price, max_price])
-        charge_action = np.array([[*charge_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+        zero_action = np.zeros((2,1))
 
-        discharge_action = np.zeros((2,1))
-        discharge_action[:, 0] = np.array([0.001*max_price, 0.001*max_price])
-        discharge_action = np.array([[*discharge_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+        charge_action = np.array([[*zero_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+        charge_action[:, 0, 0] = np.array([max_price*0.95, max_price/0.95])
 
-        no_action = np.zeros((2,1))
-        no_action[:, 0] = np.array([0, max_price])
-        no_action = np.array([[*no_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+        discharge_action = np.array([[*zero_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+        discharge_action[:, 0, 0] = np.array([0, -max_price/0.95])
+
+        no_action = np.array([[*zero_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
+        no_action[:, 0, 0] = np.array([-max_price*0.95, max_price/0.95])
 
         self.actions = {
             0: charge_action,  # charge

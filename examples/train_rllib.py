@@ -180,8 +180,8 @@ def get_env(month: int,
         # flatten observation space
         wrapped_env = FlattenObservation(wrapped_env)
 
-        # normalize observation space
-        wrapped_env = NormalizeObservation(wrapped_env)
+        # # normalize observation space
+        # wrapped_env = NormalizeObservation(wrapped_env, 0)
         
         return wrapped_env
 
@@ -231,7 +231,7 @@ def run_algo(env_config: dict, model_config: dict) -> Union[tuple[
     train_config = (
         train_config
         .environment(ENV_NAME, env_config=training_env_config)
-        .training(gamma=model_config['gamma'], lr=model_config['lr'], train_batch_size=steps_per_ep)
+        .training(gamma=model_config['gamma'], lr=model_config['lr'], train_batch_size=steps_per_ep, grad_clip=0.5)
         .rollouts(num_rollout_workers=2, num_envs_per_worker=2)
         .resources(num_gpus=1)
     )
