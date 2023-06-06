@@ -53,8 +53,6 @@ from sustaingym.envs.battery.algorithm import RLLibAlgorithm
 from sustaingym.envs import CongestedElectricityMarketEnv
 from sustaingym.envs.battery.wrapped import CongestedDiscreteActions, DiscreteActions, FlattenActions
 
-ray.init(runtime_env={"py_modules": [sustaingym]})
-
 ENV_NAME = "congested_market"
 TOTAL_STEPS = 250000
 # IN_DIST_TRAIN_RESULTS = 'train_results_in_dist.csv'
@@ -339,6 +337,7 @@ def run_algo(env_config: dict, model_config: dict) -> Union[tuple[
 #     return best_seeds
 
 if __name__ == '__main__':
+    ray.init(runtime_env={"py_modules": [sustaingym]})
     env_config, model_config = parse_args()
     register_env(ENV_NAME, lambda config: get_env(**config)())
     run_algo(env_config, model_config)
