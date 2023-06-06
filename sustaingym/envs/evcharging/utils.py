@@ -1,6 +1,7 @@
-"""
-This module implements utility methods for interacting with ACN-data
-and GMMs.
+"""Implements utility methods for interacting with ACN-data and GMMs.
+
+When run on its own, this script downloads the default data found in
+    sustaingym/data/evcharging/acn_data.
 """
 from __future__ import annotations
 
@@ -14,7 +15,6 @@ from typing import Any, Literal
 
 import acnportal.acndata as acnd
 import acnportal.acnsim as acns
-import cvxpy as cp
 import numpy as np
 import pandas as pd
 import pytz
@@ -24,7 +24,7 @@ import sklearn.mixture as mixture
 # API Token for ACN-Data
 API_TOKEN = 'DEMO_TOKEN'
 # Folder name when creating new GMMs
-GMM_DEFAULT_DIR = 'gmms_ev_charging'
+GMMS_DIR = 'gmms'
 
 # Timezones for converting charging events in ACN-Data
 AM_LA = pytz.timezone('America/Los_Angeles')
@@ -34,8 +34,8 @@ GMT = pytz.timezone('GMT')
 DATE_FORMAT = '%Y-%m-%d'
 DT_STRING_FORMAT = '%a, %d %b %Y %H:%M:%S GMT'  # for API call
 
-# Minutes in a day
 MINS_IN_DAY = 1440
+ONE_DAY = timedelta(days=1)
 
 # Normalization constant for while fitting GMMs
 REQ_ENERGY_SCALE = 100
@@ -73,12 +73,11 @@ SiteStr = Literal['caltech', 'jpl']
 GMM_KEY = 'gmm'
 COUNT_KEY = 'count'
 STATION_USAGE_KEY = 'station_usage'
-MODEL_NAME = 'model.pkl'
 
 
 def to_la_dt(s: str) -> datetime:
     """Converts string '%Y-%m-%d' to datetime localized in LA Time."""
-    return datetime.strptime(s, DATE_FORMAT).astimezone(tz=AM_LA)
+    return datetime.strptime(s, DATE_FORMAT).replace(tzinfo=AM_LA)
 
 
 def site_str_to_site(site: SiteStr) -> acns.ChargingNetwork:
@@ -106,7 +105,8 @@ def get_sessions(start_date: datetime, end_date: datetime,
             `start_date` and ending the day before `end_date`
 
     Example:
-        fall2020_sessions = get_sessions(datetime(2020, 9, 1), datetime(2020, 12, 1))
+        fall2020_sessions = get_sessions(
+                datetime(2020, 9, 1), datetime(2020, 12, 1))
     """
     start_date = start_date.replace(hour=0, minute=0, second=0).astimezone(GMT)
     start_time = start_date.strftime(DT_STRING_FORMAT)
@@ -136,11 +136,11 @@ def fetch_real_events(start_date: datetime, end_date: datetime, site: SiteStr
             estimated_departure       datetime64[ns, America/Los_Angeles]
             claimed                   bool
     """
-    print(f"Fetching {site} sessions from {start_date.strftime(DATE_FORMAT)} to {end_date.strftime(DATE_FORMAT)} from ACNData")
-    # add timedelta to make start and end date inclusive
+    print(f'Fetching {site} sessions from {start_date.strftime(DATE_FORMAT)} '
+          f'to {end_date.strftime(DATE_FORMAT)} from ACNData')
     sessions = get_sessions(start_date, end_date, site=site)
 
-    # TODO(chris): explore more efficient ways to convert JSON-like data to DataFrame
+    # TODO(chris): find efficient way to convert JSON-like data to DataFrame
 
     d: dict[str, list[Any]] = {}
     d['arrival'] = []
@@ -192,30 +192,32 @@ def get_real_events(start_date: datetime, end_date: datetime,
     """
     # search in package
     for date_range in DEFAULT_DATE_RANGES:
-        if to_la_dt(date_range[0]) <= start_date and end_date <= to_la_dt(date_range[1]) + timedelta(days=1):
-            file_name = f'{date_range[0]} {date_range[1]}.csv.gz'
-            data = pkgutil.get_data('sustaingym', os.path.join('data', 'evcharging', 'acn_data', site, file_name))
+        if to_la_dt(date_range[0]) <= start_date and end_date <= to_la_dt(date_range[1]) + ONE_DAY:
+            file_path = os.path.join(
+                'data', 'evcharging', 'acn_data', site,
+                f'{date_range[0]} {date_range[1]}.csv.gz')
+            data = pkgutil.get_data('sustaingym', file_path)
             assert data is not None
             df = pd.read_csv(BytesIO(data), compression='gzip')
 
-            for time_col in ['arrival', 'departure', 'estimated_departure']:
-                df[time_col] = pd.to_datetime(df[time_col], utc=True).dt.tz_convert(AM_LA)
+            for col in ['arrival', 'departure', 'estimated_departure']:
+                df[col] = pd.to_datetime(df[col], utc=True).dt.tz_convert(AM_LA)
 
-            return df[(start_date <= df.arrival) & (df.arrival <= end_date + timedelta(days=1))].copy()
+            return df[(start_date <= df.arrival) & (df.arrival <= end_date + ONE_DAY)].copy()
     # data not found in package, use API
-    return fetch_real_events(start_date, end_date + timedelta(days=1), site)
+    return fetch_real_events(start_date, end_date + ONE_DAY, site)
 
 
-def get_folder_name(begin: datetime, end: datetime, n_components: int) -> str:
+def get_model_name(begin: datetime, end: datetime, n_components: int) -> str:
     """Returns folder name for a trained GMM."""
-    return (begin.strftime(DATE_FORMAT) + ' ' +
-            end.strftime(DATE_FORMAT) + ' ' +
-            str(n_components))
+    start_str = begin.strftime(DATE_FORMAT)
+    end_str = end.strftime(DATE_FORMAT)
+    return f'{start_str} {end_str} {n_components}.pkl'
 
 
-def save_gmm_model(site: SiteStr, gmm: mixture.GaussianMixture, cnt: np.ndarray, sid: np.ndarray,
-                   begin: datetime, end: datetime, n_components: int
-                   ) -> None:
+def save_gmm_model(site: SiteStr, gmm: mixture.GaussianMixture,
+                   cnt: np.ndarray, sid: np.ndarray, begin: datetime,
+                   end: datetime, n_components: int) -> None:
     """Saves GMM (presumably trained) and other information to directory.
 
     Args:
@@ -233,23 +235,28 @@ def save_gmm_model(site: SiteStr, gmm: mixture.GaussianMixture, cnt: np.ndarray,
         n_components: number of GMM components
     """
     # create directory as needed
-    dname = get_folder_name(begin, end, n_components)
-    save_path = os.path.join(GMM_DEFAULT_DIR, site, dname)
-    if not os.path.exists(save_path):
-        print('Creating directory: ', save_path)
-        os.makedirs(save_path, exist_ok=True)
+    save_dir = os.path.join(GMMS_DIR, site)
+    if not os.path.exists(save_dir):
+        print('Creating directory:', save_dir)
+        os.makedirs(save_dir, exist_ok=True)
+
     # save gmm, session counts and station id usage
-    print(f'Saving in: {save_path}\n')
-    with open(os.path.join(save_path, MODEL_NAME), 'wb') as f:
+    filename = get_model_name(begin, end, n_components)
+    save_path = os.path.join(save_dir, filename)
+    print(f'Saving to: {save_path}\n')
+    with open(save_path, 'wb') as f:
         model = {GMM_KEY: gmm, COUNT_KEY: cnt, STATION_USAGE_KEY: sid}
         pickle.dump(model, f)
 
 
-def load_gmm_model(site: SiteStr,
-                   begin: datetime,
-                   end: datetime,
-                   n_components: int) -> dict[str, np.ndarray | mixture.GaussianMixture]:
+def load_gmm_model(site: SiteStr, begin: datetime, end: datetime,
+                   n_components: int
+                   ) -> dict[str, np.ndarray | mixture.GaussianMixture]:
     """Load pickled GMM and other data from folder.
+
+    If searching for a custom model, searches relative to the current
+    working directory in ``GMMS_DIR``. If searching for a
+    default model, searches inside the data folder.
 
     Args:
         site: either 'caltech' or 'jpl'
@@ -263,19 +270,16 @@ def load_gmm_model(site: SiteStr,
                 components are specified on folder
             'count' (np.ndarray): session counts per day
             'station_usage' (np.ndarray): stations' usage counts for date range
-        If searching for a custom model, searches relative to the current
-            working directory in ``GMM_DEFAULT_DIR``. If searching for a
-            default model, searches inside the data folder.
     """
-    folder_name = get_folder_name(begin, end, n_components)
-    folder_path = os.path.join(GMM_DEFAULT_DIR, site, folder_name)
+    folder_path = os.path.join(GMMS_DIR, site)
+    filename = get_model_name(begin, end, n_components)
     # search through custom folders
     if os.path.exists(folder_path):
-        with open(os.path.join(folder_path, MODEL_NAME), 'rb') as f:
+        with open(os.path.join(folder_path, filename), 'rb') as f:
             return pickle.load(f)
     # search through default models
     else:
-        mpath = os.path.join('data', 'evcharging', GMM_DEFAULT_DIR, site, folder_name, MODEL_NAME)
+        mpath = os.path.join('data', 'evcharging', GMMS_DIR, site, filename)
         data = pkgutil.get_data('sustaingym', mpath)
         assert data is not None
         return pickle.loads(data)
@@ -297,3 +301,29 @@ def round(arr: np.ndarray, thresh: float = 0.7) -> np.ndarray:
     dec = np.modf(arr)[0]
     roundup = dec > thresh
     return np.where(roundup, np.ceil(arr), np.floor(arr))
+
+
+def download_default_acndata() -> None:
+    """Downloads default data from ACNData."""
+    print(DEFAULT_DATE_RANGES)
+    print(DATE_FORMAT)
+
+    for start, end in DEFAULT_DATE_RANGES:
+        for site in ('caltech', 'jpl'):
+            start_dt = datetime.strptime(start, DATE_FORMAT)
+            end_dt = datetime.strptime(end, DATE_FORMAT)
+            df = fetch_real_events(
+                start_dt, end_dt + timedelta(days=1), site=site)  # type: ignore
+
+            fdir = os.path.join(
+                'sustaingym', 'data', 'evcharging', 'acn_data', site)
+            os.makedirs(fdir, exist_ok=True)
+            fname = f'{start} {end}.csv.gz'
+            fpath = os.path.join(fdir, fname)
+
+            df.to_csv(fpath, compression='gzip', index=False)
+
+
+if __name__ == '__main__':
+    # download data from ACNData
+    download_default_acndata()

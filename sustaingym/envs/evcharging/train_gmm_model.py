@@ -1,9 +1,15 @@
 """
 GMM training script.
 
+The GMMs are fitted to 4 feature dimensions. The 4 features are, in order,
+- 'arrival_time': minute of day, normalized to [0, 1)
+- 'departure_time': minute of day, normalized to [0, 1)
+- 'estimated_departure_time': minute of day, normalized to [0, 1)
+- 'requested_energy': energy requested; multiply by 100 to get kWh
+
 Example command line usage
-python -m sustaingym.envs.evcharging.train_gmm_model --site caltech --gmm_n_components 10 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
-python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 10 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
+python -m sustaingym.envs.evcharging.train_gmm_model --site caltech --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
+python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
 
 usage: train_gmm_model.py [-h] [--site SITE] [--gmm_n_components GMM_N_COMPONENTS]
                           [--date_ranges DATE_RANGES [DATE_RANGES ...]]
@@ -56,14 +62,17 @@ def preprocess(df: pd.DataFrame, filter: bool = True) -> pd.DataFrame:
         mask = (df['arrival'].dt.day == max_depart.dt.day)
         df = df[mask].copy()
 
-    # Normalize arrival time, departure time, estimated departure time from datetimes
+    # Normalize arrival time, departure time, estimated departure time
     for col in ['arrival', 'departure', 'estimated_departure']:
         df[col + '_time'] = (df[col].dt.hour * 60 + df[col].dt.minute) / MINS_IN_DAY
 
     # Normalize requested energy
     df['requested_energy (kWh)'] /= REQ_ENERGY_SCALE
 
-    return df[['arrival_time', 'departure_time', 'estimated_departure_time', 'requested_energy (kWh)']].copy()
+    return df[[
+        'arrival_time', 'departure_time', 'estimated_departure_time',
+        'requested_energy (kWh)'
+    ]].copy()
 
 
 def station_id_cnts(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
@@ -88,7 +97,8 @@ def station_id_cnts(df: pd.DataFrame, n2i: dict[str, int]) -> np.ndarray:
     return cnts
 
 
-def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime, datetime]]:
+def parse_string_date_list(date_range: Sequence[str]
+                           ) -> Sequence[tuple[datetime, datetime]]:
     """Converts a sequence of string date ranges to datetimes.
 
     Args:
@@ -105,26 +115,37 @@ def parse_string_date_list(date_range: Sequence[str]) -> Sequence[tuple[datetime
         ValueError: begin and end date not in data's range
     """
     if len(date_range) % 2 != 0:
-        raise ValueError(f'Number of dates must be divisible by 2, found length {len(date_range)} with the second later than the first.')
+        raise ValueError(
+            'Number of dates must be divisible by 2, found length '
+            f'{len(date_range)} with the second later than the first.')
 
-    date_range_dt = [datetime.strptime(date_str, DATE_FORMAT).replace(tzinfo=AM_LA) for date_str in date_range]
+    date_range_dt = [
+        datetime.strptime(date_str, DATE_FORMAT).replace(tzinfo=AM_LA)
+        for date_str in date_range]
     date_ranges = []
     for i in range(len(date_range) // 2):
         begin, end = date_range_dt[2 * i], date_range_dt[2 * i + 1]
 
         if begin < START_DATE:
-            raise ValueError(f'beginning of date range {date_range[2 * i]} before data start date {START_DATE.strftime(DATE_FORMAT)}')
+            raise ValueError(
+                f'beginning of date range {date_range[2 * i]} before data '
+                f'start date {START_DATE.strftime(DATE_FORMAT)}')
         if end > END_DATE:
-            raise ValueError(f'end of date range {date_range[2 * i + 1]} after data end date {END_DATE.strftime(DATE_FORMAT)}')
+            raise ValueError(
+                f'end of date range {date_range[2 * i + 1]} after data '
+                f'end date {END_DATE.strftime(DATE_FORMAT)}')
         if begin > end:
-            raise ValueError(f'beginning of date range {date_range[2 * i]} later than end {date_range[2 * i + 1]}')
+            raise ValueError(
+                f'beginning of date range {date_range[2 * i]} later than '
+                f'end {date_range[2 * i + 1]}')
 
         date_ranges.append((begin, end))
 
     return date_ranges
 
 
-def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, datetime]) -> None:
+def create_gmm(site: SiteStr, n_components: int,
+               date_range: tuple[datetime, datetime]) -> None:
     """Creates a custom GMM and saves in the `gmms_ev_charging` folder.
 
     Args:
@@ -150,8 +171,9 @@ def create_gmm(site: SiteStr, n_components: int, date_range: tuple[datetime, dat
     # Preprocess DataFrame for GMM training
     df = preprocess(df)
     # Train and save
-    print(f'Fitting GMM ({n_components} components, {len(df.columns)} dimensions) on '
-          f'data from {site} site from {date_range[0].strftime(DATE_FORMAT)} to '
+    print(f'Fitting GMM ({n_components} components, {len(df.columns)} '
+          f'dimensions) on data from {site} site from '
+          f'{date_range[0].strftime(DATE_FORMAT)} to '
           f'{date_range[1].strftime(DATE_FORMAT)}... ')
     gmm = GaussianMixture(n_components=n_components)
     gmm.fit(df)
@@ -179,18 +201,20 @@ def create_gmms(site: SiteStr, n_components: int,
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
-        description="GMM Training Script", formatter_class=argparse.RawTextHelpFormatter)
+        description='GMM Training Script',
+        formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument(
-        "--site", default="caltech",
-        help="Name of site: 'caltech' or 'jpl'")
+        '--site', default='caltech',
+        help='Name of site: "caltech" or "jpl"')
     parser.add_argument(
-        "--gmm_n_components", type=int, default=50)
+        '--gmm_n_components', type=int, default=30)
     parser.add_argument(
-        "--date_ranges", nargs="+",
-        help="Date ranges for GMM models to be trained on. Number of dates "
-             "must be a multiple of 2, with the second later than the first. "
-             "Dates should be formatted as YYYY-MM-DD. "
-             f"Supported ranges should be between {START_DATE.strftime(DATE_FORMAT)} and {END_DATE.strftime(DATE_FORMAT)}.")
+        '--date_ranges', nargs='+',
+        help='Date ranges for GMM models to be trained on. Number of dates '
+             'must be a multiple of 2, with the second later than the first. '
+             'Dates should be formatted as YYYY-MM-DD. Supported ranges '
+             f'should be between {START_DATE.strftime(DATE_FORMAT)} and '
+             f'{END_DATE.strftime(DATE_FORMAT)}.')
     args = parser.parse_args()
 
     if args.date_ranges is None:

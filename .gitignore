@@ -4,6 +4,7 @@
 .vscode/
 sandbox/
 logs/
+oldlogs/
 log/
 plots/
 ## END CUSTOM EXCLUSIONS
