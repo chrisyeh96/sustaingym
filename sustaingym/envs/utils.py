@@ -20,6 +20,8 @@ def solve_mosek(prob: cp.Problem, verbose: int = 0) -> None:
         }
         # prob.solve(warm_start=True, solver=cp.MOSEK, mosek_params=mosek_params, verbose=True)
         prob.solve(warm_start=True, solver=cp.MOSEK)
+        if prob.status != 'optimal':
+            print(f'prob.status = {prob.status}')
         # prob.solve(warm_start=True, solver=cp.ECOS, verbose=True)
     except cp.SolverError:
         prob.solve(solver=cp.ECOS)

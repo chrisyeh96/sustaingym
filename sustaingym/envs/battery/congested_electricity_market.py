@@ -711,7 +711,7 @@ class CongestedElectricityMarketEnv(Env):
         self.max_cost = 1.25 * max(max(self.network.cgen[:, 1]), self.network.cbat[-1, 0], self.network.cbat[-1, 1]) # edit for general n battery case later!!!
 
         # action space is two values for the charging and discharging costs
-        self.action_space = spaces.Box(low=0, high=self.max_cost,
+        self.action_space = spaces.Box(low=-self.max_cost/0.95, high=self.max_cost/0.95, # 0.95 comes from the discrete actions case
                                        shape=(2, self.N_B, self.settlement_interval + 1), dtype=np.float32)
 
         # observation space is current energy level, current time, previous (a, b, x)
