@@ -1,31 +1,30 @@
 from __future__ import annotations
 
+from copy import deepcopy
+from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
 
 import gymnasium as gym
 import numpy as np
 import pandas as pd
+from pettingzoo import ParallelEnv
 from ray.rllib.algorithms.algorithm import Algorithm
 from tqdm import tqdm
 
 
 class BaseAlgorithm:
-    """Base abstract class for EVChargingGym scheduling algorithms.
+    """Base abstract class for running an agent in an environment.
 
     Subclasses are expected to implement the get_action() method.
-
-    Attributes:
-        env (EVChargingEnv): EV charging environment
-        continuous_action_space (bool): type of action output so the gym's
-            DiscreteActionWrapper may be used.
     """
 
-    def __init__(self, env: gym.Env, multiagent: bool = False):
+    def __init__(self, env: gym.Env | ParallelEnv, multiagent: bool = False):
         self.env = env
         self.multiagent = multiagent
 
-    def get_action(self, observation: dict[str, Any]) -> np.ndarray | dict[str, np.ndarray]:
+    def get_action(self, observation: dict[str, Any]
+                   ) -> np.ndarray | dict[str, np.ndarray]:
         """Returns an action based on gym observations."""
         raise NotImplementedError
 
@@ -52,9 +51,7 @@ class BaseAlgorithm:
         if isinstance(seeds, int):
             seeds = list(range(seeds))
 
-        results: dict[str, list[float]] = {
-            'seed': [], 'return': []
-        }
+        results = defaultdict[str, list](list)
 
         for seed in tqdm(seeds):
             results['seed'].append(seed)
@@ -80,16 +77,26 @@ class BaseAlgorithm:
                 ep_return += reward
             results['return'].append(ep_return)
 
+            # in multiagent setting, assume that all agents get same info
+            if self.multiagent:
+                agent = list(info.keys())[0]
+                info = info[agent]
+
+            for key, value in info.items():
+                results[key].append(deepcopy(value))
+
         return pd.DataFrame(results)
 
 
 class RLLibAlgorithm(BaseAlgorithm):
     """Wrapper for RLLib RL agent."""
-    def __init__(self, env: gym.Env, algo: Algorithm, multiagent: bool = False):
+    def __init__(self, env: gym.Env | ParallelEnv, algo: Algorithm,
+                 multiagent: bool = False):
         super().__init__(env, multiagent=multiagent)
         self.algo = algo
 
-    def get_action(self, observation: dict[str, Any]) -> np.ndarray | dict[str, np.ndarray]:
+    def get_action(self, observation: dict[str, Any]
+                   ) -> np.ndarray | dict[str, np.ndarray]:
         """Returns output of RL model.
 
         Args:
@@ -99,9 +106,10 @@ class RLLibAlgorithm(BaseAlgorithm):
             *See get_action() in BaseAlgorithm.
         """
         if self.multiagent:
-            action = {}
-            for agent in observation:
-                action[agent] = self.algo.compute_single_action(observation[agent], explore=False)
+            action = {
+                agent: self.algo.compute_single_action(observation[agent], explore=False)
+                for agent in observation
+            }
             return action
         else:
             return self.algo.compute_single_action(observation, explore=False)

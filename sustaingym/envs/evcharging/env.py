@@ -134,9 +134,9 @@ class EVChargingEnv(Env):
             'est_departures':  spaces.Box(-288, 288, shape=(self.num_stations,), dtype=np.float32),
             'demands':         spaces.Box(0, self.data_generator.requested_energy_cap,
                                           shape=(self.num_stations,), dtype=np.float32),
-            'prev_moer':       spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-            'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
-            'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+            'prev_moer':       spaces.Box(0, 1, shape=(1,), dtype=np.float32),
+            'forecasted_moer': spaces.Box(0, 1, shape=(self.moer_forecast_steps,), dtype=np.float32),
+            'timestep':        spaces.Box(0, 1, shape=(1,), dtype=np.float32),
         })
 
         self._obs = {
@@ -224,7 +224,7 @@ class EVChargingEnv(Env):
                 f'moer forecast steps = {self.moer_forecast_steps}) '
                 f'using {self.data_generator.__repr__()}')
 
-    def step(self, action: np.ndarray, return_all_info: bool = False
+    def step(self, action: np.ndarray
              ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         """Steps the environment.
 
@@ -284,7 +284,7 @@ class EVChargingEnv(Env):
         # Retrieve environment information
         observation = self._get_observation()
         reward = self._get_reward(schedule)
-        info = self._get_info(return_all_info)
+        info = self._get_info()
 
         # terminated, truncated at end of day
         return observation, reward, done, done, info
@@ -494,42 +494,3 @@ def magnitude_constraint(action: cp.Variable, cn: acns.ChargingNetwork
         raise ValueError(
             'Action should have shape [num_stations] or [num_stations, T], '
             f'but received shape {action.shape} instead.')
-
-
-if __name__ == '__main__':
-    from sustaingym.envs.evcharging import RealTraceGenerator
-    # import cProfile, pstats
-
-    test_ranges = (
-        ('2019-05-01', '2019-08-31'),
-        ('2019-09-01', '2019-12-31'),
-        ('2020-02-01', '2020-05-31'),
-        ('2021-05-01', '2021-08-31'),
-    )
-    env = EVChargingEnv(RealTraceGenerator('caltech', test_ranges[0]))
-    # print(env.)
-
-    # with cProfile.Profile() as profile:
-    #     env = EVChargingEnv(RealTraceGenerator('caltech', test_ranges[0]))
-
-    #     for i in range(10):
-    #         done = False
-    #         obs, episode_info = env.reset(seed=i, return_info=True)
-    #         print("reset obs length: ", len(obs))
-    #         steps = 0
-    #         while not done:
-    #             action = np.ones((54,))
-    #             obs, reward, terminated, truncated, info = env.step(action, return_info=False)
-    #             print("step obs length: ", len(obs))
-    #             # assert 1 == 0
-    #             done = terminated or truncated
-    #             steps += 1
-    #         print(f"Iteration: {i + 1}, steps {steps}")
-
-    #     print(steps)
-    #     print(info.keys())
-    #     print(info['reward_breakdown'])
-
-    # results = pstats.Stats(profile)
-    # results.sort_stats(pstats.SortKey.CUMULATIVE)
-    # results.print_stats(20)
