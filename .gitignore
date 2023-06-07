@@ -18,6 +18,7 @@ examples/congested_intermreward/
 examples/model_analysis.ipynb
 *.png
 sustaingym/tests*
+oldlogs/
 log/
 plots/
 ## END CUSTOM EXCLUSIONS

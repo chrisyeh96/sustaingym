@@ -7,13 +7,15 @@ from collections.abc import Sequence
 from typing import Any
 
 import cvxpy as cp
-from gym import spaces
+from gymnasium import spaces
 import numpy as np
 import pandas as pd
-from stable_baselines3.common.base_class import BaseAlgorithm
+# from stable_baselines3.common.base_class import BaseAlgorithm
+from ray.rllib.algorithms.algorithm import Algorithm
 from tqdm import tqdm
 
-from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
+from sustaingym.envs.evcharging import EVChargingEnv, MultiAgentEVChargingEnv
+from sustaingym.envs.evcharging.ev_charging import magnitude_constraint
 from sustaingym.envs.utils import solve_mosek
 
 
@@ -33,19 +35,20 @@ class BaseEVChargingAlgorithm:
     # Discrete maximum action for action wrapper
     D_MAX_ACTION = 4
 
-    def __init__(self, env: EVChargingEnv):
+    def __init__(self, env: EVChargingEnv | MultiAgentEVChargingEnv, multiagent: bool = False):
         """
         Args:
             env (EVChargingEnv): EV charging environment
         """
         self.env = env
-        self.continuous_action_space = isinstance(self.env.action_space, spaces.Box)
-    
+        self.multiagent = multiagent
+        self.continuous_action_space = isinstance(env.action_space, spaces.Box)
+
     def _get_max_action(self) -> int:
         """Returns maximum action depending on type of action space."""
         return self.MAX_ACTION if self.continuous_action_space else self.D_MAX_ACTION
 
-    def get_action(self, observation: dict[str, Any]) -> np.ndarray:
+    def get_action(self, observation: dict[str, Any]) -> np.ndarray | dict[str, np.ndarray]:
         """Returns an action based on gym observations.
 
         Args:
@@ -55,7 +58,7 @@ class BaseEVChargingAlgorithm:
             (np.ndarray) pilot signals for current timestep
         """
         raise NotImplementedError
-    
+
     def reset(self) -> None:
         """Resets the algorithm at the end of each episode."""
         pass
@@ -69,14 +72,14 @@ class BaseEVChargingAlgorithm:
         Args:
             seeds: if a list, on each episode run, EVChargingEnv is reset using
                 the seed. If an integer, a list is created using np.arange(seeds)
-                and used to reset the gym instead. If the data generator is a
+                and used to reset the env instead. If the data generator is a
                 RealTraceGenerator with sequential set to True and the input to
                 seeds is an integer, this method runs the algorithm on each day
                 in the period sequentially.
 
         Returns:
             DataFrame of length len(seeds) or seeds containing reward info.
-                reward                    float64
+                return                    float64
                 profit                    float64
                 carbon_cost               float64
                 excess_charge             float64
@@ -84,17 +87,19 @@ class BaseEVChargingAlgorithm:
             See EVChargingEnv for more info.
         """
         if isinstance(seeds, int):
-            seeds = [i for i in range(seeds)]
+            seeds = list(range(seeds))
 
-        reward_breakdown: dict[str, list[float]] = {
-            'reward': [], 'profit': [], 'carbon_cost': [], 'excess_charge': [], 'max_profit': [],
+        results: dict[str, list[float]] = {
+            'seed': [], 'return': [], 'profit': [], 'carbon_cost': [],
+            'excess_charge': [], 'max_profit': []
         }
 
         for seed in tqdm(seeds):
-            episode_reward = 0.0
+            results['seed'].append(seed)
+            ep_return = 0.0
 
             # Reset environment
-            obs = self.env.reset(seed=seed)
+            obs, _ = self.env.reset(seed=seed)
 
             # Reset algorithm
             self.reset()
@@ -103,16 +108,27 @@ class BaseEVChargingAlgorithm:
             done = False
             while not done:
                 action = self.get_action(obs)
-                obs, reward, done, info = self.env.step(action)
-                episode_reward += reward
+                obs, reward, terminated, truncated, info = self.env.step(action)
+                assert (type(reward) == dict) == self.multiagent
+                if self.multiagent:
+                    reward = sum(reward.values())
+                    done = any(terminated.values()) or any(truncated.values())
+                else:
+                    done = terminated or truncated
+                ep_return += reward
+            results['return'].append(ep_return)
 
             # Collect reward info from environment
-            for rb in info['reward_breakdown']:
-                reward_breakdown[rb].append(info['reward_breakdown'][rb])
-            reward_breakdown['reward'].append(episode_reward)
-            reward_breakdown['max_profit'].append(info['max_profit'])
+            if 'reward_breakdown' not in info:
+                # assume multiagent, so extract a single agent's info dict
+                station = list(info.keys())[0]
+                info = info[station]
+            if 'reward_breakdown' in info:
+                for rb in info['reward_breakdown']:
+                    results[rb].append(info['reward_breakdown'][rb])
+                results['max_profit'].append(info['max_profit'])
 
-        return pd.DataFrame(reward_breakdown)
+        return pd.DataFrame(results)
 
 
 class GreedyAlgorithm(BaseEVChargingAlgorithm):
@@ -133,7 +149,9 @@ class RandomAlgorithm(BaseEVChargingAlgorithm):
         if self.continuous_action_space:
             action = np.random.random(size=self.env.num_stations)
         else:
-            action = np.random.randint(0, self.D_MAX_ACTION + 1, size=self.env.num_stations).astype(float)
+            action = np.random.randint(
+                0, self.D_MAX_ACTION + 1, size=self.env.num_stations
+                ).astype(float)
         return action
 
 
@@ -155,43 +173,39 @@ class MPC(BaseEVChargingAlgorithm):
         super().__init__(env)
         assert self.continuous_action_space, \
             "MPC only supports continuous action space"
-        self.lookahead = lookahead
-        assert self.lookahead <= self.env.moer_forecast_steps, \
+        assert lookahead <= env.moer_forecast_steps, \
             "MPC lookahead must be less than forecasted timesteps"
+
+        self.lookahead = lookahead
 
         # Optimization problem setup
 
-        # MPC action trajectory 
-        self.traj = cp.Variable((self.env.num_stations, self.lookahead), nonneg=True)
+        # VARIABLES
+        # MPC action trajectory
+        self.traj = cp.Variable((env.num_stations, self.lookahead), nonneg=True)
 
-        # Aggregate magnitude (A) must be less than observation magnitude (A)
-        phase_factor = np.exp(1j * np.deg2rad(self.env.cn._phase_angles))
-        A_tilde = self.env.cn.constraint_matrix * phase_factor[None, :]
-        agg_magnitude = cp.abs(A_tilde @ self.traj) * self.env.ACTION_SCALE_FACTOR
-        magnitude_limit = np.tile(np.expand_dims(self.env.cn.magnitudes, axis=1), (1, self.lookahead))
-        
-        # Parameters
-
+        # PARAMETERS
         # Current timestep demands in kWh
-        self.demands_cvx = cp.Parameter((self.env.num_stations,), nonneg=True)
-
+        self.demands_cvx = cp.Parameter(env.num_stations, nonneg=True)
         # Forecasted moers
-        self.moers = cp.Parameter((self.lookahead,), nonneg=True)
-
+        self.moers = cp.Parameter(self.lookahead, nonneg=True)
         # Boolean mask for when an EV is expected to leave
-        self.mask = cp.Parameter((self.env.num_stations, self.lookahead), nonneg=True)
+        self.mask = cp.Parameter((env.num_stations, self.lookahead), nonneg=True)
 
-        # Maximize profit and minimize carbon cost subject to network constraints
-        profit = cp.sum(self.traj) * self.env.PROFIT_FACTOR
-        carbon_cost = cp.sum(self.traj @ self.moers) * self.env.CARBON_COST_FACTOR
+        # OBJECTIVE
+        # Maximize profit and minimize carbon cost
+        profit = cp.sum(self.traj) * env.ACTION_SCALE_FACTOR * env.PROFIT_FACTOR
+        carbon_cost = cp.sum(self.traj @ self.moers) * env.ACTION_SCALE_FACTOR * env.CARBON_COST_FACTOR
         objective = cp.Maximize(profit - carbon_cost)
+
+        # CONSTRAINTS
         constraints = [
-            # Cannot charge after EV leaves using estimation as a proxy
+            # Cannot charge after EV leaves, using estimation as a proxy
             self.traj <= self.mask,
             # Cannot overcharge demand
-            cp.sum(self.traj, axis=1) <= self.demands_cvx / self.env.A_PERS_TO_KWH / self.env.ACTION_SCALE_FACTOR,
+            cp.sum(self.traj, axis=1) <= self.demands_cvx / env.A_PERS_TO_KWH / env.ACTION_SCALE_FACTOR,
             # Cannot break network constraints
-            agg_magnitude <= magnitude_limit
+            magnitude_constraint(action=self.traj, cn=env.cn)
         ]
 
         # Formulate problem
@@ -236,71 +250,68 @@ class OfflineOptimal(BaseEVChargingAlgorithm):
 
         # Optimization problem setup similar to MPC
 
-        # Oracle action trajectory
-        self.traj = cp.Variable((self.env.num_stations, self.TOTAL_TIMESTEPS), nonneg=True)
+        # VARIABLES
+        # Oracle actions, normalized in range [0, 1]
+        self.traj = cp.Variable((env.num_stations, self.TOTAL_TIMESTEPS), nonneg=True)
+        # EV charging demands, in action-periods
+        self.demands = cp.Variable((env.num_stations, self.TOTAL_TIMESTEPS + 1), nonneg=True)
 
-        # EV charging demands (kWh)
-        self.demands = cp.Variable((self.env.num_stations, self.TOTAL_TIMESTEPS + 1), nonneg=True)
+        # PARAMETERS
+        # True moers
+        self.moers = cp.Parameter(self.TOTAL_TIMESTEPS, nonneg=True)
+        # Boolean mask for when an EV actually leaves
+        self.mask = cp.Parameter((env.num_stations, self.TOTAL_TIMESTEPS), nonneg=True)
 
-        # Aggregate magnitude (A) must be less than observation magnitude (A)
-        phase_factor = np.exp(1j * np.deg2rad(self.env.cn._phase_angles))
-        A_tilde = self.env.cn.constraint_matrix * phase_factor[None, :]
-        self._agg_magnitude = cp.abs(A_tilde @ self.traj) * self.env.ACTION_SCALE_FACTOR
-        self._magnitude_limit = np.tile(np.expand_dims(self.env.cn.magnitudes, axis=1), (1, self.TOTAL_TIMESTEPS))
-
-        # Parameters
-
-        # Forecasted moers
-        self.moers = cp.Parameter((self.TOTAL_TIMESTEPS,), nonneg=True)
-
-        # Boolean mask for when an EV is expected to leave
-        self.mask = cp.Parameter((self.env.num_stations, self.TOTAL_TIMESTEPS), nonneg=True)
-
-        # Maximize profit and minimize carbon cost subject to network constraints
-        profit = cp.sum(self.traj) * self.env.PROFIT_FACTOR
-        carbon_cost = cp.sum(self.traj @ self.moers) * self.env.CARBON_COST_FACTOR
+        # OBJECTIVE
+        # Maximize profit and minimize carbon cost
+        profit = cp.sum(self.traj) * env.ACTION_SCALE_FACTOR * env.PROFIT_FACTOR
+        carbon_cost = cp.sum(self.traj @ self.moers) * env.ACTION_SCALE_FACTOR * env.CARBON_COST_FACTOR
         self._objective = cp.Maximize(profit - carbon_cost)
 
         self.reset()
-    
+
     def reset(self) -> None:
         """Reset timestep count."""
-        self._constraints = [
-            # Cannot charge after EV leaves using estimation as a proxy
-            self.traj <= self.mask[:, :self.TOTAL_TIMESTEPS],
-            # Cannot break network constraints
-            self._agg_magnitude <= self._magnitude_limit
-        ]
-
         self.timestep = 0
+
+        # CONSTRAINTS (only a partial list, more are added in get_action())
+        self._constraints = [
+            # cannot charge after EV leaves
+            self.traj <= self.mask,
+            # aggregate magnitude constraint
+            magnitude_constraint(action=self.traj, cn=self.env.cn)
+        ]
 
     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
         """
         On first call, get action for all timesteps (should be directly
         after environment reset).
         """
+        env = self.env
+
         if self.timestep == 0:
-            # Set marginal emissions to true future rates
-            self.moers.value = self.env.moer[:self.TOTAL_TIMESTEPS, 0]
+            # Set marginal emissions to true values
+            self.moers.value = env.moer[1:self.TOTAL_TIMESTEPS + 1, 0]
 
             # Convert station id to index in charging network
-            station_idx = {evse: i for i, evse in enumerate(self.env.cn.station_ids)}
+            station_idx = {evse: i for i, evse in enumerate(env.cn.station_ids)}
 
-            mask = np.zeros((self.env.num_stations, self.TOTAL_TIMESTEPS))
-            for ev in self.env.evs:
+            mask = np.zeros((env.num_stations, self.TOTAL_TIMESTEPS))
+            for ev in env._evs:
                 ev_idx = station_idx[ev.station_id]
                 # Set mask using true arrival and departures
                 mask[ev_idx, ev.arrival:ev.departure] = self.MAX_ACTION
 
                 # Set starting demand constraints
-                self._constraints.append(self.demands[ev_idx, ev.arrival] == \
-                    ev.requested_energy / self.env.A_PERS_TO_KWH / self.env.ACTION_SCALE_FACTOR)
-                
+                self._constraints.append(
+                    self.demands[ev_idx, ev.arrival] == ev.requested_energy /
+                        env.A_PERS_TO_KWH / env.ACTION_SCALE_FACTOR)
+
                 # Set inter-period charge and remaining demand constraints
                 if ev.arrival + 1 < ev.departure:
                     self._constraints.append(
-                        self.demands[ev_idx, ev.arrival+1:ev.departure] \
-                            == self.demands[ev_idx, ev.arrival:ev.departure-1] \
+                        self.demands[ev_idx, ev.arrival+1:ev.departure]
+                            == self.demands[ev_idx, ev.arrival:ev.departure-1]
                             - self.traj[ev_idx, ev.arrival:ev.departure-1])
             self.mask.value = mask
 
@@ -313,29 +324,52 @@ class OfflineOptimal(BaseEVChargingAlgorithm):
         try:
             action = self.traj.value[:, self.timestep]
         except IndexError as e:
+            print(e)
             print(self.timestep)
-            action = np.zeros((54,))
+            action = np.zeros(54)
         self.timestep += 1
         return action
 
 
-class RLAlgorithm(BaseEVChargingAlgorithm):
-    """RL algorithm wrapper.
+# class RLAlgorithm(BaseEVChargingAlgorithm):
+#     """RL algorithm wrapper.
 
-    Attributes:
-        env (EVChargingEnv): EV charging environment
-        rl_model (BaseAlgorithm): can be from stable baselines
-    """
-    def __init__(self, env: EVChargingEnv, rl_model: BaseAlgorithm):
+#     Attributes:
+#         env (EVChargingEnv): EV charging environment
+#         rl_model (BaseAlgorithm): can be from stable baselines
+#     """
+#     def __init__(self, env: EVChargingEnv, rl_model: BaseAlgorithm):
+#         """
+#         Args:
+#             env (EVChargingEnv): EV charging environment
+#             rl_model (BaseAlgorithm): can be from stable baselines
+#         """
+#         super().__init__(env)
+#         self.rl_model = rl_model
+
+#     def get_action(self, observation: dict[str, Any]) -> np.ndarray:
+#         """Returns output of RL model.
+
+#         Args:
+#             *See get_action() in BaseEVChargingAlgorithm.
+
+#         Returns:
+#             *See get_action() in BaseEVChargingAlgorithm.
+#         """
+#         return self.rl_model.predict(observation, deterministic=True)[0]
+
+
+class RLLibAlgorithm(BaseEVChargingAlgorithm):
+    """Wrapper for RLLib RL agent."""
+    def __init__(self, env: EVChargingEnv, algo: Algorithm, multiagent: bool = False):
         """
-        Args:
             env (EVChargingEnv): EV charging environment
-            rl_model (BaseAlgorithm): can be from stable baselines
+            algo (Algorithm): RL Lib model
         """
-        super().__init__(env)
-        self.rl_model = rl_model
+        super().__init__(env, multiagent=multiagent)
+        self.algo = algo
 
-    def get_action(self, observation: dict[str, Any]) -> np.ndarray:
+    def get_action(self, observation: dict[str, Any]) -> np.ndarray | dict[str, np.ndarray]:
         """Returns output of RL model.
 
         Args:
@@ -344,4 +378,10 @@ class RLAlgorithm(BaseEVChargingAlgorithm):
         Returns:
             *See get_action() in BaseEVChargingAlgorithm.
         """
-        return self.rl_model.predict(observation, deterministic=True)[0]
+        if self.multiagent:
+            action = {}
+            for agent in observation:
+                action[agent] = self.algo.compute_single_action(observation[agent], explore=False)
+            return action
+        else:
+            return self.algo.compute_single_action(observation, explore=False)
