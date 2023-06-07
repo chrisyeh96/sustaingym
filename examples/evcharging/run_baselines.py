@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from sustaingym.algorithms.evcharging.baselines import (
-    BaseEVChargingAlgorithm, GreedyAlgorithm, RandomAlgorithm, MPC, OfflineOptimal)
+    BaseAlgorithm, GreedyAlgorithm, RandomAlgorithm, MPC, OfflineOptimal)
 from sustaingym.envs.evcharging import (
     EVChargingEnv, DiscreteActionWrapper, RealTraceGenerator)
 from sustaingym.envs.evcharging.utils import (
@@ -58,7 +58,7 @@ def run_bl_on_period(bl: str, period: DefaultPeriodStr, site: SiteStr) -> None:
 
     env = get_env(site, period)
 
-    bl_algo: BaseEVChargingAlgorithm
+    bl_algo: BaseAlgorithm
     if bl == 'offline_optimal':
         bl_algo = OfflineOptimal(env)
     elif bl == 'greedy':

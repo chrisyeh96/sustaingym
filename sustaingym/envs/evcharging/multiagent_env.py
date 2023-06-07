@@ -11,7 +11,7 @@ import numpy as np
 from pettingzoo import ParallelEnv
 
 from sustaingym.envs.evcharging.discrete_action_wrapper import DiscreteActionWrapper
-from sustaingym.envs.evcharging.ev_charging import EVChargingEnv
+from sustaingym.envs.evcharging.env import EVChargingEnv
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
 
 
@@ -53,9 +53,10 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         if discrete:
             self.single_env = DiscreteActionWrapper(self.single_env)
 
-        # Petting zoo API
+        # PettingZoo API
         self.agents = self.single_env.cn.station_ids[:]
         self.possible_agents = self.agents
+        self.metadata = {}
 
         # Create observation spaces w/ dictionary to help in flattening
         self._dict_observation_spaces = {
@@ -126,36 +127,33 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             infos[agent] = infos_agg
         return infos
 
-    def step(self, action: dict[str, np.ndarray],
-             return_all_info: bool = False) -> tuple[
+    def step(self, action: dict[str, np.ndarray]) -> tuple[
             dict[str, np.ndarray], dict[str, float], dict[str, bool],
             dict[str, bool], dict[str, dict[str, Any]]]:
         """
         Returns: obs, reward, terminateds, truncateds, infos
         """
         # Build action
-        actions_agg = np.zeros(self.num_agents, dtype=np.float32)
+        actions = np.zeros(self.num_agents, dtype=np.float32)
         for i, agent in enumerate(self.agents):
-            actions_agg[i] = action[agent]
+            actions[i] = action[agent]
 
         # Use internal single-agent environment
-        obs_agg, rews_agg, terminated, truncated, infos_agg = self.single_env.step(actions_agg)
-        rew = rews_agg / self.num_agents
-        obs = self._create_dict_from_obs_agg(obs_agg)
+        obs, reward, terminated, truncated, info = self.single_env.step(actions)
 
-        reward, terminateds, truncateds, infos = {}, {}, {}, {}
+        obss = self._create_dict_from_obs_agg(obs)
+        rewards, terminateds, truncateds, infos = {}, {}, {}, {}
         for agent in self.agents:
-            reward[agent] = rew  # every agent gets same global reward signal
+            rewards[agent] = reward / self.num_agents  # every agent gets same global reward signal
             terminateds[agent] = terminated
             truncateds[agent] = truncated
-            infos[agent] = infos_agg  # same as info
+            infos[agent] = info  # same as info
 
         # Delete all agents when day is finished
         if terminated or truncated:
-            pass
-            # self.agents = []
+            self.agents = []
 
-        return obs, reward, terminateds, truncateds, infos
+        return obss, rewards, terminateds, truncateds, infos
 
     # TODO: once we update to a newer version of PettingZoo (>=1.23), the
     # reset() function definition may need to change
@@ -166,8 +164,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
               ) -> dict[str, np.ndarray]:
         """Resets the environment."""
         obs_agg, info_agg = self.single_env.reset(seed=seed, options=options)
-        obs = self._create_dict_from_obs_agg(obs_agg, init=True)
         self.agents = self.possible_agents[:]
+        obs = self._create_dict_from_obs_agg(obs_agg, init=True)
 
         if return_info:
             return obs, self._create_dict_from_infos_agg(info_agg)
