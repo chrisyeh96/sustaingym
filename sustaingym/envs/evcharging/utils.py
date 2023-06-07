@@ -285,24 +285,6 @@ def load_gmm_model(site: SiteStr, begin: datetime, end: datetime,
         return pickle.loads(data)
 
 
-def round(arr: np.ndarray, thresh: float = 0.7) -> np.ndarray:
-    """Round array values when decimal is above threshold.
-
-    Same as np.round if thresh = 0.5
-
-    Args:
-        arr: input array
-        thresh: decimal between 0 and 1
-
-    Returns:
-        rounded array
-    """
-    # extract decimal component
-    dec = np.modf(arr)[0]
-    roundup = dec > thresh
-    return np.where(roundup, np.ceil(arr), np.floor(arr))
-
-
 def download_default_acndata() -> None:
     """Downloads default data from ACNData."""
     print(DEFAULT_DATE_RANGES)
