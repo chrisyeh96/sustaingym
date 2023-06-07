@@ -573,12 +573,15 @@ class CongestedMarketOperator:
             self.p_max.value[N_D+N_G+N_B:] *= 1 - self.z.value
         solve_mosek(self.prob)
 
-        lam = -self.power_balance_constr.dual_value[0]
+        if -self.power_balance_constr.dual_value is not None:
+            lam = -self.power_balance_constr.dual_value[0]
 
-        if self.env.congestion:
-            prices = lam + self.network.H.T @ (self.congestion_constrs[0].dual_value[:,0] - self.congestion_constrs[1].dual_value[:,0])
+            if self.env.congestion:
+                prices = lam + self.network.H.T @ (self.congestion_constrs[0].dual_value[:,0] - self.congestion_constrs[1].dual_value[:,0])
+            else:
+                prices = lam * np.ones(N)
         else:
-            prices = lam * np.ones(N)
+            prices = np.zeros(N)
 
         gen_dis = self.out.value[N_D:N_D+N_G]  # generator
         bat_d = self.out.value[N_D+N_G:N_D+N_G+N_B]  # discharge
