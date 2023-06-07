@@ -223,11 +223,9 @@ def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
 
 def save_moer(starttime: datetime, endtime: datetime, ba: str) -> None:
     """Saves all full-months data between a date range.
-
     Saves data separated by months as separate compressed csv files, which
     contain historical and forecasted marginal emission rates for the days
     spanning the month.
-
     Args:
         starttime: start time for data. Only year and month are used.
             Timezone information is ignored.
@@ -266,7 +264,6 @@ def save_moer_default_ranges() -> None:
 def load_monthly_moer(year: int, month: int, ba: str,
                       save_dir: str | None = None) -> pd.DataFrame:
     """Loads pandas DataFrame from file.
-
     Args:
         year: year of requested month
         month: requested month

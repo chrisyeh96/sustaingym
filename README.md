@@ -26,6 +26,14 @@ sustaingym/             # main Python package
     # for RL development
     conda env update --file env.yml --prune
     ```
+
+   If you are using RLLib with a GPU, you will also need to [configure TensorFlow for GPU](https://www.tensorflow.org/install/pip#4_gpu_setup):
+    ```bash
+    mkdir -p $CONDA_PREFIX/etc/conda/activate.d
+    echo 'CUDNN_PATH=$(dirname $(python -c "import nvidia.cudnn;print(nvidia.cudnn.__file__)"))' >> $CONDA_PREFIX/etc/conda/activate.d/env_vars.sh
+    echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/:$CUDNN_PATH/lib' >> $CONDA_PREFIX/etc/conda/activate.d/env_vars.sh
+    ```
+
 3. Make code modifications in a separate git branch
     ```bash
     git checkout -b new_feature
