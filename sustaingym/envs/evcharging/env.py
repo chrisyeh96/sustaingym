@@ -134,9 +134,9 @@ class EVChargingEnv(Env):
             'est_departures':  spaces.Box(-288, 288, shape=(self.num_stations,), dtype=np.float32),
             'demands':         spaces.Box(0, self.data_generator.requested_energy_cap,
                                           shape=(self.num_stations,), dtype=np.float32),
-            'prev_moer':       spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
-            'forecasted_moer': spaces.Box(0, 1.0, shape=(self.moer_forecast_steps,), dtype=np.float32),
-            'timestep':        spaces.Box(0, 1.0, shape=(1,), dtype=np.float32),
+            'prev_moer':       spaces.Box(0, 1, shape=(1,), dtype=np.float32),
+            'forecasted_moer': spaces.Box(0, 1, shape=(self.moer_forecast_steps,), dtype=np.float32),
+            'timestep':        spaces.Box(0, 1, shape=(1,), dtype=np.float32),
         })
 
         self._obs = {

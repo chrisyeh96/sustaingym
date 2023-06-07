@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from collections import defaultdict
 from collections.abc import Sequence
 from typing import Any
@@ -13,14 +14,9 @@ from tqdm import tqdm
 
 
 class BaseAlgorithm:
-    """Base abstract class for EVChargingGym scheduling algorithms.
+    """Base abstract class for running an agent in an environment.
 
     Subclasses are expected to implement the get_action() method.
-
-    Attributes:
-        env (EVChargingEnv): EV charging environment
-        continuous_action_space (bool): type of action output so the gym's
-            DiscreteActionWrapper may be used.
     """
 
     def __init__(self, env: gym.Env | ParallelEnv, multiagent: bool = False):
@@ -87,7 +83,7 @@ class BaseAlgorithm:
                 info = info[agent]
 
             for key, value in info.items():
-                results[key].append(value)
+                results[key].append(deepcopy(value))
 
         return pd.DataFrame(results)
 
