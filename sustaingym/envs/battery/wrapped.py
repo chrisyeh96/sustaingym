@@ -33,6 +33,7 @@ class DiscreteActions(gym.ActionWrapper):
     def _calculate_terminal_cost(self, agent_energy_level: float) -> float:
         return self.env._caculate_terminal_cost(agent_energy_level)
 
+
 class CongestedDiscreteActions(gym.ActionWrapper):
     def __init__(self, env: gym.Env):
         """
@@ -40,18 +41,18 @@ class CongestedDiscreteActions(gym.ActionWrapper):
             env: ElectricityMarketEnv, or a wrapped version of it
         """
         super().__init__(env)
-        max_price = env.action_space.high[0][0, 0]
+        max_price = env.max_cost
 
         zero_action = np.zeros((2,1))
 
         charge_action = np.array([[*zero_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
-        charge_action[:, 0, 0] = np.array([max_price*0.95**2, max_price])
+        charge_action[:, 0, 0] = np.array([max_price*.99, max_price])
 
         discharge_action = np.array([[*zero_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
         discharge_action[:, 0, 0] = np.array([0, -max_price])
 
         no_action = np.array([[*zero_action], ] * (env.settlement_interval+1)).transpose().reshape(2,1,(env.settlement_interval+1))
-        no_action[:, 0, 0] = np.array([-max_price*0.95**2, max_price])
+        no_action[:, 0, 0] = np.array([-max_price*.99, max_price])
 
         self.actions = {
             0: charge_action,  # charge

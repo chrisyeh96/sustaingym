@@ -134,9 +134,6 @@ def build_save_path(log_dir: str, discrete: bool, algo: str, month:int, lr: floa
         discrete_tag = '_discrete'
 
     save_path = f'{log_dir}/{algo}{discrete_tag}_2020_{month}_g{gamma}_lr{lr}'
-    if os.path.exists(save_path):
-        print(f'save path {save_path} already exists! Aborting')
-        sys.exit()
     return save_path
 
 def get_env(month: int,
@@ -164,19 +161,18 @@ def get_env(month: int,
                 month=f'2020-{month}', seed=month,
                 use_intermediate_rewards=interm_rewards)
 
-        # rescale action spaces to normalized [0,1] interval
-        wrapped_env = gym.wrappers.RescaleAction(env, min_action=0, max_action=1)
+        # flatten action space
+        wrapped_env = FlattenActions(env)
+
+        # flatten observation space
+        wrapped_env = FlattenObservation(wrapped_env)
 
         if discrete:
             # wrap environments to have discrete action space
             wrapped_env = CongestedDiscreteActions(wrapped_env)
-            return wrapped_env
-        
-        # flatten action space
-        wrapped_env = FlattenActions(wrapped_env)
-
-        # flatten observation space
-        wrapped_env = FlattenObservation(wrapped_env)
+        else:
+            # rescale action spaces to normalized [0,1] interval
+            wrapped_env = gym.wrappers.RescaleAction(wrapped_env, min_action=0, max_action=1)
 
         # # normalize observation space
         # wrapped_env = NormalizeObservation(wrapped_env, 0)
@@ -195,7 +191,7 @@ def run_algo(env_config: dict, model_config: dict) -> Union[tuple[
     # train environment
     model_config = model_config.copy()
     if model_config['algo'] == 'ppo':
-        train_config = ppo.PPOConfig()
+        train_config = ppo.PPOConfig().training(vf_clip_param=1000)
     elif model_config['algo'] == 'sac':
         train_config = sac.SACConfig()
     elif model_config['algo'] == 'a2c':
@@ -337,7 +333,7 @@ def run_algo(env_config: dict, model_config: dict) -> Union[tuple[
 #     return best_seeds
 
 if __name__ == '__main__':
-    ray.init(runtime_env={"py_modules": [sustaingym]})
+    # ray.init(runtime_env={"py_modules": [sustaingym]})
     env_config, model_config = parse_args()
     register_env(ENV_NAME, lambda config: get_env(**config)())
     run_algo(env_config, model_config)

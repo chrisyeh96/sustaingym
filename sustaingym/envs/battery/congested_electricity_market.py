@@ -12,6 +12,7 @@ from typing import Any
 
 import cvxpy as cp
 from gymnasium import Env, spaces
+from gymnasium.envs.registration import EnvSpec
 import numpy as np
 import pandas as pd
 import pytz
@@ -573,7 +574,7 @@ class CongestedMarketOperator:
             self.p_max.value[N_D+N_G+N_B:] *= 1 - self.z.value
         solve_mosek(self.prob)
 
-        if -self.power_balance_constr.dual_value is not None:
+        if self.power_balance_constr.dual_value is not None:
             lam = -self.power_balance_constr.dual_value[0]
 
             if self.env.congestion:
@@ -711,7 +712,7 @@ class CongestedElectricityMarketEnv(Env):
         self.max_cost = 1.25 * max(max(self.network.cgen[:, 1]), self.network.cbat[-1, 0], self.network.cbat[-1, 1]) # edit for general n battery case later!!!
 
         # action space is two values for the charging and discharging costs
-        self.action_space = spaces.Box(low=-self.max_cost/0.95, high=self.max_cost/0.95, # 0.95 comes from the discrete actions case
+        self.action_space = spaces.Box(low=-self.max_cost, high=self.max_cost,
                                        shape=(2, self.N_B, self.settlement_interval + 1), dtype=np.float32)
 
         # observation space is current energy level, current time, previous (a, b, x)
@@ -719,15 +720,15 @@ class CongestedElectricityMarketEnv(Env):
         self.observation_space = spaces.Dict({
             'energy': spaces.Box(low=0, high=self.bats_capacity[-1], shape=(1,), dtype=np.float32),
             'time': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            'previous action': spaces.Box(low=0, high=np.inf, shape=(2, self.N_B, self.settlement_interval+1), dtype=np.float32),
+            'previous action': self.action_space,
             'previous agent dispatch': spaces.Box(low=self.network.pmin[-1] * self.TIME_STEP_DURATION,
                                                   high=self.network.pmax[-1] * self.TIME_STEP_DURATION,
                                                   shape=(1,), dtype=np.float32),
             'demand previous': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.float32),
             'demand forecast': spaces.Box(low=0, high=np.inf, shape=(load_forecast_steps,), dtype=np.float32),
-            'moer previous': spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32),
-            'moer forecast': spaces.Box(low=0, high=1, shape=(moer_forecast_steps,), dtype=np.float32),
-            'price previous': spaces.Box(low=0, high=self.max_cost, shape=(1,), dtype=np.float32)
+            'moer previous': spaces.Box(low=0, high=np.inf, shape=(1,), dtype=np.float32),
+            'moer forecast': spaces.Box(low=0, high=np.inf, shape=(moer_forecast_steps,), dtype=np.float32),
+            'price previous': spaces.Box(low=-self.max_cost, high=self.max_cost, shape=(1,), dtype=np.float32)
         })
         self.df_demand = self._get_demand_data()
         self.df_demand_forecast = self._get_demand_forecast_data()
@@ -736,6 +737,13 @@ class CongestedElectricityMarketEnv(Env):
         self.moer_loader = MOERLoader(
             starttime=starttime, endtime=starttime,
             ba='SGIP_CAISO_SCE', save_dir='sustaingym/data/moer')
+        
+        # Define environment spec
+        self.spec = EnvSpec(
+            id='sustaingym/CongestedElectricityMarket-v0',
+            entry_point='sustaingym.envs:CongestedElectricityMarketEnv',
+            nondeterministic=False,
+            max_episode_steps=288)
 
     def _get_demand_data(self) -> pd.DataFrame:
         """
