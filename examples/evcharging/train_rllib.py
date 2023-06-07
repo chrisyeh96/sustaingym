@@ -5,7 +5,6 @@ from collections import defaultdict
 from collections.abc import Callable
 from datetime import datetime
 import os
-import string
 from typing import Any
 
 import gymnasium as gym
@@ -15,7 +14,7 @@ from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from ray.tune.registry import register_env
 from tqdm import tqdm
 
-from sustaingym.algorithms.evcharging.baselines import RLLibAlgorithm
+from sustaingym.algorithms.base import RLLibAlgorithm
 from sustaingym.envs.evcharging import (EVChargingEnv, RealTraceGenerator,
     GMMsTraceGenerator, DiscreteActionWrapper, MultiAgentEVChargingEnv)
 from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator

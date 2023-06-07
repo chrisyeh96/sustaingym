@@ -146,7 +146,7 @@ def parse_string_date_list(date_range: Sequence[str]
 
 def create_gmm(site: SiteStr, n_components: int,
                date_range: tuple[datetime, datetime]) -> None:
-    """Creates a custom GMM and saves in the `gmms_ev_charging` folder.
+    """Creates a custom GMM and saves in the `gmms` folder.
 
     Args:
         site: either 'caltech' or 'jpl'
