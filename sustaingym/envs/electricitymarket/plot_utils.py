@@ -15,8 +15,6 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from sustaingym.envs import ElectricityMarketEnv
-
 
 def training_eval_results(root_folder: str, relative_path: str) -> tuple:
     results = []
@@ -111,7 +109,7 @@ def plot_returns(results: Mapping[str, Mapping[str, np.ndarray]],
     return fig, ax
 
 
-def setup_episode_plot(env: ElectricityMarketEnv, month_str: str,
+def setup_episode_plot(env, month_str: str,
                        include_returns: bool, include_bids: bool
                        ) -> tuple[plt.Figure, dict[str, plt.Axes], list[datetime]]:
     """Sets up main plot. Plots demand + carbon cost curves.

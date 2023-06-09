@@ -49,9 +49,9 @@ from ray.tune.registry import register_env
 from tqdm import tqdm
 
 import sustaingym
-from sustaingym.envs.battery.algorithm import RLLibAlgorithm
+from sustaingym.algorithms.electricitymarket.algorithm import RLLibAlgorithm
 from sustaingym.envs import CongestedElectricityMarketEnv
-from sustaingym.envs.battery.wrapped import CongestedDiscreteActions, DiscreteActions, FlattenActions
+from sustaingym.envs.electricitymarket.wrapped import CongestedDiscreteActions, DiscreteActions, FlattenActions
 
 ENV_NAME = "congested_market"
 TOTAL_STEPS = 250000

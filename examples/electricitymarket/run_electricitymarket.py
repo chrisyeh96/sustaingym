@@ -38,6 +38,10 @@ def run_offline_optimal(seeds: Sequence[int], env: gym.Env
         print("calculating optimal...")
         ep_results = env._calculate_price_taking_optimal(
             prices=ep_prices, init_charge=half, final_charge=half)
+        
+        print("total episode reward: ", np.sum(ep_results['rewards']))
+        print("prices: ", ep_prices)
+        print("dispatch: ", ep_results['dispatch'])
         for k in ['rewards', 'net_prices', 'energy', 'dispatch']:
             all_results[k][i] = ep_results[k]
 
@@ -185,14 +189,14 @@ def run_mpc(seeds: Sequence[int], env: gym.Env
         ep_energy = np.zeros(env.MAX_STEPS_PER_EPISODE)
         ep_dispatch = np.zeros(env.MAX_STEPS_PER_EPISODE)
 
-        for count in range(env.MAX_STEPS_PER_EPISODE):
-            print("calculating baseline no agent prices...")
+        for count in tqdm(range(env.MAX_STEPS_PER_EPISODE)):
+            # print("calculating baseline no agent prices...")
             lookahead_prices = env._calculate_lookahead_prices_without_agent(count)
             ep_prices[i] = lookahead_prices[0]
 
-            print("calculating MPC optimal...")
+            # print("calculating MPC optimal...")
             ep_results = env._calculate_price_taking_optimal(
-                prices=lookahead_prices, init_charge=curr_charge, final_charge=0, steps=env.load_forecast_steps+1)
+                prices=lookahead_prices, init_charge=curr_charge, final_charge=0, steps=env.load_forecast_steps+1, count=count)
             
             ep_rewards[count] = ep_results['rewards'][0]
             ep_net_prices[count] = ep_results['net_prices'][0]
@@ -217,12 +221,13 @@ def run_random(seeds: Sequence[int], env: gym.Env, discrete: bool) -> dict[str, 
 
     for ep, seed in tqdm(enumerate(seeds)):
         print("ep: ", ep)
-        obs = env.reset(seed=seed)
+        obs, info = env.reset(seed=seed)
         prices[ep, 0] = obs['price previous'][0]
         energy[ep, 0] = obs['energy'][0]
         for i in range(1, env.MAX_STEPS_PER_EPISODE):
             action = env.action_space.sample()
-            obs, reward, _, _ = env.step(action)
+            obs, reward, _, _, _ = env.step(action)
+            # print("random reward: ", reward)
             rewards[ep, i] = reward
             energy[ep, i] = obs['energy'][0]
             prices[ep, i] = obs['price previous'][0]

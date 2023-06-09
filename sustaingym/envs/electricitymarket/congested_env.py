@@ -971,6 +971,10 @@ class CongestedElectricityMarketEnv(Env):
         energy_reward = prices[self.bat_idx] * self.dispatch[0]
         carbon_reward = self.CARBON_PRICE * self.moer[0] * self.dispatch[0]
 
+        # print("price: ", prices[self.bat_idx])
+        # print("dispatch: ", self.dispatch[0])
+        # print("moer: ", self.moer[0])
+
         reward = energy_reward + carbon_reward
 
         self.intermediate_rewards['energy'][self.count] = energy_reward
@@ -1083,7 +1087,7 @@ class CongestedElectricityMarketEnv(Env):
             if step == count: # current step
                 demand = load
             else:
-                demand = load_forecast[step - count]
+                demand = load_forecast[step - count - 1]
             
             _, x_bat_d, x_bat_c, bus_prices = self._calculate_dispatch_without_agent(count, demand)
             prices[step - count] = bus_prices[int(self.network.bat_idx - 1)]
@@ -1098,7 +1102,7 @@ class CongestedElectricityMarketEnv(Env):
 
     def _calculate_price_taking_optimal(
             self, prices: np.ndarray, init_charge: float,
-            final_charge: float, steps: int | None = None) -> dict[str, np.ndarray]:
+            final_charge: float, steps: int | None = None, count: int | None = None) -> dict[str, np.ndarray]:
         """Calculates optimal episode, under price-taking assumption.
 
         Args:
@@ -1108,6 +1112,7 @@ class CongestedElectricityMarketEnv(Env):
             final_charge: float, minimum final energy level of agent battery
             steps: int, optional value representing the number of steps to
                 optimize over
+            count: int, optional value representing current time step
 
         Returns:
             results dict, keys are ['rewards', 'dispatch', 'energy', 'net_prices'],
@@ -1140,7 +1145,14 @@ class CongestedElectricityMarketEnv(Env):
             constraints.append(final_charge <= init_charge + delta_energy[-1])
 
         moers = self.moer_arr[:-1, 0]
-        net_price = prices + self.CARBON_PRICE * moers
+        if steps is None:
+            net_price = prices + self.CARBON_PRICE * moers
+        else:
+            net_price = np.zeros(steps)
+            steps_ahead = moers[count:count+steps].shape[0]
+            net_price[:steps_ahead] = prices[:steps_ahead] + self.CARBON_PRICE * moers[count:count+steps]
+            net_price[steps_ahead:] = prices[steps_ahead:]
+
         obj = net_price @ x + prices[-1] * cp.minimum(0, delta_energy[-1])
         prob = cp.Problem(objective=cp.Maximize(obj), constraints=constraints)
         assert prob.is_dcp() and prob.is_dpp()
