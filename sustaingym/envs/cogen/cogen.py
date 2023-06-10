@@ -60,7 +60,7 @@ class CogenEnv(gym.Env):
                 ramp_penalty: float = 2.0,
                 supply_imbalance_penalty: float = 1000,
                 constraint_violation_penalty: float = 1000,
-                forecast_horizon: int = 12,
+                forecast_horizon: int = 3,
                 forecast_noise_std: float = 0.1,
                 ):
         """
@@ -99,7 +99,7 @@ class CogenEnv(gym.Env):
         # action space is power output, evaporative cooler switch, power augmentation switch, and equivalent
         # process steam flow for generators 1, 2, and 3, as well as steam turbine power output, steam flow
         # through condenser, and number of cooling bays employed
-        self.action_space = gym.spaces.Dict({
+        self._action_space_dict = {
             'GT1_PWR': gym.spaces.Box(low=inputs_table.loc['GT1_PWR', 'min'], high=inputs_table.loc['GT1_PWR', 'max'], shape=(1,), dtype=np.float32),
             'GT1_PAC_FFU': gym.spaces.Discrete(2),
             'GT1_EVC_FFU': gym.spaces.Discrete(2),
@@ -115,7 +115,8 @@ class CogenEnv(gym.Env):
             'ST_PWR': gym.spaces.Box(low=inputs_table.loc['ST_PWR', 'min'], high=inputs_table.loc['ST_PWR', 'max'], shape=(1,), dtype=np.float32),
             'IPPROC_M': gym.spaces.Box(low=inputs_table.loc['IPPROC_M', 'min'], high=inputs_table.loc['IPPROC_M', 'max'], shape=(1,), dtype=np.float32),
             'CT_NrBays': gym.spaces.Discrete(12, start=1)
-        })
+        }
+        self.action_space = gym.spaces.Dict(self._action_space_dict)
 
         # define the observation space
         self.observation_space = gym.spaces.Dict({
@@ -129,17 +130,6 @@ class CogenEnv(gym.Env):
             'Energy_Price': gym.spaces.Box(low=0., high=1500., shape=(forecast_horizon+1,), dtype=np.float32),
             'Gas_Price': gym.spaces.Box(low=0., high=7., shape=(forecast_horizon+1,), dtype=np.float32)
         })
-        self.obs = {
-            'Time': np.zeros(1, dtype=np.float32),
-            'Prev_Action': self.action_space.sample(),
-            'TAMB': np.zeros(forecast_horizon+1, dtype=np.float32),
-            'PAMB': np.zeros(forecast_horizon+1, dtype=np.float32),
-            'RHAMB': np.zeros(forecast_horizon+1, dtype=np.float32),
-            'Target_Power': np.zeros(forecast_horizon+1, dtype=np.float32),
-            'Target_Steam': np.zeros(forecast_horizon+1, dtype=np.float32),
-            'Energy_Price': np.zeros(forecast_horizon+1, dtype=np.float32),
-            'Gas_Price': np.zeros(forecast_horizon+1, dtype=np.float32)
-        }
 
         # define the current info
         self.current_info = None

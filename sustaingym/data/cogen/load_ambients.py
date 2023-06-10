@@ -8,16 +8,37 @@ import numpy as np
 import pandas as pd
 from typing import Literal, List
 
+save_dir = 'sustaingym/data/cogen/ambients_data/' # 'data/cogen/ambients_data/' # 
+
+def load_wind_data(n_mw):
+    """
+    Load the wind speed data from local folder
+    """
+    df = pd.read_csv(save_dir + '0_39.97_-128.77_2019_15min.csv', header=1)
+    # points to interpolate for an IEC Class 2 wind turbine
+    wind_curve_pts = [0, 0, 0, 0.0052, 0.0423, 0.1031, 0.1909,
+                      0.3127, 0.4731, 0.6693, 0.8554, 0.9641, 0.9942, 0.9994,
+                      1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0]
+
+    def wind_curve(x):
+        return np.interp(x, np.arange(32), wind_curve_pts)
+
+    # scale by n_mw for number of megawatts worth of wind capacity
+    wind_capacity = n_mw
+    # apply the wind curve to wind speed to get capacity factors
+    cap_factors = wind_curve(df['wind speed at 100m (m/s)'])
+    return wind_capacity * cap_factors
+
+
 def construct_df(renewables_magnitude: float = None) -> list[pd.DataFrame]:
     """
     Constructs the dataframe of all ambient conditions
     Adding renewables (scaled by magnitude input) is currently not implemented TODO?
     """
-    save_dir = 'sustaingym/data/cogen/ambients_data/'
 
     # try to load the dataframe
     try:
-        df = pd.read_pickle(save_dir + 'ambients.pkl')
+        df = pd.read_pickle(save_dir + 'ambients_wind={}.pkl'.format(renewables_magnitude))
     except FileNotFoundError:
         # if it doesn't exist, construct it
         # load the ambients dataset
@@ -81,7 +102,20 @@ def construct_df(renewables_magnitude: float = None) -> list[pd.DataFrame]:
         # divide the "ambient rel. humidity" column by 100 to get a fraction
         df['Ambient rel. Humidity'] = df['Ambient rel. Humidity'].apply(lambda x: x/100.)
 
-        df.to_pickle(save_dir + 'ambients.pkl')
+        # get the wind power data
+        wind_data = load_wind_data(renewables_magnitude)[:len(df)]
+        df['Target Net Power'] = np.maximum(df['Target Net Power'] - wind_data, np.zeros_like(wind_data))
+        # for l in range(len(dfs)):
+        #     try:
+
+        #         dfs[l]['Target Net Power'] = np.maximum(dfs[l]['Target Net Power'] - wind_data[l], 
+        #                                                 np.zeros_like(wind_data[l]))
+        #     except:
+        #         # if the wind data is not the same length as the ambient data,
+        #         # then we're just going to throw away this day anyway
+        #         pass
+
+        df.to_pickle(save_dir + 'ambients_wind={}.pkl'.format(renewables_magnitude))
 
     dates = df.Date.unique()
     # drop the first and last days so each day has 96 datapoints

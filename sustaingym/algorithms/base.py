@@ -8,7 +8,7 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 import pandas as pd
-from pettingzoo import ParallelEnv
+# from pettingzoo import ParallelEnv
 from ray.rllib.algorithms.algorithm import Algorithm
 from tqdm import tqdm
 
