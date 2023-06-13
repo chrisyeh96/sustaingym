@@ -74,7 +74,7 @@ class CogenEnv(gym.Env):
         self.ambients_dfs = load_ambients.construct_df(renewables_magnitude=renewables_magnitude)
         self.n_days = len(self.ambients_dfs)
         self.timesteps_per_day = len(self.ambients_dfs[0])
-        assert (self.forecast_horizon >= 0 and self.forecast_horizon < self.timesteps_per_day - 1), "forecast_horizon must be between 0 and timesteps_per_day - 1"
+        assert (0 <= self.forecast_horizon < self.timesteps_per_day - 1), 'forecast_horizon must be in [0, timesteps_per_day - 1)'
 
         # load the onnx model
         self._model = rt.InferenceSession('sustaingym/data/cogen/onnx_model/model.onnx')  # TODO(Chris): pkgutil
@@ -130,19 +130,42 @@ class CogenEnv(gym.Env):
         # define the current info
         self.current_info = None
 
-    def _forecast_values_from_time(self, day: int, time_step: int) -> tuple[list[float], list[float], list[float],
+    def _forecast_from_time(self, day: int, time_step: int) -> tuple[list[float], list[float], list[float],
                                                                             list[float], list[float], list[float],
                                                                             list[float]]:
         """Returns the forecast values starting at the given day and time step
         for the following self.forecast_horizon + 1 time steps."""
-        slice = self.ambients_dfs[day].iloc[time_step:min(time_step+self.forecast_horizon+1, self.timesteps_per_day)]
-        # fix so that if the slice is not long enough, it will take the first values of the next day
+        slice_df = self.ambients_dfs[day].iloc[time_step:min(time_step+self.forecast_horizon+1, self.timesteps_per_day)]
+        # fix so that if the slice_df is not long enough, it will take the first values of the next day
         # TODO: figure out what to do if we're on the last day and there is no next day
-        if len(slice) < self.forecast_horizon + 1:
-            slice = pd.concat([slice, self.ambients_dfs[day+1].iloc[:self.forecast_horizon + 1 - len(slice)]])
-        return (slice['Ambient Temperature'].to_numpy(), slice['Ambient Pressure'].to_numpy(), slice['Ambient rel. Humidity'].to_numpy(),
-                slice['Target Net Power'].to_numpy(), slice['Target Process Steam'].to_numpy(), slice['Energy Price'].to_numpy(),
-                slice['Gas Price'].to_numpy())
+        if len(slice_df) < self.forecast_horizon + 1:
+            slice_df = pd.concat([slice_df, self.ambients_dfs[day+1].iloc[:self.forecast_horizon + 1 - len(slice_df)]])
+        cols = ['Ambient Temperature', 'Ambient Pressure',
+                'Ambient rel. Humidity', 'Target Net Power',
+                'Target Process Steam', 'Energy Price', 'Gas Price']
+        return slice_df[cols]
+
+    def _get_obs(self) -> dict[str, Any]:
+        """Get the current observation.
+
+        The following values must be updated before calling self._get_obs():
+        - self.current_timestep
+        - self.current_day
+        - self.current_action
+        """
+        forecast_df = self._forecast_from_time(self.current_day, self.current_timestep)
+        obs = {
+            'Time': np.array([self.current_timestep / self.timesteps_per_day], dtype=np.float32),
+            'Prev_Action': self.current_action,
+            'TAMB': forecast_df['Ambient Temperature'].values,
+            'PAMB': forecast_df['Ambient Pressure'].values,
+            'RHAMB': forecast_df['Ambient rel. Humidity'].values,
+            'Target_Power': forecast_df['Target Net Power'].values,
+            'Target_Steam': forecast_df['Target Process Steam'].values,
+            'Energy_Price': forecast_df['Energy Price'].values,
+            'Gas_Price': forecast_df['Gas Price'].values,
+        }
+        return obs
 
     def reset(self, seed: int | None = None, options: dict | None = None) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an instance of an episode for the Cogen environment.
@@ -173,21 +196,7 @@ class CogenEnv(gym.Env):
         # not sure if this is reasonable, TODO: check this
         self.current_action = self.action_space.sample()
 
-        forecast_values = self._forecast_values_from_time(self.current_day, self.current_timestep)
-
-        # set up initial observation
-        self.obs = {
-            'Time': np.array([self.current_timestep / self.timesteps_per_day], dtype=np.float32),
-            'Prev_Action': self.current_action,
-            'TAMB': forecast_values[0],
-            'PAMB': forecast_values[1],
-            'RHAMB': forecast_values[2],
-            'Target_Power': forecast_values[3],
-            'Target_Steam': forecast_values[4],
-            'Energy_Price': forecast_values[5],
-            'Gas_Price': forecast_values[6]
-        }
-
+        self.obs = self._get_obs()
         info = {
             'Operating constraint violation': None,
             'Demand constraint violation': None
@@ -319,19 +328,7 @@ class CogenEnv(gym.Env):
         self.current_timestep += 1
 
         # update the current observation
-        forecast_values = self._forecast_values_from_time(self.current_day, self.current_timestep)
-
-        self.obs = {
-            'Time': np.array([self.current_timestep / self.timesteps_per_day], dtype=np.float32),
-            'Prev_Action': self.current_action,
-            'TAMB': forecast_values[0],
-            'PAMB': forecast_values[1],
-            'RHAMB': forecast_values[2],
-            'Target_Power': forecast_values[3],
-            'Target_Steam': forecast_values[4],
-            'Energy_Price': forecast_values[5],
-            'Gas_Price': forecast_values[6]
-        }
+        self.obs = self._get_obs()
 
         # update the current done
         self.current_terminated = self._terminated()
