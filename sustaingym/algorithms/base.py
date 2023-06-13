@@ -8,7 +8,7 @@ from typing import Any
 import gymnasium as gym
 import numpy as np
 import pandas as pd
-# from pettingzoo import ParallelEnv
+from pettingzoo import ParallelEnv
 from ray.rllib.algorithms.algorithm import Algorithm
 from tqdm import tqdm
 
@@ -70,6 +70,9 @@ class BaseAlgorithm:
                 obs, reward, terminated, truncated, info = self.env.step(action)
                 assert (type(reward) == dict) == self.multiagent
                 if self.multiagent:
+                    assert isinstance(reward, dict)
+                    assert isinstance(terminated, dict)
+                    assert isinstance(truncated, dict)
                     reward = sum(reward.values())
                     done = any(terminated.values()) or any(truncated.values())
                 else:
@@ -113,3 +116,19 @@ class RLLibAlgorithm(BaseAlgorithm):
             return action
         else:
             return self.algo.compute_single_action(observation, explore=False)
+
+
+class RandomAlgorithm(BaseAlgorithm):
+    """Random action."""
+
+    def get_action(self, observation: dict[str, Any]) -> Any:
+        """Returns random action."""
+        if self.multiagent:
+            assert isinstance(self.env, ParallelEnv)
+            action = {
+                agent: self.env.action_spaces[agent].sample()
+                for agent in observation
+            }
+            return action
+        else:
+            return self.env.action_space.sample()
