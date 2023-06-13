@@ -76,25 +76,22 @@ class CogenEnv(gym.Env):
         self.timesteps_per_day = len(self.ambients_dfs[0])
         assert (self.forecast_horizon >= 0 and self.forecast_horizon < self.timesteps_per_day - 1), "forecast_horizon must be between 0 and timesteps_per_day - 1"
 
-        # load the onnx model and parameters
+        # load the onnx model
         self._model = rt.InferenceSession('sustaingym/data/cogen/onnx_model/model.onnx')  # TODO(Chris): pkgutil
-        # Load the JSON file
+
+        # load model parameters from JSON file into DataFrame
+        #     id  (index)      str
+        #     min          float64
+        #     max          float64
+        #     unit             str
+        #     data_type        str
         with open('sustaingym/data/cogen/onnx_model/model.json', 'r') as f:  # TODO(Chris): pkgutil
             json_data = json.load(f)
-        # I/O labels
-        input_labels = [json_data['inputs'][i]['id'] for i in range(len(json_data['inputs']))]
+        inputs_table = pd.DataFrame(json_data['inputs'])
+        inputs_table.drop(columns=['index'], inplace=True)
+        inputs_table.set_index('id', inplace=True)
+
         # output_labels = [json_data['outputs'][i]['id'] for i in range(len(json_data['outputs']))]
-
-        # Upper and lower bounds on inputs
-        lower_bound = [json_data['inputs'][i]['min'] for i in range(len(json_data['inputs']))]
-        upper_bound = [json_data['inputs'][i]['max'] for i in range(len(json_data['inputs']))]
-
-        # Other spec
-        unit = [json_data['inputs'][i]['unit'] for i in range(len(json_data['inputs']))]
-        data_type = [json_data['inputs'][i]['data_type'] for i in range(len(json_data['inputs']))]
-
-        inputs_table = pd.DataFrame({'Label': input_labels, 'unit': unit, 'data type': data_type, 'min': lower_bound, 'max': upper_bound})
-        inputs_table.set_index('Label', inplace=True)
 
         # action space is power output, evaporative cooler switch, power augmentation switch, and equivalent
         # process steam flow for generators 1, 2, and 3, as well as steam turbine power output, steam flow
@@ -124,10 +121,10 @@ class CogenEnv(gym.Env):
             'TAMB': gym.spaces.Box(low=inputs_table.loc['TAMB', 'min'], high=inputs_table.loc['TAMB', 'max'], shape=(forecast_horizon+1,), dtype=np.float32),
             'PAMB': gym.spaces.Box(low=inputs_table.loc['PAMB', 'min'], high=inputs_table.loc['PAMB', 'max'], shape=(forecast_horizon+1,), dtype=np.float32),
             'RHAMB': gym.spaces.Box(low=inputs_table.loc['RHAMB', 'min'], high=inputs_table.loc['RHAMB', 'max'], shape=(forecast_horizon+1,), dtype=np.float32),
-            'Target_Power': gym.spaces.Box(low=0., high=700., shape=(forecast_horizon+1,), dtype=np.float32),
-            'Target_Steam': gym.spaces.Box(low=0., high=1300., shape=(forecast_horizon+1,), dtype=np.float32),
-            'Energy_Price': gym.spaces.Box(low=0., high=1500., shape=(forecast_horizon+1,), dtype=np.float32),
-            'Gas_Price': gym.spaces.Box(low=0., high=7., shape=(forecast_horizon+1,), dtype=np.float32)
+            'Target_Power': gym.spaces.Box(low=0, high=700, shape=(forecast_horizon+1,), dtype=np.float32),
+            'Target_Steam': gym.spaces.Box(low=0, high=1300, shape=(forecast_horizon+1,), dtype=np.float32),
+            'Energy_Price': gym.spaces.Box(low=0, high=1500, shape=(forecast_horizon+1,), dtype=np.float32),
+            'Gas_Price': gym.spaces.Box(low=0, high=7, shape=(forecast_horizon+1,), dtype=np.float32)
         })
 
         # define the current info
