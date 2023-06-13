@@ -39,7 +39,7 @@ class CogenEnv(gym.Env):
         CT_NrBays (int)               1                   12
 
     Observation:
-        Type: Dict(Box(1), Action_Dict, 
+        Type: Dict(Box(1), Action_Dict,
                    Box(forecast_horizon + 1), Box(forecast_horizon + 1),
                    Box(forecast_horizon + 1), Box(forecast_horizon + 1),
                    Box(forecast_horizon + 1), Box(forecast_horizon + 1),
@@ -55,14 +55,14 @@ class CogenEnv(gym.Env):
         Electricity price ($/MWh)     0                   1500
         Natural gas price ($/MMBtu)   0                   7
     """
-    def __init__(self, 
-                renewables_magnitude: float = None, # TODO: implement renewables
-                ramp_penalty: float = 2.0,
-                supply_imbalance_penalty: float = 1000,
-                constraint_violation_penalty: float = 1000,
-                forecast_horizon: int = 3,
-                forecast_noise_std: float = 0.1,
-                ):
+    def __init__(self,
+                 renewables_magnitude: float = None,  # TODO: implement renewables
+                 ramp_penalty: float = 2.0,
+                 supply_imbalance_penalty: float = 1000,
+                 constraint_violation_penalty: float = 1000,
+                 forecast_horizon: int = 3,
+                 forecast_noise_std: float = 0.1,
+                 ):
         """
         Constructs the CogenEnv object
         """
@@ -99,7 +99,7 @@ class CogenEnv(gym.Env):
         # action space is power output, evaporative cooler switch, power augmentation switch, and equivalent
         # process steam flow for generators 1, 2, and 3, as well as steam turbine power output, steam flow
         # through condenser, and number of cooling bays employed
-        self._action_space_dict = {
+        self.action_space = gym.spaces.Dict({
             'GT1_PWR': gym.spaces.Box(low=inputs_table.loc['GT1_PWR', 'min'], high=inputs_table.loc['GT1_PWR', 'max'], shape=(1,), dtype=np.float32),
             'GT1_PAC_FFU': gym.spaces.Discrete(2),
             'GT1_EVC_FFU': gym.spaces.Discrete(2),
@@ -115,8 +115,7 @@ class CogenEnv(gym.Env):
             'ST_PWR': gym.spaces.Box(low=inputs_table.loc['ST_PWR', 'min'], high=inputs_table.loc['ST_PWR', 'max'], shape=(1,), dtype=np.float32),
             'IPPROC_M': gym.spaces.Box(low=inputs_table.loc['IPPROC_M', 'min'], high=inputs_table.loc['IPPROC_M', 'max'], shape=(1,), dtype=np.float32),
             'CT_NrBays': gym.spaces.Discrete(12, start=1)
-        }
-        self.action_space = gym.spaces.Dict(self._action_space_dict)
+        })
 
         # define the observation space
         self.observation_space = gym.spaces.Dict({
@@ -147,7 +146,7 @@ class CogenEnv(gym.Env):
         return (slice['Ambient Temperature'].to_numpy(), slice['Ambient Pressure'].to_numpy(), slice['Ambient rel. Humidity'].to_numpy(),
                 slice['Target Net Power'].to_numpy(), slice['Target Process Steam'].to_numpy(), slice['Energy Price'].to_numpy(),
                 slice['Gas Price'].to_numpy())
-    
+
     def reset(self, seed: int | None = None, options: dict | None = None) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an instance of an episode for the Cogen environment.
 
@@ -156,7 +155,7 @@ class CogenEnv(gym.Env):
             return_info: determines if returned observation includes additional
                 info or not (not implemented)
             options: includes optional settings like reward type (not implemented)
-        
+
         Returns:
             tuple containing the initial observation for env's episode
         """
@@ -169,7 +168,7 @@ class CogenEnv(gym.Env):
         else:
             self.current_day = seed % self.n_days
 
-        self.current_timestep = 0 # keeps track of which timestep we are on
+        self.current_timestep = 0  # keeps track of which timestep we are on
         self.current_terminated = False
         self.current_reward = None
 
@@ -197,7 +196,7 @@ class CogenEnv(gym.Env):
             'Demand constraint violation': None
         }
         return self.obs, info
-    
+
     def _dyn_constraint_volation(self, input_data: np.ndarray, output_data: np.ndarray) -> np.ndarray:
         """
         Computes the dynamic operating constraint violation for one
@@ -213,41 +212,41 @@ class CogenEnv(gym.Env):
         cv = np.zeros(16)
 
         # GT1_PWR
-        cv[0] = max(0,output_data[9] - input_data[5]) # min violation
-        cv[1] = max(0,input_data[5] - output_data[10]) # max violation
+        cv[0] = max(0, output_data[9] - input_data[5])  # min violation
+        cv[1] = max(0, input_data[5] - output_data[10])  # max violation
         # GT1_HR
-        cv[2] = max(0,output_data[15] - input_data[12]) # min violation
-        cv[3] = max(0,input_data[12] - output_data[16]) # max violation
+        cv[2] = max(0, output_data[15] - input_data[12])  # min violation
+        cv[3] = max(0, input_data[12] - output_data[16])  # max violation
 
         # GT2_PWR
-        cv[4] = max(0,output_data[11] - input_data[8]) # min violation
-        cv[5] = max(0,input_data[8] - output_data[12]) # max violation
+        cv[4] = max(0, output_data[11] - input_data[8])  # min violation
+        cv[5] = max(0, input_data[8] - output_data[12])  # max violation
         # GT2_HR
-        cv[6] = max(0,output_data[17] - input_data[13]) # min violation
-        cv[7] = max(0,input_data[13] - output_data[18]) # max violation
-        
+        cv[6] = max(0, output_data[17] - input_data[13])  # min violation
+        cv[7] = max(0, input_data[13] - output_data[18])  # max violation
+
         # GT3_PWR
-        cv[8] = max(0,output_data[13] - input_data[11]) # min violation
-        cv[9] = max(0,input_data[11] - output_data[14]) # max violation
+        cv[8] = max(0, output_data[13] - input_data[11])  # min violation
+        cv[9] = max(0, input_data[11] - output_data[14])  # max violation
         # GT3_HR
-        cv[10] = max(0,output_data[19] - input_data[14]) # min violation
-        cv[11] = max(0,input_data[14] - output_data[20]) # max violation
+        cv[10] = max(0, output_data[19] - input_data[14])  # min violation
+        cv[11] = max(0, input_data[14] - output_data[20])  # max violation
 
         # ST_PWR
-        cv[12] = max(0,output_data[24] - input_data[15]) # min violation
-        cv[13] = max(0,input_data[15] - output_data[25]) # max violation
+        cv[12] = max(0, output_data[24] - input_data[15])  # min violation
+        cv[13] = max(0, input_data[15] - output_data[25])  # max violation
         # IPPROC
-        cv[14] = max(0,input_data[16] - output_data[22]) # max violation
-        cv[15] = max(0,input_data[16] - output_data[23]) # max violation
+        cv[14] = max(0, input_data[16] - output_data[22])  # max violation
+        cv[15] = max(0, input_data[16] - output_data[23])  # max violation
 
         return cv
-    
+
     def _compute_reward(self, obs: dict[str, Any], action: dict[str, Any]) -> float:
         """Computes the reward for the current timestep.
-        
-        Reward is currently the negative of the sum of the four following components:
-        - total generation fuel consumption 
-        - total ramp cost 
+
+        Reward is the negative of the sum of the four following components:
+        - total generation fuel consumption
+        - total ramp cost
         - penalty for steam/energy non-delivery
         - penalty for dynamic operating constraint violation
 
@@ -258,15 +257,17 @@ class CogenEnv(gym.Env):
         Returns:
             reward: the reward for the current timestep
         """
-        # run the cc model on the action 
+        # run the cc model on the action
         model_input = np.array([
             obs['TAMB'][0], obs['PAMB'][0], obs['RHAMB'][0],
             action['GT1_PAC_FFU'], action['GT1_EVC_FFU'], action['GT1_PWR'][0],
             action['GT2_PAC_FFU'], action['GT2_EVC_FFU'], action['GT2_PWR'][0],
             action['GT3_PAC_FFU'], action['GT3_EVC_FFU'], action['GT3_PWR'][0],
-            action['HR1_HPIP_M_PROC'][0], action['HR2_HPIP_M_PROC'][0], action['HR3_HPIP_M_PROC'][0],
-            action['ST_PWR'][0], action['IPPROC_M'][0], action['CT_NrBays']], dtype=np.float32)
-        
+            action['HR1_HPIP_M_PROC'][0], action['HR2_HPIP_M_PROC'][0],
+            action['HR3_HPIP_M_PROC'][0], action['ST_PWR'][0],
+            action['IPPROC_M'][0], action['CT_NrBays']
+        ], dtype=np.float32)
+
         model_output = self._model.run(None, {self._model.get_inputs()[0].name: [model_input]})[0][0]
         # print(model_output)
         # extract the fuel consumption (klb/hr)
@@ -293,7 +294,7 @@ class CogenEnv(gym.Env):
         # compute the total reward
         reward = -(total_fuel + ramp_cost + non_delivery_penalty + dyn_cv_penalty)
         return reward
-    
+
     def _terminated(self) -> bool:
         """Determines if the episode is terminated or not.
 
@@ -307,7 +308,7 @@ class CogenEnv(gym.Env):
 
         Args:
             action: an action provided by the environment
-        
+
         Returns:
             tuple containing the next observation, reward, terminated flag, truncated flag, and info dict
         """
@@ -345,7 +346,7 @@ class CogenEnv(gym.Env):
         }
 
         # always False due to no intermediate stopping conditions
-        truncated = False 
+        truncated = False
 
         return self.obs, self.current_reward, self.current_terminated, truncated, self.current_info
 

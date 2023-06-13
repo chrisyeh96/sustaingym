@@ -6,11 +6,12 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from typing import Literal, List
+
 
 save_dir = 'sustaingym/data/cogen/ambients_data/' # 'data/cogen/ambients_data/' # 
 
-def load_wind_data(n_mw):
+
+def load_wind_data(n_mw: float) -> np.ndarray:
     """
     Load the wind speed data from local folder
     """
@@ -30,7 +31,7 @@ def load_wind_data(n_mw):
     return wind_capacity * cap_factors
 
 
-def construct_df(renewables_magnitude: float = None) -> list[pd.DataFrame]:
+def construct_df(renewables_magnitude: float | None = None) -> list[pd.DataFrame]:
     """
     Constructs the dataframe of all ambient conditions
     Adding renewables (scaled by magnitude input) is currently not implemented TODO?
@@ -38,12 +39,11 @@ def construct_df(renewables_magnitude: float = None) -> list[pd.DataFrame]:
 
     # try to load the dataframe
     try:
-        df = pd.read_pickle(save_dir + 'ambients_wind={}.pkl'.format(renewables_magnitude))
+        df = pd.read_pickle(save_dir + f'ambients_wind={renewables_magnitude}.pkl')
     except FileNotFoundError:
         # if it doesn't exist, construct it
         # load the ambients dataset
-        df = pd.read_excel(save_dir + 'operating_data.xlsx',
-                        header=3)
+        df = pd.read_excel(save_dir + 'operating_data.xlsx', header=3)
         df = df.iloc[:, [0, 1, 2, 7, 8, 9]]
         df['Date'] = df.apply(lambda row: row.Timestamp.date(), axis=1)
 
@@ -53,7 +53,7 @@ def construct_df(renewables_magnitude: float = None) -> list[pd.DataFrame]:
         energy_df = pd.concat([df[df['Settlement Point'] == 'HB_HOUSTON'] for df in sheet_to_df_map_2021.values()]
                                 + [df[df['Settlement Point'] == 'HB_HOUSTON'] for df in sheet_to_df_map_2022.values()])
 
-        # # modify the hour ending column to be hour beginning
+        # modify the hour ending column to be hour beginning
         energy_df['Hour Ending'] = energy_df['Hour Ending'].apply(lambda x: int(x[:2])-1)
         energy_df.rename(columns={'Hour Ending': 'Hour Beginning'}, inplace=True)
 
@@ -74,8 +74,7 @@ def construct_df(renewables_magnitude: float = None) -> list[pd.DataFrame]:
         energy_df_15min = energy_df.resample('15min').ffill()
 
         # load the gas spot price dataset
-        gas_df = pd.read_csv(save_dir + 'Henry_Hub_Natural_Gas_Spot_Price.csv',
-                            sep=',', header=4)
+        gas_df = pd.read_csv(save_dir + 'Henry_Hub_Natural_Gas_Spot_Price.csv', sep=',', header=4)
         gas_df['Day'] = pd.to_datetime(gas_df['Day'])
 
         # add the column "Settlement Point Price" from energy_df_15min to df only
@@ -115,7 +114,7 @@ def construct_df(renewables_magnitude: float = None) -> list[pd.DataFrame]:
         #         # then we're just going to throw away this day anyway
         #         pass
 
-        df.to_pickle(save_dir + 'ambients_wind={}.pkl'.format(renewables_magnitude))
+        df.to_pickle(save_dir + f'ambients_wind={renewables_magnitude}.pkl')
 
     dates = df.Date.unique()
     # drop the first and last days so each day has 96 datapoints
