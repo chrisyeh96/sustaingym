@@ -13,9 +13,13 @@ from sustaingym.envs.cogen import CogenEnv
 
 
 class MultiAgentCogenEnv(ParallelEnv):
+
+    # PettingZoo API
+    metadata = {}
+
     def __init__(self,
-                 renewables_magnitude: float | None = None,
-                 ramp_penalty: float = 2.0,
+                 renewables_magnitude: float = 0.,
+                 ramp_penalty: float = 2.,
                  supply_imbalance_penalty: float = 1000,
                  constraint_violation_penalty: float = 1000,
                  forecast_horizon: int = 12,
@@ -51,9 +55,9 @@ class MultiAgentCogenEnv(ParallelEnv):
 
         # per-agent action space
         self.action_spaces = {
-            agent: spaces.flatten_space(spaces.Dict({
+            agent: spaces.Dict({
                 key: self.single_env.action_space[key] for key in action_keys
-            }))
+            })
             for agent, action_keys in self.agents_to_action_keys.items()
         }
 
@@ -70,19 +74,25 @@ class MultiAgentCogenEnv(ParallelEnv):
         """
         actions = {}
         for agent in self.agents:
-            actions |= spaces.unflatten(self.action_spaces[agent], action[agent])
+            actions |= action[agent]
 
         # Use internal single-agent environment
-        obs, reward, terminated, truncated, info = self.single_env.step(actions)
+        obs, _, terminated, truncated, info = self.single_env.step(actions)
         flat_obs = spaces.flatten(self.single_env.observation_space, obs)
 
         obss, rewards, terminateds, truncateds, infos = {}, {}, {}, {}, {}
         for agent in self.agents:
             obss[agent] = flat_obs
-            rewards[agent] = reward / self.num_agents  # every agent gets same global reward signal
+
+            rewards[agent] = (
+                info['fuel_costs'][agent]
+                + info['ramp_costs'][agent]
+                + info['dyn_cv_costs'][agent]
+                + info['non_delivery_cost'] / self.num_agents)
+
             terminateds[agent] = terminated
             truncateds[agent] = truncated
-            infos[agent] = info
+            infos[agent] = {}
 
         # Delete all agents when day is finished
         if terminated or truncated:

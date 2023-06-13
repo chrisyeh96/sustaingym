@@ -31,7 +31,7 @@ def load_wind_data(n_mw: float) -> np.ndarray:
     return wind_capacity * cap_factors
 
 
-def construct_df(renewables_magnitude: float | None = None) -> list[pd.DataFrame]:
+def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
     """
     Constructs the dataframe of all ambient conditions
     Adding renewables (scaled by magnitude input) is currently not implemented TODO?

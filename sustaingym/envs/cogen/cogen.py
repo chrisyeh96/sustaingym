@@ -56,8 +56,8 @@ class CogenEnv(gym.Env):
         Natural gas price ($/MMBtu)   0                   7
     """
     def __init__(self,
-                 renewables_magnitude: float = None,  # TODO: implement renewables
-                 ramp_penalty: float = 2.0,
+                 renewables_magnitude: float = 0.,
+                 ramp_penalty: float = 2.,
                  supply_imbalance_penalty: float = 1000,
                  constraint_violation_penalty: float = 1000,
                  forecast_horizon: int = 3,
@@ -130,9 +130,7 @@ class CogenEnv(gym.Env):
         # define the current info
         self.current_info = None
 
-    def _forecast_from_time(self, day: int, time_step: int) -> tuple[list[float], list[float], list[float],
-                                                                            list[float], list[float], list[float],
-                                                                            list[float]]:
+    def _forecast_from_time(self, day: int, time_step: int) -> pd.DataFrame:
         """Returns the forecast values starting at the given day and time step
         for the following self.forecast_horizon + 1 time steps."""
         slice_df = self.ambients_dfs[day].iloc[time_step:min(time_step+self.forecast_horizon+1, self.timesteps_per_day)]
@@ -143,7 +141,7 @@ class CogenEnv(gym.Env):
         cols = ['Ambient Temperature', 'Ambient Pressure',
                 'Ambient rel. Humidity', 'Target Net Power',
                 'Target Process Steam', 'Energy Price', 'Gas Price']
-        return slice_df[cols]
+        return slice_df[cols].astype(np.float32)
 
     def _get_obs(self) -> dict[str, Any]:
         """Get the current observation.
@@ -277,14 +275,35 @@ class CogenEnv(gym.Env):
         model_output = self._model.run(None, {self._model.get_inputs()[0].name: [model_input]})[0][0]
         # print(model_output)
         # extract the fuel consumption (klb/hr)
-        total_fuel = model_output[-8]
 
-        # compute the ramp cost
-        ramp = (np.abs(action['GT1_PWR'][0] - obs['Prev_Action']['GT1_PWR'][0])
-                + np.abs(action['GT2_PWR'][0] - obs['Prev_Action']['GT2_PWR'][0])
-                + np.abs(action['GT3_PWR'][0] - obs['Prev_Action']['GT3_PWR'][0])
-                + np.abs(action['ST_PWR'][0] - obs['Prev_Action']['ST_PWR'][0]))
-        ramp_cost = self.ramp_penalty * ramp
+        # fuel costs
+        fuel_costs = {
+            'GT1': model_output[6],
+            'GT2': model_output[7],
+            'GT3': model_output[8],
+            'ST' : 0,
+        }
+        total_fuel_cost = model_output[-8]
+
+        # ramp costs
+        prev_action = obs['Prev_Action']
+        ramp_costs = {
+            'GT1': self.ramp_penalty * np.abs(action['GT1_PWR'][0] - prev_action['GT1_PWR'][0]),
+            'GT2': self.ramp_penalty * np.abs(action['GT2_PWR'][0] - prev_action['GT2_PWR'][0]),
+            'GT3': self.ramp_penalty * np.abs(action['GT3_PWR'][0] - prev_action['GT3_PWR'][0]),
+            'ST' : self.ramp_penalty * np.abs(action['ST_PWR'][0] - prev_action['ST_PWR'][0]),
+        }
+        total_ramp_cost = sum(ramp_costs.values())
+
+        # dynamic operating constraint violation
+        dyn_cv = self._dyn_constraint_volation(model_input, model_output)
+        dyn_cv_costs = {
+            'GT1': self.constraint_violation_penalty * dyn_cv[:4].sum(),
+            'GT2': self.constraint_violation_penalty * dyn_cv[4:8].sum(),
+            'GT3': self.constraint_violation_penalty * dyn_cv[8:12].sum(),
+            'ST' : self.constraint_violation_penalty * dyn_cv[12:].sum(),
+        }
+        total_dyn_cv_cost = sum(dyn_cv_costs.values())
 
         # compute the penalty for steam/energy non-delivery
         # this will be a relu penalty, so if the target is not met, the penalty is the difference
@@ -293,13 +312,15 @@ class CogenEnv(gym.Env):
         energy_penalty = np.maximum(0, obs['Target_Power'][0] - model_output[-2])
         non_delivery_penalty = self.supply_imbalance_penalty * (steam_penalty + energy_penalty)
 
-        # compute the penalty for dynamic operating constraint violation
-        dyn_cv = self._dyn_constraint_volation(model_input, model_output).sum()
-        dyn_cv_penalty = self.constraint_violation_penalty * dyn_cv
-
         # compute the total reward
-        reward = -(total_fuel + ramp_cost + non_delivery_penalty + dyn_cv_penalty)
-        return reward
+        total_reward = -(total_fuel_cost + total_ramp_cost + non_delivery_penalty + total_dyn_cv_cost)
+        reward_breakdown = {
+            'fuel_costs': fuel_costs,
+            'ramp_costs': ramp_costs,
+            'dyn_cv_costs': dyn_cv_costs,
+            'non_delivery_cost': non_delivery_penalty
+        }
+        return total_reward, reward_breakdown
 
     def _terminated(self) -> bool:
         """Determines if the episode is terminated or not.
@@ -319,7 +340,7 @@ class CogenEnv(gym.Env):
             tuple containing the next observation, reward, terminated flag, truncated flag, and info dict
         """
         # compute the loss of taking the action
-        self.current_reward = self._compute_reward(self.obs, action)
+        self.current_reward, self.current_info = self._compute_reward(self.obs, action)
 
         # update the current action
         self.current_action = action
@@ -332,12 +353,6 @@ class CogenEnv(gym.Env):
 
         # update the current done
         self.current_terminated = self._terminated()
-
-        # update the current info
-        self.current_info = {
-            'Operating constraint violation': None,
-            'Demand constraint violation': None
-        }
 
         # always False due to no intermediate stopping conditions
         truncated = False
