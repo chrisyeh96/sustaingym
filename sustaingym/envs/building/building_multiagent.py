@@ -148,7 +148,7 @@ class MultiAgentBuildingEnv(ParallelEnv):
             actions[i] = action[agent]
 
         # Use internal single-agent environment
-        obs, reward, terminated, truncated, info = self.single_env.step(actions)
+            obs, reward, terminated, truncated, info = self.single_env.step(actions[i])
 
         obss = self._create_dict_from_obs_agg(obs)
         rewards, terminateds, truncateds, infos = {}, {}, {}, {}
