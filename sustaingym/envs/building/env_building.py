@@ -36,13 +36,13 @@ class BuildingEnvReal(gym.Env):
         Action                                           Shape       Min         Max
         HVAC power consumption(cool in - ,heat in +)     n           -1          1
     Observations:
-        Type: Box(n+4)
+        Type: Box(3n+2)
                                                          Shape       Min         Max
         Temperature of zones (celsius)                   n           temp_min    temp_max
         Temperature of outdoor (celsius)                 1           temp_min    temp_max
-        Global Horizontal Irradiance (W)                 1           0           heat_max
+        Global Horizontal Irradiance (W)                 n           0           heat_max
         Temperature of ground (celsius)                  1           temp_min    temp_max
-        Occupancy power (W)                              1           0           heat_max
+        Occupancy power (W)                              n           0           heat_max
     Attributes:
         Parameter (dict): Dictionary containing the parameters for the environment.
         observation_space: structure of observations returned by environment
@@ -133,8 +133,8 @@ class BuildingEnvReal(gym.Env):
         # Set the observation space bounds based on the minimum and maximum temperature
         self.min_T = self.temp_range[0]
         self.max_T = self.temp_range[1]
-        self.low = np.ones(self.roomnum+4, dtype=np.float32) * self.min_T
-        self.high = np.ones(self.roomnum+4, dtype=np.float32) * self.max_T
+        self.low = np.ones(self.roomnum*3+2, dtype=np.float32) * self.min_T
+        self.high = np.ones(self.roomnum*3+2, dtype=np.float32) * self.max_T
         self.observation_space = gym.spaces.Box(self.low, self.high, dtype=np.float32)
 
         # Set the weight for the power consumption and comfort range
@@ -242,14 +242,18 @@ class BuildingEnvReal(gym.Env):
         info = self._get_info()
 
         # Update the state
-        self.state = np.concatenate((X_new, self.OutTemp[self.epochs].reshape(-1,),self.ghi[self.epochs].reshape(-1),self.GroundTemp[self.epochs].reshape(-1),np.array([self.Occupower/1000])), axis=0)
+        ghi_repeated = np.full(X_new.shape, self.ghi[self.epochs])
+        occ_repeated= np.full(X_new.shape, self.Occupower/1000)
+
         # self.statelist.append(self.state)
+        self.state = np.concatenate((X_new, self.OutTemp[self.epochs].reshape(-1,), ghi_repeated, self.GroundTemp[self.epochs].reshape(-1), occ_repeated), axis=0)
 
         # Store the action in the actionlist
         self.actionlist.append(action*self.maxpower)
 
         # Increment the epochs counter
         self.epochs += 1
+        # print('epochs',self.epochs)
 
         # Check if the environment has reached the end of the weather data
         if self.epochs>=self.length_of_weather-1:
@@ -297,14 +301,16 @@ class BuildingEnvReal(gym.Env):
 
         # Construct the initial state by concatenating relevant variables
         self.X_new=T_initial
-        self.state=np.concatenate((T_initial, self.OutTemp[self.epochs].reshape(-1,),self.ghi[self.epochs].reshape(-1),self.GroundTemp[self.epochs].reshape(-1),np.array([self.Occupower/1000])), axis=0)
+        ghi_repeated = np.full(T_initial.shape, self.ghi[self.epochs])
+        occ_repeated= np.full(T_initial.shape, self.Occupower/1000)
+        self.state = np.concatenate((T_initial,self.OutTemp[self.epochs].reshape(-1,), ghi_repeated, self.GroundTemp[self.epochs].reshape(-1), occ_repeated), axis=0)
 
         # Initialize the rewards
         self.flag=1
         self.rewardsum = 0
         for re in self._reward_breakdown:
           self._reward_breakdown[re] = 0.0
-        print("Reset", self.state)
+        # print("Reset", self.state)
 
         # Return the initial state and an empty dictionary(for gymnasium grammar)
         return self.state, self._get_info()
