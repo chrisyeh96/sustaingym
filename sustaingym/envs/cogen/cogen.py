@@ -76,8 +76,14 @@ class CogenEnv(gym.Env):
         self.timesteps_per_day = len(self.ambients_dfs[0])
         assert (0 <= self.forecast_horizon < self.timesteps_per_day - 1), 'forecast_horizon must be in [0, timesteps_per_day - 1)'
 
-        # load the onnx model
-        self._model = rt.InferenceSession('sustaingym/data/cogen/onnx_model/model.onnx')  # TODO(Chris): pkgutil
+        self.spec = gym.envs.registration.EnvSpec(
+            id='sustaingym/CogenEnv-v0',
+            entry_point='sustaingym.envs:CogenEnv',
+            nondeterministic=False,
+            max_episode_steps=self.timesteps_per_day)
+
+        # actual ONNX model is loaded in reset()
+        self._model = None
 
         # load model parameters from JSON file into DataFrame
         #     id  (index)      str
@@ -165,8 +171,9 @@ class CogenEnv(gym.Env):
         }
         return obs
 
-    def reset(self, seed: int | None = None, options: dict | None = None) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
-        """Initialize or restart an instance of an episode for the Cogen environment.
+    def reset(self, seed: int | None = None, options: dict | None = None
+              ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
+        """Initialize or restart an episode.
 
         Args:
             seed: optional seed vaue for controlling seed of np.random attributes
@@ -178,6 +185,13 @@ class CogenEnv(gym.Env):
             tuple containing the initial observation for env's episode
         """
         super().reset(seed=seed)
+
+        # We initialize ONNX model in reset() instead of __init__() because
+        # RLLib inits the environment first, then forks worker processes.
+        # However, an ONNX InferenceSession cannot be "pickled" and therefore
+        # cannot be forked across RLLib worker processes.
+        if self._model is None:
+            self._model = rt.InferenceSession('sustaingym/data/cogen/onnx_model/model.onnx')  # TODO(Chris): pkgutil
 
         # randomly pick a day for the episode
         # subtract 1 as temporary fix to make sure we don't go over the number of days with lookahead window

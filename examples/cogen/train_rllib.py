@@ -5,23 +5,19 @@ from collections import defaultdict
 from collections.abc import Callable
 import os
 from typing import Any
+
 import gymnasium as gym
-from gymnasium.wrappers import FlattenObservation#, FlattenAction
+from gymnasium.wrappers import FlattenObservation
 import pandas as pd
 from ray.rllib.algorithms import ppo, sac
 from ray.rllib.algorithms.algorithm import Algorithm
-# from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
+from ray.rllib.policy.policy import PolicySpec
+from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 from ray.tune.registry import register_env
 from tqdm import tqdm
 
-from sustaingym.algorithms.cogen.baselines import RandomAlgorithm
-from sustaingym.envs.cogen.cogen import CogenEnv
-from sustaingym.algorithms.base import RLLibAlgorithm
-
-from ray.rllib.policy.policy import Policy
-from ray.rllib.policy.sample_batch import SampleBatch
-from ray.rllib.utils.annotations import override
-from ray.rllib.utils.typing import ModelWeights, TensorStructType, TensorType
+from sustaingym.envs.cogen import CogenEnv, MultiAgentCogenEnv
+from sustaingym.algorithms.base import RandomAlgorithm, RLLibAlgorithm
 
 
 ENV_NAME = 'cogen'
@@ -53,8 +49,9 @@ def parse_args() -> dict[str, Any]:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
         '-a', '--algo', default='ppo',
-        choices=['ppo', 'sac', 'rand'],
-        help="'ppo' or 'sac' or 'rand'")
+        choices=['ppo'],
+        help='Only "ppo" supports the mixed discrete/continuous action space'
+             'in CogenEnv')
     parser.add_argument('-m', '--multiagent', action='store_true')
     parser.add_argument(
         '-r', '--seed', type=int, default=123,
@@ -87,16 +84,15 @@ def get_env(multiagent: bool = False, **kwargs) -> Callable:
     Returns:
         Callable of environment
     """
-    # rm = kwargs['rm']
+    rm = kwargs['rm']
     def _get_env() -> Any:
         if multiagent:
-            raise NotImplementedError
+            env = MultiAgentCogenEnv(renewables_magnitude=rm)
         else:
-            # env = CogenEnv(renewables_magnitude=kwargs['rm'])
-            env = CogenEnv(renewables_magnitude=300)
+            env = CogenEnv(renewables_magnitude=rm)
             env = FlattenObservation(env)
             # env = FlattenAction(env)
-            return env
+        return env
     return _get_env
 
 
@@ -105,28 +101,35 @@ def run_algo(config: dict, save_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     # train environment
     config = config.copy()
-    if config['algo'] == 'ppo':
-        train_config = ppo.PPOConfig()
-    elif config['algo'] == 'sac':
-        train_config = sac.SACConfig()
-    else:
-        raise ValueError(f"{config['algo']} not in ['ppo', 'sac']")
+    assert config['algo'] == 'ppo'
+    train_config = ppo.PPOConfig()
     del config['algo']
 
     lr = config['lr']
     del config['lr']
 
-    config['full'], config['real_trace'] = True, False
     train_config = (
         train_config
         .environment(ENV_NAME, env_config=config)
-        .training(train_batch_size=SPB, lr=lr)
+        .training(train_batch_size=SPB, lr=lr, vf_clip_param=1e6)
         .rollouts(num_rollout_workers=2, num_envs_per_worker=2)
         .resources(num_gpus=1)
         .framework('torch')
     )
     if config['multiagent']:
-        train_config = train_config.rollouts(rollout_fragment_length=ROLLOUT_FRAGMENT_LENGTH)
+        ma_env = get_env(**config)()
+        policies = {
+            agent: PolicySpec(
+                observation_space=ma_env.observation_spaces[agent],
+                action_space=ma_env.action_spaces[agent],
+            ) for agent in ['GT1', 'GT2', 'GT3', 'ST']
+        }
+        policy_mapping_fn = lambda agent_id, *args, **kwargs: agent_id  # simply returns agent ID
+        train_config = (
+            train_config
+            .rollouts(rollout_fragment_length=ROLLOUT_FRAGMENT_LENGTH)
+            .multi_agent(policies=policies, policy_mapping_fn=policy_mapping_fn)
+        )
     algo = train_config.build(env=ENV_NAME)
 
     train_info = defaultdict(list)
@@ -145,6 +148,7 @@ def run_algo(config: dict, save_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
 
     # eval
     num_eval_episodes = 250  # YOU DECIDE
+    config['rm'] = 300
     eval_env = get_env(**config)()
     rllib_algo = RLLibAlgorithm(eval_env, algo, multiagent=config['multiagent'])
     test_results_df = rllib_algo.run(num_eval_episodes)
@@ -231,23 +235,6 @@ def deploy_random_policy(config: dict, save_dir: str) -> tuple[pd.DataFrame, pd.
 
 #     # 'logs/ENV_NAME/rllib/{algo_name}_lr{lr}_seed{seed}'
 #     # TODO: customize for your environment (e.g., for dist shift)
-#     folder_name = f'{algo_name}_lr{config["lr"]}_seed{config["seed"]}_rm{config["rm"]}'
-#     save_dir = os.path.join(SAVE_BASE_DIR, folder_name)
-#     if not os.path.exists(save_dir):
-#         os.makedirs(save_dir)
-
-#     run_algo(config, save_dir)
-
-# if __name__ == '__main__':
-#     register_env(ENV_NAME, lambda config: get_env(**config)())
-#     config = parse_args()
-
-#     algo_name = config['algo']
-#     if config['multiagent']:
-#         algo_name = f'ma-{algo_name}'
-
-#     # 'logs/ENV_NAME/rllib/{algo_name}_lr{lr}_seed{seed}'
-#     # TODO: customize for your environment (e.g., for dist shift)
 #     folder_name = f'{algo_name}_lr{config["lr"]}_seed{config["seed"]}_rm{config["rm"]}_distshift'
 #     checkpoint_folder = f'{algo_name}_lr{config["lr"]}_seed{config["seed"]}'
 #     save_dir = os.path.join(SAVE_BASE_DIR, folder_name)
@@ -267,15 +254,17 @@ if __name__ == '__main__':
     if config['multiagent']:
         algo_name = f'ma-{algo_name}'
 
-    # 'logs/ENV_NAME/rllib/{algo_name}_lr{lr}_seed{seed}'
+    # 'logs/ENV_NAME/rllib/{algo_name}_lr{lr}_seed{seed}_rm{rm}'
     # TODO: customize for your environment (e.g., for dist shift)
     folder_name = f'{algo_name}_lr{config["lr"]}_seed{config["seed"]}_rm{config["rm"]}'
-    # checkpoint_folder = f'{algo_name}_lr{config["lr"]}_seed{config["seed"]}'
     save_dir = os.path.join(SAVE_BASE_DIR, folder_name)
-    # checkpoint_dir = os.path.join(SAVE_BASE_DIR, checkpoint_folder)
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
+
+    # checkpoint_folder = f'{algo_name}_lr{config["lr"]}_seed{config["seed"]}'
+    # checkpoint_dir = os.path.join(SAVE_BASE_DIR, checkpoint_folder)
     # if not os.path.exists(checkpoint_dir):
     #     raise ValueError(f"Checkpoint directory {checkpoint_dir} does not exist")
 
-    deploy_random_policy(config, save_dir)
+    # deploy_random_policy(config, save_dir)
+    run_algo(config, save_dir)

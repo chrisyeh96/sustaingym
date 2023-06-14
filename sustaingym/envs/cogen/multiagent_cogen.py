@@ -9,10 +9,11 @@ from gymnasium import spaces
 import numpy as np
 from pettingzoo.utils.env import ParallelEnv
 
+from ray.rllib.env import MultiAgentEnv
 from sustaingym.envs.cogen import CogenEnv
 
 
-class MultiAgentCogenEnv(ParallelEnv):
+class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
 
     # PettingZoo API
     metadata = {}
@@ -40,6 +41,9 @@ class MultiAgentCogenEnv(ParallelEnv):
         self.agents = ['GT1', 'GT2', 'GT3', 'ST']
         self.possible_agents = self.agents
 
+        # RLLib API
+        self._agent_ids = set(self.agents)
+
         # every agent gets the same flattened observation space
         flat_observation_space = spaces.flatten_space(self.single_env.observation_space)
         self.observation_spaces = {
@@ -60,6 +64,8 @@ class MultiAgentCogenEnv(ParallelEnv):
             })
             for agent, action_keys in self.agents_to_action_keys.items()
         }
+
+        super().__init__()
 
     def step(self, action: dict[str, np.ndarray]) -> tuple[
             dict[str, np.ndarray], dict[str, float], dict[str, bool],
@@ -94,6 +100,9 @@ class MultiAgentCogenEnv(ParallelEnv):
             truncateds[agent] = truncated
             infos[agent] = {}
 
+        terminateds['__all__'] = any(terminateds.values())
+        truncateds['__all__'] = any(truncateds.values())
+
         # Delete all agents when day is finished
         if terminated or truncated:
             self.agents = []
@@ -104,7 +113,7 @@ class MultiAgentCogenEnv(ParallelEnv):
     # reset() function definition may need to change
     def reset(self, *,
               seed: int | None = None,
-              return_info: bool = False,
+              return_info: bool = True,
               options: dict | None = None
               ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
         """Resets the environment."""
