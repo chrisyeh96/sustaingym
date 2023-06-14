@@ -49,7 +49,7 @@ def parse_args() -> dict[str, Any]:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument(
         '-a', '--algo', default='ppo',
-        choices=['ppo'],
+        choices=['ppo', 'rand'],
         help='Only "ppo" supports the mixed discrete/continuous action space'
              'in CogenEnv')
     parser.add_argument('-m', '--multiagent', action='store_true')
@@ -176,6 +176,8 @@ def deploy_algo(config: dict, save_dir: str) -> tuple[pd.DataFrame, pd.DataFrame
 
 
 def deploy_random_policy(config: dict, save_dir: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+    assert not config['multiagent']
+
     # eval
     num_eval_episodes = 250  # YOU DECIDE
     eval_env = get_env(**config)()
@@ -196,12 +198,16 @@ if __name__ == '__main__':
 
     # 'logs/ENV_NAME/rllib/{algo_name}_lr{lr}_seed{seed}_rm{rm}'
     # TODO: customize for your environment (e.g., for dist shift)
-    folder_name = f'{algo_name}_lr{config["lr"]}_seed{config["seed"]}_rm{config["rm"]}'
-    save_dir = os.path.join(SAVE_BASE_DIR, folder_name)
+    if algo_name == 'rand':
+        folder_name = f'rand_rm{config["rm"]}'
+        save_dir = os.path.join('logs/cogen', folder_name)
+    else:
+        folder_name = f'{algo_name}_lr{config["lr"]}_seed{config["seed"]}_rm{config["rm"]}'
+        save_dir = os.path.join(SAVE_BASE_DIR, folder_name)
 
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    run_algo(config, save_dir)
-    # deploy_random_policy(config, save_dir)
+    # run_algo(config, save_dir)
+    deploy_random_policy(config, save_dir)
     # deploy_algo(config, save_dir)
