@@ -461,8 +461,8 @@ class CongestedMarketOperator:
             self.soc[:, 1:] == self.soc[:, :-1] + self.env.CHARGE_EFFICIENCY * bat_c - (1. / self.env.DISCHARGE_EFFICIENCY) * bat_d,
 
             # generation limits
-            self.out >= self.p_min,
-            self.out <= self.p_max,
+            self.out >= self.p_min * self.env.TIME_STEP_DURATION,
+            self.out <= self.p_max * self.env.TIME_STEP_DURATION,
         ]
 
         # power balance
@@ -473,8 +473,8 @@ class CongestedMarketOperator:
             # power flow and line flow limits (aka power congestion constraints)
             Hp = self.network.H @ self.network.J @ self.out
             self.congestion_constrs = [
-                Hp <= self.network.fmax.reshape(-1, 1),
-                Hp >= -self.network.fmax.reshape(-1, 1)
+                Hp <= self.network.fmax.reshape(-1, 1) * self.env.TIME_STEP_DURATION,
+                Hp >= -self.network.fmax.reshape(-1, 1) * self.env.TIME_STEP_DURATION,
             ]
             constraints.extend(self.congestion_constrs)
 
@@ -528,8 +528,8 @@ class CongestedMarketOperator:
 
         # shape [N_D, h+1]
         loads = np.empty([N_D, h + 1])
-        loads[:, 0] = self.env.demand[0] * self.network.load_split
-        loads[:, 1:] = self.env.demand_forecast[:h] * self.network.load_split[:, None]
+        loads[:, 0] = self.env.TIME_STEP_DURATION * self.env.demand[0] * self.network.load_split
+        loads[:, 1:] = self.env.TIME_STEP_DURATION * self.env.demand_forecast[:h] * self.network.load_split[:, None]
 
         # p_min, p_max shape: [N_D + N_G + 2*N_B, h+1]
         p_min = np.concatenate([
