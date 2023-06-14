@@ -83,7 +83,7 @@ class CogenEnv(gym.Env):
             max_episode_steps=self.timesteps_per_day)
 
         # actual ONNX model is loaded in reset()
-        self._model = None
+        self._model: rt.InferenceSession | None = None
 
         # load model parameters from JSON file into DataFrame
         #     id  (index)      str
@@ -133,9 +133,6 @@ class CogenEnv(gym.Env):
             'Gas_Price': gym.spaces.Box(low=0, high=7, shape=(forecast_horizon+1,), dtype=np.float32)
         })
 
-        # define the current info
-        self.current_info = None
-
     def _forecast_from_time(self, day: int, time_step: int) -> pd.DataFrame:
         """Returns the forecast values starting at the given day and time step
         for the following self.forecast_horizon + 1 time steps."""
@@ -172,7 +169,7 @@ class CogenEnv(gym.Env):
         return obs
 
     def reset(self, seed: int | None = None, options: dict | None = None
-              ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
+              ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an episode.
 
         Args:
@@ -202,7 +199,6 @@ class CogenEnv(gym.Env):
 
         self.current_timestep = 0  # keeps track of which timestep we are on
         self.current_terminated = False
-        self.current_reward = None
 
         # initial action is drawn randomly from the action space
         # not sure if this is reasonable, TODO: check this
@@ -259,7 +255,8 @@ class CogenEnv(gym.Env):
 
         return cv
 
-    def _compute_reward(self, obs: dict[str, Any], action: dict[str, Any]) -> float:
+    def _compute_reward(self, obs: dict[str, Any], action: dict[str, Any]
+                        ) -> tuple[float, dict[str, Any]]:
         """Computes the reward for the current timestep.
 
         Reward is the negative of the sum of the four following components:
@@ -286,6 +283,7 @@ class CogenEnv(gym.Env):
             action['IPPROC_M'][0], action['CT_NrBays']
         ], dtype=np.float32)
 
+        assert self._model is not None
         model_output = self._model.run(None, {self._model.get_inputs()[0].name: [model_input]})[0][0]
         # print(model_output)
         # extract the fuel consumption (klb/hr)
