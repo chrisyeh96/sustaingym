@@ -224,8 +224,9 @@ def run_random(seeds: Sequence[int], env: gym.Env, discrete: bool) -> dict[str, 
         obs, info = env.reset(seed=seed)
         prices[ep, 0] = obs['price previous'][0]
         energy[ep, 0] = obs['energy'][0]
+        np.random.seed(seed)
         for i in range(1, env.MAX_STEPS_PER_EPISODE):
-            action = env.action_space.sample()
+            action = np.random.uniform(low=-env.max_cost, high=env.max_cost, size=env.action_space.shape)
             obs, reward, _, _, _ = env.step(action)
             # print("random reward: ", reward)
             rewards[ep, i] = reward

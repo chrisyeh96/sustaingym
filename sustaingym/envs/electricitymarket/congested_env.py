@@ -572,7 +572,22 @@ class CongestedMarketOperator:
             solve_mosek(self.milp_prob)
             self.p_max.value[N_D+N_G: N_D+N_G+N_B] *= self.z.value
             self.p_max.value[N_D+N_G+N_B:] *= 1 - self.z.value
+
+            # ensure power maxes for battery are within the expected bounds
+            self.p_max.value[N_D+N_G: N_D+N_G+N_B] = np.clip(self.p_max.value[N_D+N_G: N_D+N_G+N_B],
+                                                             a_min=0., a_max=self.network.pmax[-2*N_D:-N_D][0])
+            self.p_max.value[N_D+N_G+N_B:] = np.clip(self.p_max.value[N_D+N_G+N_B:],
+                                                            a_min=0., a_max=self.network.pmax[-N_D:][0])
+
         solve_mosek(self.prob)
+
+        if self.prob.status == 'infeasible':
+            all_vars = locals()
+            import pickle
+            with open('fail.pkl', 'wb') as f:
+                pickle.dump(all_vars, f)
+            import pdb
+            pdb.set_trace()
 
         if self.power_balance_constr.dual_value is not None:
             lam = -self.power_balance_constr.dual_value[0]
