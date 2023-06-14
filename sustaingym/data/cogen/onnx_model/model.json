@@ -1,0 +1,382 @@
+{
+    "inputs": [
+        {
+            "id": "TAMB",
+            "index": 0,
+            "min": 32.00034528668871,
+            "max": 114.9996632131005,
+            "unit": "\u00b0F",
+            "data_type": "float"
+        },
+        {
+            "id": "PAMB",
+            "index": 1,
+            "min": 14.000004523980946,
+            "max": 14.999994959682423,
+            "unit": "psia",
+            "data_type": "float"
+        },
+        {
+            "id": "RHAMB",
+            "index": 2,
+            "min": 3.712233781150154e-06,
+            "max": 0.9999940390906192,
+            "unit": "-",
+            "data_type": "float"
+        },
+        {
+            "id": "GT1_PAC_FFU",
+            "index": 3,
+            "min": 0.0,
+            "max": 1.0,
+            "unit": "nan",
+            "data_type": "bool"
+        },
+        {
+            "id": "GT1_EVC_FFU",
+            "index": 4,
+            "min": 0.0,
+            "max": 1.0,
+            "unit": "nan",
+            "data_type": "bool"
+        },
+        {
+            "id": "GT1_PWR",
+            "index": 5,
+            "min": 41.640958739408575,
+            "max": 168.26699084133313,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "GT2_PAC_FFU",
+            "index": 6,
+            "min": 0.0,
+            "max": 1.0,
+            "unit": "nan",
+            "data_type": "bool"
+        },
+        {
+            "id": "GT2_EVC_FFU",
+            "index": 7,
+            "min": 0.0,
+            "max": 1.0,
+            "unit": "nan",
+            "data_type": "bool"
+        },
+        {
+            "id": "GT2_PWR",
+            "index": 8,
+            "min": 41.4901380260007,
+            "max": 168.41364372684487,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "GT3_PAC_FFU",
+            "index": 9,
+            "min": 0.0,
+            "max": 1.0,
+            "unit": "nan",
+            "data_type": "bool"
+        },
+        {
+            "id": "GT3_EVC_FFU",
+            "index": 10,
+            "min": 0.0,
+            "max": 1.0,
+            "unit": "nan",
+            "data_type": "bool"
+        },
+        {
+            "id": "GT3_PWR",
+            "index": 11,
+            "min": 46.46162639456023,
+            "max": 172.43912889854244,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "HR1_HPIP_M_PROC",
+            "index": 12,
+            "min": 403.158098976746,
+            "max": 819.5712701252007,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "HR2_HPIP_M_PROC",
+            "index": 13,
+            "min": 396.6747280218317,
+            "max": 817.3514297249753,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "HR3_HPIP_M_PROC",
+            "index": 14,
+            "min": 438.9994717062812,
+            "max": 870.265011732758,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "ST_PWR",
+            "index": 15,
+            "min": 25.653593808895327,
+            "max": 83.53805140752395,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "IPPROC_M",
+            "index": 16,
+            "min": -1218.227252306133,
+            "max": -318.0558547331499,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "CT_NrBays",
+            "index": 17,
+            "min": 1.0,
+            "max": 12.0,
+            "unit": "nan",
+            "data_type": "int"
+        }
+    ],
+    "outputs": [
+        {
+            "id": "GT1_NG_M",
+            "index": 0,
+            "min": 0.0,
+            "max": 76.69372527575013,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "GT2_NG_M",
+            "index": 1,
+            "min": 0.0,
+            "max": 76.5767979002884,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "GT3_NG_M",
+            "index": 2,
+            "min": 0.0,
+            "max": 74.85078517549726,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "HR1_DBNG_M",
+            "index": 3,
+            "min": 0.0,
+            "max": 18.30267445718865,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "HR2_DBNG_M",
+            "index": 4,
+            "min": 0.0,
+            "max": 18.302666268153008,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "HR3_DBNG_M",
+            "index": 5,
+            "min": 0.0,
+            "max": 18.302679412053344,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "GT1_HR1_NG_M",
+            "index": 6,
+            "min": NaN,
+            "max": NaN,
+            "unit": "?",
+            "data_type": "float"
+        },
+        {
+            "id": "GT2_HR2_NG_M",
+            "index": 7,
+            "min": NaN,
+            "max": NaN,
+            "unit": "?",
+            "data_type": "float"
+        },
+        {
+            "id": "GT3_HR3_NG_M",
+            "index": 8,
+            "min": NaN,
+            "max": NaN,
+            "unit": "?",
+            "data_type": "float"
+        },
+        {
+            "id": "gt1_pwr_gt1_min",
+            "index": 9,
+            "min": 51.22613609536592,
+            "max": 159.37228360408517,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "gt1_pwr_gt1_max",
+            "index": 10,
+            "min": 104.55647470467002,
+            "max": 168.76586948245742,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "gt2_pwr_gt2_min",
+            "index": 11,
+            "min": 51.154141749423175,
+            "max": 159.38570041245606,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "gt2_pwr_gt2_max",
+            "index": 12,
+            "min": 104.66327322669233,
+            "max": 168.81683432938948,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "gt3_pwr_gt3_min",
+            "index": 13,
+            "min": 53.38206347572879,
+            "max": 163.71899700474168,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "gt3_pwr_gt3_max",
+            "index": 14,
+            "min": 106.84868784074686,
+            "max": 172.4223576346825,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "hr1_hpip_m_proc_db1_min",
+            "index": 15,
+            "min": 297.6827851039593,
+            "max": 496.92649368206907,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "hr1_hpip_m_proc_db1_max",
+            "index": 16,
+            "min": 548.3181949431231,
+            "max": 849.448828257075,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "hr2_hpip_m_proc_db2_min",
+            "index": 17,
+            "min": 297.1014975426994,
+            "max": 494.038341964084,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "hr2_hpip_m_proc_db2_max",
+            "index": 18,
+            "min": 550.3500750949369,
+            "max": 850.6102842518418,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "hr3_hpip_m_proc_db3_min",
+            "index": 19,
+            "min": 328.00110460411844,
+            "max": 533.7502242376805,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "hr3_hpip_m_proc_db3_max",
+            "index": 20,
+            "min": 594.7350731108639,
+            "max": 894.5795794636277,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "PLANT_NG_M",
+            "index": 21,
+            "min": NaN,
+            "max": NaN,
+            "unit": "?",
+            "data_type": "float"
+        },
+        {
+            "id": "ipproc_m_ldwn_min",
+            "index": 22,
+            "min": -1901.360063349245,
+            "max": -317.85686602279907,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "ipproc_m_ldwn_max",
+            "index": 23,
+            "min": -469.4936696089783,
+            "max": -317.82291691135345,
+            "unit": "klb/h",
+            "data_type": "float"
+        },
+        {
+            "id": "st_pwr_ext_min",
+            "index": 24,
+            "min": 25.603735384829225,
+            "max": 251.5737866469593,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "st_pwr_ext_max",
+            "index": 25,
+            "min": 0.0,
+            "max": 193.2981069908212,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "PLANT_AuxPWR",
+            "index": 26,
+            "min": 1.2668176093005532,
+            "max": 22.42884599132708,
+            "unit": "MW",
+            "data_type": "float"
+        },
+        {
+            "id": "PLANT_NetPWR",
+            "index": 27,
+            "min": NaN,
+            "max": NaN,
+            "unit": "?",
+            "data_type": "float"
+        },
+        {
+            "id": "PLANT_PROCSTEAM",
+            "index": 28,
+            "min": NaN,
+            "max": NaN,
+            "unit": "?",
+            "data_type": "float"
+        }
+    ]
+}
