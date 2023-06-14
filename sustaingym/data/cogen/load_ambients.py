@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 
-save_dir = 'sustaingym/data/cogen/ambients_data/' # 'data/cogen/ambients_data/' # 
+save_dir = 'sustaingym/data/cogen/ambients_data/'  # 'data/cogen/ambients_data/'
 
 
 def load_wind_data(n_mw: float) -> np.ndarray:
@@ -44,7 +44,7 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
     except FileNotFoundError:
         # if it doesn't exist, construct it
 
-        ##### ELECTRICITY PRICE DATA #####
+        # ===== ELECTRICITY PRICE DATA =====
 
         sheet_to_df_map_2021 = pd.read_excel(save_dir + 'rpt.00013060.0000000000000000.DAMLZHBSPP_2021.xlsx', sheet_name=None)
         sheet_to_df_map_2022 = pd.read_excel(save_dir + 'rpt.00013060.0000000000000000.DAMLZHBSPP_2022.xlsx', sheet_name=None)
@@ -69,7 +69,7 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
         energy_df.set_index('Hour Beginning', inplace=True)
         energy_df_15min = energy_df.resample('15min').ffill()
 
-        ##### GAS SPOT PRICE DATA #####
+        # ===== GAS SPOT PRICE DATA =====
 
         gas_df = pd.read_csv(save_dir + 'Henry_Hub_Natural_Gas_Spot_Price.csv', sep=',', header=4)
 
@@ -82,7 +82,7 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
         # subsample gas_df every 15 minutes
         gas_df_15min = gas_df.resample('15min').ffill()
 
-        ##### AMBIENT CONDITIONS DATA #####
+        # ===== AMBIENT CONDITIONS DATA =====
 
         df = pd.read_excel(save_dir + 'operating_data.xlsx', header=3)
         df = df[[
@@ -110,7 +110,7 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
         # for l in range(len(dfs)):
         #     try:
 
-        #         dfs[l]['Target Net Power'] = np.maximum(dfs[l]['Target Net Power'] - wind_data[l], 
+        #         dfs[l]['Target Net Power'] = np.maximum(dfs[l]['Target Net Power'] - wind_data[l],
         #                                                 np.zeros_like(wind_data[l]))
         #     except:
         #         # if the wind data is not the same length as the ambient data,
