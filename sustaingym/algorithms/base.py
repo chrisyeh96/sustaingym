@@ -109,13 +109,21 @@ class RLLibAlgorithm(BaseAlgorithm):
             *See get_action() in BaseAlgorithm.
         """
         if self.multiagent:
-            action = {
-                agent: self.algo.compute_single_action(observation[agent], explore=False)
-                for agent in observation
-            }
-            return action
+            multiagent_config = self.algo.config['multiagent']
+            if len(multiagent_config['policies']) == 1:
+                action = {
+                    agent: self.algo.compute_single_action(observation[agent], explore=False)
+                    for agent in observation
+                }
+            else:
+                action = {}
+                for agent_id, agent_obs in observation.items():
+                    policy_id = multiagent_config['policy_mapping_fn'](agent_id)
+                    action[agent_id] = self.algo.compute_single_action(
+                        agent_obs, policy_id=policy_id, explore=False)
         else:
-            return self.algo.compute_single_action(observation, explore=False)
+            action = self.algo.compute_single_action(observation, explore=False)
+        return action
 
 
 class RandomAlgorithm(BaseAlgorithm):

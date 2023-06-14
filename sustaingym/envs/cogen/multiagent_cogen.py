@@ -90,7 +90,7 @@ class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
         for agent in self.agents:
             obss[agent] = flat_obs
 
-            rewards[agent] = (
+            rewards[agent] = -(
                 info['fuel_costs'][agent]
                 + info['ramp_costs'][agent]
                 + info['dyn_cv_costs'][agent]
