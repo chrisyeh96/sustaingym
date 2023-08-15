@@ -70,6 +70,9 @@ class BaseAlgorithm:
                 obs, reward, terminated, truncated, info = self.env.step(action)
                 assert (type(reward) == dict) == self.multiagent
                 if self.multiagent:
+                    assert isinstance(reward, dict)
+                    assert isinstance(terminated, dict)
+                    assert isinstance(truncated, dict)
                     reward = sum(reward.values())
                     done = any(terminated.values()) or any(truncated.values())
                 else:
@@ -106,10 +109,34 @@ class RLLibAlgorithm(BaseAlgorithm):
             *See get_action() in BaseAlgorithm.
         """
         if self.multiagent:
+            multiagent_config = self.algo.config['multiagent']
+            if len(multiagent_config['policies']) == 1:
+                action = {
+                    agent: self.algo.compute_single_action(observation[agent], explore=False)
+                    for agent in observation
+                }
+            else:
+                action = {}
+                for agent_id, agent_obs in observation.items():
+                    policy_id = multiagent_config['policy_mapping_fn'](agent_id)
+                    action[agent_id] = self.algo.compute_single_action(
+                        agent_obs, policy_id=policy_id, explore=False)
+        else:
+            action = self.algo.compute_single_action(observation, explore=False)
+        return action
+
+
+class RandomAlgorithm(BaseAlgorithm):
+    """Random action."""
+
+    def get_action(self, observation: dict[str, Any]) -> Any:
+        """Returns random action."""
+        if self.multiagent:
+            assert isinstance(self.env, ParallelEnv)
             action = {
-                agent: self.algo.compute_single_action(observation[agent], explore=False)
+                agent: self.env.action_spaces[agent].sample()
                 for agent in observation
             }
             return action
         else:
-            return self.algo.compute_single_action(observation, explore=False)
+            return self.env.action_space.sample()

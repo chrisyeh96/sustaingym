@@ -35,6 +35,10 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         single_env: EVChargingEnv, single-agent EVChargingEnv
         periods_delay: int, time periods of delay for inter-agent communication
     """
+
+    # PettingZoo API
+    metadata = {}
+
     def __init__(self, data_generator: AbstractTraceGenerator,
                  periods_delay: int = 0,
                  moer_forecast_steps: int = 36,
@@ -56,7 +60,6 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         # PettingZoo API
         self.agents = self.single_env.cn.station_ids[:]
         self.possible_agents = self.agents
-        self.metadata = {}
 
         # Create observation spaces w/ dictionary to help in flattening
         self._dict_observation_spaces = {

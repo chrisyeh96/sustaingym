@@ -1,5 +1,6 @@
 ## CUSTOM EXCLUSIONS
 .DS_STORE
+*.pkl
 *.code-workspace
 .vscode/
 sandbox/
