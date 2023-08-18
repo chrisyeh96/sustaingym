@@ -1,4 +1,15 @@
-## Generators and Battery Systems
+## Environments for Electricity Markets
+
+SustainGym includes 3 RL environments that model electricity markets:
+
+1. `CongestedElectricityMarketEnv`: This environment models the setting where an RL agent represents a battery storage system submitting bids into real-time electricity market. The environment simulates realistic electricity transmission congestion constraints based on the 2019 IEEE RTS model.
+2. `ElectricityMarketEnv`: This environment is similar to the `CongestedElectricityMarketEnv`, except that it does not feature transmission congestion constraints. It is modeled on actual power plants and battery systems in Southern California.
+3. `SimpleBatteryEnv`: In this environment, an RL agent only controls charge/discharge decisions without submitting bids. This environment is "simple" in the sense that it makes a price-taking assumption that the RL agent does not affect the electricity price.
+
+
+## Noncongested Env 
+
+**Generators and Battery Systems**
 
 We downloaded the list of actual power plants and battery systems from the [California Energy Commission website](https://cecgis-caenergy.opendata.arcgis.com/datasets/4a702cd67be24ae7ab8173423a768e1b_0/explore) on July 28, 2022.
 

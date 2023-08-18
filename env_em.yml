@@ -3,34 +3,36 @@
 #
 # Remove environment
 # conda remove --name sustaingym_em --all
+#
+# Last updated: 2023-08-16
 
 name: sustaingym_em
 channels:
 - pytorch           # for pytorch
+- nvidia            # for pytorch
 - mosek             # for mosek
 - conda-forge
 dependencies:
-- python=3.9.16
-- cvxpy=1.3.1
-# - flake8=6.0.0
+- python=3.11
+- cvxpy=1.3.2
+- flake8
+- gymnasium=0.26.3
 - ipympl=0.9.3            # for Jupyter / VSCode notebooks
-- matplotlib=3.7.1
-- mosek=10.0.44
-# - mypy=1.3.0
-- numpy
-- pandas           # acnportal 0.3.2 only works with Pandas 1.1
-- pip=23.1.2
+- ipykernel               # for Jupyter / VSCode notebooks
+- matplotlib=3.7.2
+- mosek=10.1.8
+- mypy
+- numpy=1.24.3            # TensorFlow 2.13 requires numpy >= 1.22, <= 1.24.3
+- pandas
+- pip
 - pytorch=2.0.1
+- pytorch-cuda=11.8
 - pytz=2023.3
 - seaborn=0.12.2
-- tqdm=4.65.0
+- tqdm=4.66.1
 
 - pip:
-  # - acnportal==0.3.2
-  - gymnasium==0.26.3
-  # - sb3_contrib>=2.0.0a1
-  # - stable_baselines3>=2.0.0a1
-
-  - pettingzoo==1.22.1
-  - "ray[rllib]==2.4.0"
-  - tensorflow==2.12.0
+  # - stable_baselines3>=2.0.0   # stablebaselines3>=2.0.0 requires gymnasium>=0.28.1  (https://github.com/DLR-RM/stable-baselines3/blob/master/setup.py)
+  - pettingzoo==1.22.4           # latest version compatible with gymnasium==0.26.3   (https://github.com/Farama-Foundation/PettingZoo/blob/1.22.4/pyproject.toml)
+  - "ray[rllib]==2.6.3"          # requires gymnasium==0.26.3   (https://github.com/ray-project/ray/blob/ray-2.6.3/python/requirements.txt)
+  - tensorflow==2.13.0
