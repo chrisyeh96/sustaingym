@@ -14,7 +14,13 @@ While ElectricityMarketEnv is a simplification of real-world electricity markets
 
 ## Observation Space
 
-An observation is $$s(t) = (t, e, a(t-1), x_{t-1}, p_{t-1}, l_{t-1}, \hat{l}_{t:t+k-1}, m_{t-1}, \hat{m}_{t:t+k-1|t})$$. $$t \in \{0, 1, \dotsc, 288\}$$ is the current time step. $$e \in \R_+$$ is the agent's battery level (in MWh). $$a(t-1) \in \R_+^{2 \times k}$$ is the previous action. $$x_{t-1} \in \R$$ is the previous dispatch (in MWh) asked of the agent, and $$p_{t-1} \in \R$$ is market clearing price from the previous step (in $/MWh). $$l_{t-1} \in \R$$  is the previous demand experienced by the agent (in MWh), while $$\hat{l}_{t:t+k|t} \in \R^k$$ is the forecasted demand for the next $$k$$ steps. Likewise, $$m_{t-1} \in \R$$ is the previous MOER experienced by the agent (in kg CO<sub>2</sub> / MWh), while $$\hat{l}_{t:t+k|t} \in \R^k$$ is the forecasted MOER values for the next $$k$$ steps.
+An observation is
+
+$$
+s(t) = (t, e, a(t-1), x_{t-1}, p_{t-1}, l_{t-1}, \hat{l}_{t:t+k-1}, m_{t-1}, \hat{m}_{t:t+k-1 \mid t}).
+$$
+
+$$t \in \{0, 1, \dotsc, 288\}$$ is the current time step. $$e \in \R_+$$ is the agent's battery level (in MWh). $$a(t-1) \in \R_+^{2 \times k}$$ is the previous action. $$x_{t-1} \in \R$$ is the previous dispatch (in MWh) asked of the agent, and $$p_{t-1} \in \R$$ is market clearing price from the previous step (in $/MWh). $$l_{t-1} \in \R$$  is the previous demand experienced by the agent (in MWh), while $$\hat{l}_{t:t+k \mid t} \in \R^k$$ is the forecasted demand for the next $$k$$ steps. Likewise, $$m_{t-1} \in \R$$ is the previous MOER experienced by the agent (in kg CO<sub>2</sub> / MWh), while $$\hat{l}_{t:t+k \mid t} \in \R^k$$ is the forecasted MOER values for the next $$k$$ steps.
 
 ## Action Space
 Each agent action is a bid $$a(t) = (a^c, a^d) \in \R_+^k \times \R_+^k$$, representing prices (in $/MWh) that the agent is willing to pay (or receive) for charging (or discharging) per MWh of energy, for the next $$k+1$$ time steps starting at time step $$t$$. The generators are assumed to always bid their fixed true cost of generation. The environment solves the optimal dispatch problem to determine the electricity price $$p_t$$ (in $/MWh) and the agent's dispatch $$x_t \in \R$$, which is the amount of energy (in MWh) that the agent is obligated to sell into or buy from the grid within the next time step. The dispatch in turn determines the storage system's next energy level. We also provide a wrapper that discretizes the action space into 3 actions only: charge, do nothing, or discharge.
