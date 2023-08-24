@@ -34,37 +34,45 @@ python -m examples.evcharging.train_rllib -a ppo -t "Summer 2021" -s caltech -r 
 More generally, our training script takes the following arguments:
 
 ```
-usage: python -m examples.cogen.train_rllib [-h] [-a {ppo,rand}] [-m] [-r SEED] [-l LR] [-n RM]
+usage: train_rllib.py [-h] [-a {ppo,sac}] [-t {Summer 2019,Fall 2019,Spring 2020,Summer 2021}]
+                      [-s {caltech,jpl}] [-d] [-m] [-p PERIODS_DELAY] [-r SEED] [-l LR]
 
-train RLLib models on CogenEnv
+train RLLib models on EVChargingEnv
 
-options:
+optional arguments:
   -h, --help            show this help message and exit
-  -a {ppo,rand}, --algo {ppo,rand}
-                        Only "ppo" supports the mixed discrete/continuous action spacein CogenEnv
-                        (default: ppo)
+  -a {ppo,sac}, --algo {ppo,sac}
+                        RL algorithm (default: ppo)
+  -t {Summer 2019,Fall 2019,Spring 2020,Summer 2021}, --train_date_period {Summer 2019,Fall 2019,Spring 2020,Summer 2021}
+                        Season. (default: Summer 2021)
+  -s {caltech,jpl}, --site {caltech,jpl}
+                        site of garage. caltech or jpl (default: caltech)
+  -d, --discrete
   -m, --multiagent
+  -p PERIODS_DELAY, --periods_delay PERIODS_DELAY
+                        communication delay in multiagent setting. Ignored for single agent. (default: 0)
   -r SEED, --seed SEED  Random seed (default: 123)
   -l LR, --lr LR        Learning rate (default: 5e-05)
-  -n RM, --rm RM        Renewables magnitude in MW (default: 0)
 ```
+
+
 
 ### Custom RL Loop
 
 ```python
-from sustaingym.envs.cogen import CogenEnv
+from sustaingym.envs.evcharging import EVChargingEnv, GMMsTraceGenerator
 
-rm = 300  # 300 MW renewables penetration
-env = CogenEnv(renewables_magnitude=rm)
+# Create events generator which samples events from a GMM trained on Caltech
+# data. The 'jpl' site is also supported, along with the periods
+# 'Fall 2019', 'Spring 2020' , and 'Summer 2021'.
+gmmg = GMMsTraceGenerator('caltech', 'Summer 2019')
 
-obs = env.reset(seed=123)
+# Create environment
+env = EVChargingEnv(gmmg)
+
+obs, episode_info = env.reset(seed=123, return_info=True)
 terminated = False
 while not terminated:
     action = env.action_space.sample()
     obs, reward, terminated, truncated, info = env.step(action)
-```
-
-
-```bash
-python run_script.py  # TODO
 ```
