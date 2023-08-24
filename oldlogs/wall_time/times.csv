@@ -1,0 +1,3 @@
+,"('caltech', 'discrete', False, True)","('caltech', 'discrete', False, False)","('caltech', 'discrete', True, True)","('caltech', 'discrete', True, False)","('caltech', 'continuous', False, True)","('caltech', 'continuous', False, False)","('caltech', 'continuous', True, True)","('caltech', 'continuous', True, False)"
+run_times_per_1000,7.250129841850139,6.977204054023643,11.239037572522648,13.922453596146434,7.232651827507652,9.509490803339851,11.670788138872012,13.426139990799356
+avg_eps_length,163.84,164.06,163.84,163.81,163.84,163.48,163.84,163.72
