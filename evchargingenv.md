@@ -70,7 +70,7 @@ gmmg = GMMsTraceGenerator('caltech', 'Summer 2019')
 # Create environment
 env = EVChargingEnv(gmmg)
 
-obs, episode_info = env.reset(seed=123, return_info=True)
+obs, _ = env.reset(seed=123)
 terminated = False
 while not terminated:
     action = env.action_space.sample()
