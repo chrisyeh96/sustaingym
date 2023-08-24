@@ -105,6 +105,6 @@ while not terminated:
 
 ## References
 
-[1] P. M. Subcommittee, "IEEE Reliability Test System," in _IEEE Transactions on Power Apparatus and Systems_, vol. PAS-98, no. 6, pp. 2047-2054, Nov. 1979, doi: 10.1109/TPAS.1979.319398.
+[1] P. M. Subcommittee, "IEEE Reliability Test System," in _IEEE Transactions on Power Apparatus and Systems_, vol. PAS-98, no. 6, pp. 2047-2054, Nov. 1979, doi: 10.1109/TPAS.1979.319398. URL [https://ieeexplore.ieee.org/document/4113721](https://ieeexplore.ieee.org/document/4113721).
 
-[2] C. Barrows _et al._, "The IEEE Reliability Test System: A Proposed 2019 Update," in _IEEE Transactions on Power Systems_, vol. 35, no. 1, pp. 119-127, Jan. 2020, doi: 10.1109/TPWRS.2019.2925557.
+[2] C. Barrows _et al._, "The IEEE Reliability Test System: A Proposed 2019 Update," in _IEEE Transactions on Power Systems_, vol. 35, no. 1, pp. 119-127, Jan. 2020, doi: 10.1109/TPWRS.2019.2925557. URL [https://ieeexplore.ieee.org/document/8753693](https://ieeexplore.ieee.org/document/8753693).
