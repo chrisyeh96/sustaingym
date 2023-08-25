@@ -1,0 +1,28 @@
+# Install or update environment
+# conda env update --file env_building.yml --prune
+#
+# Remove environment
+# conda remove --name sustaingym_building --all
+#
+# Notes
+# - last updated: August 21, 2023
+name: sustaingym_building
+channels:
+  - conda-forge
+dependencies:
+  - python=3.9
+  - scikit-learn
+  - pvlib
+  - cvxpy
+  - matplotlib
+  - seaborn
+  - pandas
+  - numpy
+  - flake8  # Optional, for code linting
+  - ipympl  # Optional, for Jupyter / VSCode notebooks
+  - mypy    # Optional, for type checking
+  - pytz    # Optional, for time zone support
+  - tqdm    # Optional, for progress bars
+  - pip:
+    - sb3_contrib>=2.0.0a1
+    - stable_baselines3>=2.0.0a1
