@@ -14,7 +14,7 @@ from scipy.linalg import expm, sinm, cosm
 from numpy.linalg import inv
 
 
-from typing import Optional, Any, Dict
+from typing import Optional, Any, Dict, Union, List, Tuple
 # from gym import spaces
 # from gym.utils import seeding
 from sklearn import linear_model
@@ -70,7 +70,7 @@ class BuildingEnvReal(gym.Env):
     # Scaling factor for the reward function weight
     SCALING_FACTOR = 24
 
-    def __init__(self, Parameter):
+    def __init__(self, Parameter: Dict[str, Any]):
         """Initializes the environment with the given parameters.
         Args:
             Parameter (dict): Dictionary containing the parameters for the environment.
@@ -167,7 +167,7 @@ class BuildingEnvReal(gym.Env):
         self.A_d = expm(Amatrix * self.timestep)
         self.B_d = inv(Amatrix) @ (self.A_d - np.eye(self.A_d.shape[0])) @ Bmatrix
 
-    def step(self, action):
+    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """Steps the environment.
         Updates the state of the environment based on the given action and calculates the
         reward, done, and info values for the current timestep.
@@ -393,8 +393,8 @@ class BuildingEnvReal(gym.Env):
         self.datadriven = True
         # return current_state,next_state
 
-    def render(self, mode='human'):
+    def render(self, mode: str = 'human') -> None:
         pass
 
-    def close(self):
+    def close(self) -> None:
         pass
