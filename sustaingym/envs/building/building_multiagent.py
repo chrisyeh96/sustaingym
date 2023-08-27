@@ -1,15 +1,16 @@
 """
 The module implements a multi-agent version of the building.
 """
-import future_annotations
+from __future__ import annotations
+
 from collections import deque
-from typing import Any, Dict, List, Tuple, Union, Optional
+from typing import Any
 
 from gymnasium import spaces
 import numpy as np
 from pettingzoo import ParallelEnv
 
-from env_building import BuildingEnvReal
+from sustaingym.envs.building.building import BuildingEnv
 
 
 class MultiAgentBuildingEnv(ParallelEnv):
@@ -29,11 +30,11 @@ class MultiAgentBuildingEnv(ParallelEnv):
         action_spaces: dict[str, spaces.Box], action space for each agent
 
         # attributes specific to MultiAgentBuildingEnv
-        single_env: BuildingEnvReal
+        single_env: BuildingEnv
         periods_delay: int, time periods of delay for inter-agent communication
     """
 
-    def __init__(self, Parameter: Dict[str, Any], verbose: int = 0) -> None:
+    def __init__(self, Parameter: dict[str, Any], verbose: int = 0) -> None:
         self.OutTemp = Parameter['OutTemp']
         self.length_of_weather = len(self.OutTemp)
         self.connectmap = Parameter['connectmap']
@@ -58,7 +59,7 @@ class MultiAgentBuildingEnv(ParallelEnv):
 
         # Create internal single-agent environment
         # observations are dictionaries
-        self.single_env = BuildingEnvReal(Parameter)
+        self.single_env = BuildingEnv(Parameter)
 
         # PettingZoo API
         self.possible_agents = ["player_" + str(r) for r in range(2)]

@@ -1,29 +1,25 @@
 """
-The module implements the BuildingEnvReal class.
+The module implements the BuildingEnv class.
 """
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import numpy as np
-from numpy import linalg as LA
-import random
-import torch.optim as optim
-import matplotlib.pyplot as plt
+from __future__ import annotations
+
+from typing import Any
+
 import gymnasium as gym
-from scipy.linalg import expm, sinm, cosm
+import numpy as np
 from numpy.linalg import inv
-
-
-from typing import Optional, Any, Dict, Union, List, Tuple
-# from gym import spaces
-# from gym.utils import seeding
+from numpy import linalg as LA
+from scipy.linalg import expm
 from sklearn import linear_model
+import torch
+
+
 use_cuda = torch.cuda.is_available()
 device = torch.device("cuda" if use_cuda else "cpu")
 
 
-class BuildingEnvReal(gym.Env):
-    """BuildingEnvReal class.
+class BuildingEnv(gym.Env):
+    """BuildingEnv class.
     This classes simulates the zonal temperature of a building controlled by a user selected agent.
     It constructs the physics based building simulation model based on the RC model with an
     nonlinear residual model. The simulation is based on the EPW weather file provided by the Building
@@ -70,7 +66,7 @@ class BuildingEnvReal(gym.Env):
     # Scaling factor for the reward function weight
     SCALING_FACTOR = 24
 
-    def __init__(self, Parameter: Dict[str, Any]):
+    def __init__(self, Parameter: dict[str, Any]):
         """Initializes the environment with the given parameters.
         Args:
             Parameter (dict): Dictionary containing the parameters for the environment.
@@ -167,7 +163,7 @@ class BuildingEnvReal(gym.Env):
         self.A_d = expm(Amatrix * self.timestep)
         self.B_d = inv(Amatrix) @ (self.A_d - np.eye(self.A_d.shape[0])) @ Bmatrix
 
-    def step(self, action: np.ndarray) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
+    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         """Steps the environment.
         Updates the state of the environment based on the given action and calculates the
         reward, done, and info values for the current timestep.
@@ -317,7 +313,7 @@ class BuildingEnvReal(gym.Env):
         # Return the initial state and an empty dictionary(for gymnasium grammar)
         return self.state, self._get_info()
 
-    def _get_info(self, all: bool = False) -> Dict[str, Any]:
+    def _get_info(self, all: bool = False) -> dict[str, Any]:
         """
         Returns info. See step().
 

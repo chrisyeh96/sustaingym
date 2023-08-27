@@ -1,11 +1,12 @@
-import numpy as np
+from __future__ import annotations
+
 import os
-from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.results_plotter import load_results, ts2xy, plot_results
+
+import numpy as np
 import pvlib
-import pandas as pd
 from scipy import interpolate
-import sys
+from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.results_plotter import load_results, ts2xy
 
 
 def Getroominfor(filename):
@@ -299,7 +300,7 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
     :param verbose: (int)
     """
 
-    def __init__(self, check_freq: int, log_dir: str, verbose: int = 1) -> None:
+    def __init__(self, check_freq: int, log_dir: str, verbose: int = 1):
         super(SaveOnBestTrainingRewardCallback, self).__init__(verbose)
         self.check_freq: int = check_freq
         self.log_dir: str = log_dir
@@ -335,8 +336,8 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
 
 def ParameterGenerator(Building,Weather,Location,U_Wall=0,Ground_Tp=0,
                        shgc=0.252,shgc_weight=0.01,ground_weight=0.5,full_occ=0,
-                       max_power=8000,AC_map=1,time_reso=3600,reward_gamma=[0.001,0.999],
-                       target=22,activity_sch=np.ones(100000000)*1*120,temp_range=[-40,40],spacetype='continuous',root='userdefined'):
+                       max_power=8000,AC_map=1,time_reso=3600,reward_gamma=(0.001,0.9990,
+                       target=22,activity_sch=np.ones(100000000)*1*120,temp_range=(-40,40),spacetype='continuous',root='userdefined'):
     """
     This function could generate parameters from the selected building and temperature file for the env.
     Args:
