@@ -336,7 +336,7 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
 
 def ParameterGenerator(Building,Weather,Location,U_Wall=0,Ground_Tp=0,
                        shgc=0.252,shgc_weight=0.01,ground_weight=0.5,full_occ=0,
-                       max_power=8000,AC_map=1,time_reso=3600,reward_gamma=(0.001,0.9990,
+                       max_power=8000,AC_map=1,time_reso=3600,reward_gamma=(0.001,0.9990),
                        target=22,activity_sch=np.ones(100000000)*1*120,temp_range=(-40,40),spacetype='continuous',root='userdefined'):
     """
     This function could generate parameters from the selected building and temperature file for the env.

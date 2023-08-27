@@ -1,6 +1,6 @@
 from building_multiagent import MultiAgentBuildingEnv
 #from MPC_Controller import MPCAgent
-from Utils.utils_building import ParameterGenerator
+from sustaingym.envs.building.utils import ParameterGenerator
 import numpy as np
 
 
