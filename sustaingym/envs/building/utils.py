@@ -7,19 +7,23 @@ import pvlib
 from scipy import interpolate
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.results_plotter import load_results, ts2xy
+from typing import List, Dict, Tuple, Any, Union, Sequence
 
 
-def Getroominfor(filename):
+def Getroominfor(filename: str) -> Tuple[List[List[List[Union[str, float]]]], int, List[List[Union[str, float]]]]:
     '''
-    This function get information from the html file and sort each zone by layer.
-    zoneinfor:[Zone_name,Zaxis,Xmin,Xmax,Ymin,Ymax,Zmin,Zmax,ExteriorGrossArea,ExteriorWindowArea]
+    This function gets information from the html file and sorts each zone by layer.
+    zoneinfor: [Zone_name, Zaxis, Xmin, Xmax, Ymin, Ymax, Zmin, Zmax, ExteriorGrossArea, ExteriorWindowArea]
     Args:
-        filename: html file
+        filename (str): HTML file.
     Returns:
-        layerAll: nxm zoneinfor list. n:zones number in this layer, m:layers number.
-        roonum: room number integer
-        cordall: n zoneinfor list. n:total zones number.
+        layerAll (List[List[Union[str, float]]]): nxm zoneinfor list. n: zones number in this layer, m: layers number.
+        roomnum (int): Room number as an integer.
+        cordall (List[List[Union[str, float]]]): n zoneinfor list. n: total zones number.
     '''
+    # Initialize lists for storing zone information
+    cord: List[Union[str, float]] = []
+    cordall: List[List[Union[str, float]]] = []
     # Read all lines of the html file
     htmllines = open(filename).readlines()
 
@@ -133,7 +137,12 @@ def Getroominfor(filename):
     return layerAll, roomnum, cordall
 
 
-def checkconnect(room1min,room1max,room2min,room2max):
+def checkconnect(
+    room1min: Union[List[float], Tuple[float, float]],
+    room1max: Union[List[float], Tuple[float, float]],
+    room2min: Union[List[float], Tuple[float, float]],
+    room2max: Union[List[float], Tuple[float, float]]
+) -> bool:
     '''
     This function check whether zones in the same layer are connected.
     '''
@@ -145,7 +154,12 @@ def checkconnect(room1min,room1max,room2min,room2max):
     return False
 
 
-def checkconnect_layer(room1min,room1max,room2min,room2max):
+def checkconnect_layer(
+    room1min: Union[List[float], Tuple[float, float]],
+    room1max: Union[List[float], Tuple[float, float]],
+    room2min: Union[List[float], Tuple[float, float]],
+    room2max: Union[List[float], Tuple[float, float]]
+) -> bool:
     '''
     This function check whether zones in different layers are connected.
     '''
@@ -157,7 +171,12 @@ def checkconnect_layer(room1min,room1max,room2min,room2max):
     return False
 
 
-def Nfind_neighbor(roomnum,Layerall,U_Wall,SpecificHeat_avg):
+def Nfind_neighbor(
+    roomnum: int,
+    Layerall: List[List[Any]],
+    U_Wall: List[float],  # Changed from float to List[float]
+    SpecificHeat_avg: float
+) -> Tuple[Dict[str, List[int]], np.ndarray, np.ndarray, np.ndarray]:
     '''
     This function is for the building model.
     Args:
@@ -171,6 +190,8 @@ def Nfind_neighbor(roomnum,Layerall,U_Wall,SpecificHeat_avg):
         Ctable: n by 1 C table(n:roomnumber),
         Windowtable: n by 1 Window table(n:roomnumber)
     '''
+    # Initialize the dictionary for room neighbors
+    dicRoom: Dict[str, List[int]] = {}  # Added type annotation
     # Initialize Rtable, Ctable, and Windowtable
     Rtable = np.zeros((roomnum,roomnum+1))
     Ctable = np.zeros(roomnum)
@@ -334,34 +355,70 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
         return True
 
 
-def ParameterGenerator(Building,Weather,Location,U_Wall=0,Ground_Tp=0,
-                       shgc=0.252,shgc_weight=0.01,ground_weight=0.5,full_occ=0,
-                       max_power=8000,AC_map=1,time_reso=3600,reward_gamma=(0.001,0.9990),
-                       target=22,activity_sch=np.ones(100000000)*1*120,temp_range=(-40,40),spacetype='continuous',root='userdefined'):
+def ParameterGenerator(
+    Building: str,
+    Weather: str,
+    Location: str,
+    U_Wall: List[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    Ground_Tp: List[float] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    shgc: float = 0.252,
+    shgc_weight: float = 0.01,
+    ground_weight: float = 0.5,
+    full_occ: Union[np.ndarray, float] = 0,
+    max_power: Union[np.ndarray, int] = 8000,
+    AC_map: Union[np.ndarray, int] = 1,
+    time_reso: int = 3600,
+    reward_gamma: Tuple[float, float] = (0.001, 0.9990),
+    target: Union[np.ndarray, float] = 22,
+    activity_sch: np.ndarray = np.ones(100000000)*1*120,
+    temp_range: Tuple[float, float] = (-40, 40),
+    spacetype: str = 'continuous',
+    root: str = 'userdefined'
+) -> Dict[str, Any]:
     """
     This function could generate parameters from the selected building and temperature file for the env.
+
     Args:
-      filename:str, htm file for building idf
-      weatherfile:str, epw file
-      U_Wall:list, U value of [intwall,floor,outwall,roof,ceiling,groundfloor,window]
-      shgc:int, shgc value for window
-      shgc_weight:int, extra loss of ghi addressed using this weight
-      ground_weight:int, extra lost of heat from ground addressed using this weight
-      full_occ:nparray with shape (roomnum,1), max number of people occupy a room
-      max_power:int,maximum power of a single hvac output,unit watts
-      AC_map:nparray∈[0,1] with shape(roomnum,),boolean of whether a zone has AC
-      time_reso:int, determine the length of 1 timestep, unit second
-      reward_gamma:list of two, [energy penalty,temperature error penalty]
-      target:nparray with shape (roomnum,), target temperature setpoints for each zone
-      activity_sch:nparray with shape(length of the simulation,), the activity schedule of people in the building,unit watts/person
-      temp_range:temperature comfort range
-      spacetype:if it is continous or discrete space
-      root:the file root of 'BEAR/Data/'
+      Building (str): Either name of a building in the predefined `Building_dic` or the file path to a htm file for building idf.
+      Weather (str): Either name of a weather condition in the predefined `weather_dic` or the file path to an epw file.
+      Location (str): Name of the location that matches an entry in `GroundTemp_dic`.
+      U_Wall (list of floats): U-values (thermal transmittance) for different surfaces in the building in the order of [intwall, floor, outwall, roof, ceiling, groundfloor, window].
+      Ground_Tp (float): Ground temperature when location is not in `GroundTemp_dic`.
+      shgc (float): Solar Heat Gain Coefficient for the window. Default is 0.252.
+      shgc_weight (float): Weight factor for extra loss of solar irradiance (ghi). Default is 0.01.
+      ground_weight (float): Weight factor for extra loss of heat from ground. Default is 0.5.
+      full_occ (numpy array): Shape (roomnum,1). Max number of people that can occupy each room. Default is all zeros.
+      max_power (int): Maximum power output of a single HVAC unit, in watts. Default is 8000.
+      AC_map (numpy array): Shape (roomnum,). Boolean map indicating presence (1) or absence (0) of AC in each room. Default is all ones.
+      time_reso (int): Length of 1 timestep in seconds. Default is 3600 (1 hour).
+      reward_gamma (list of two floats): [Energy penalty, temperature error penalty]. Default is [0.001,0.999].
+      target (float or numpy array): Shape (roomnum,). Target temperature setpoints for each zone. Default is 22 degrees Celsius.
+      activity_sch (numpy array): Shape (length of the simulation,). Activity schedule of people in the building in watts/person. Default is all 120.
+      temp_range (list of two ints or floats): [Min temperature, max temperature], defining comfort range. Default is [-40,40] degrees Celsius.
+      spacetype (str): Defines if it is a continuous or discrete space. Default is 'continuous'.
+      root (str): The root directory for data files. Default is 'userdefined'. If not 'userdefined', the file paths of building and weather files are updated with this root.
+
     Returns:
-      Parameter:dictionary containing all parameters needed for environment initialization.
+      Parameter (dict): Contains all parameters needed for environment initialization.
     """
     # Define dictionaries for Building, Ground Temperature, and Weather
-    Building_dic = {'ApartmentHighRise':['ASHRAE901_ApartmentHighRise_STD2019_Tucson.table.htm',[6.299,3.285,0.384,0.228,3.839,0.287,2.786]],'ApartmentMidRise':['ASHRAE901_ApartmentMidRise_STD2019_Tucson.table.htm',[6.299,3.285,0.384,0.228,3.839,0.287,2.786]],'Hospital':['ASHRAE901_Hospital_STD2019_Tucson.table.htm',[6.299,3.839,0.984,0.228,3.839,3.285,2.615]],'HotelLarge':['ASHRAE901_HotelLarge_STD2019_Tucson.table.htm',[6.299,0.228,0.984,0.228,0.228,2.705,2.615]],'HotelSmall':['ASHRAE901_HotelSmall_STD2019_Tucson.table.htm',[6.299,3.839,0.514,0.228,3.839,0.1573,2.615]],'OfficeLarge':['ASHRAE901_OfficeLarge_STD2019_Tucson.table.htm',[6.299,3.839,0.984,0.228,4.488,3.839,2.615]],'OfficeMedium':['ASHRAE901_OfficeMedium_STD2019_Tucson.table.htm',[6.299,3.839,0.514,0.228,4.488,0.319,2.615]],'OfficeSmall':['ASHRAE901_OfficeSmall_STD2019_Tucson.table.htm',[6.299,3.839,0.514,0.228,4.488,0.319,2.615]],'OutPatientHealthCare':['ASHRAE901_OutPatientHealthCare_STD2019_Tucson.table.htm',[6.299,3.839,0.514,0.228,3.839,0.5650E-02,2.615]],'RestaurantFastFood':['ASHRAE901_RestaurantFastFood_STD2019_Tucson.table.htm',[6.299,0.158,0.547,4.706,0.158,0.350,2.557]],'RestaurantSitDown':['ASHRAE901_RestaurantSitDown_STD2019_Tucson.table.htm',[6.299,0.158,0.514,4.706,0.158,0.194,2.557]],'RetailStandalone':['ASHRAE901_RetailStandalone_STD2019_Tucson.table.htm',[6.299,0.047,0.984,0.228,0.228,0.047,3.695]],'RetailStripmall':['ASHRAE901_RetailStripmall_STD2019_Tucson.table.htm',[6.299,0.1125,0.514,0.228,0.228,0.1125,3.695]],'SchoolPrimary':['ASHRAE901_SchoolPrimary_STD2019_Tucson.table.htm',[6.299,0.144,0.514,0.228,0.228,0.144,2.672]],'SchoolSecondar':['ASHRAE901_SchoolSecondary_STD2019_Tucson.table.htm',[6.299,3.839,0.514,0.228,3.839,0.144,2.672]],'Warehouse':['ASHRAE901_Warehouse_STD2019_Tucson.table.htm',[0.774,0.1926,1.044,0.5892,10.06,0.1926,2.557]]}
+    Building_dic = {
+        'ApartmentHighRise': ('ASHRAE901_ApartmentHighRise_STD2019_Tucson.table.htm', [6.299, 3.285, 0.384, 0.228, 3.839, 0.287, 2.786]),
+        'ApartmentMidRise': ('ASHRAE901_ApartmentMidRise_STD2019_Tucson.table.htm', [6.299, 3.285, 0.384, 0.228, 3.839, 0.287, 2.786]),
+        'Hospital': ('ASHRAE901_Hospital_STD2019_Tucson.table.htm', [6.299, 3.839, 0.984, 0.228, 3.839, 3.285, 2.615]),
+        'HotelLarge': ('ASHRAE901_HotelLarge_STD2019_Tucson.table.htm', [6.299, 0.228, 0.984, 0.228, 0.228, 2.705, 2.615]),
+        'HotelSmall': ('ASHRAE901_HotelSmall_STD2019_Tucson.table.htm', [6.299, 3.839, 0.514, 0.228, 3.839, 0.1573, 2.615]),
+        'OfficeLarge': ('ASHRAE901_OfficeLarge_STD2019_Tucson.table.htm', [6.299, 3.839, 0.984, 0.228, 4.488, 3.839, 2.615]),
+        'OfficeMedium': ('ASHRAE901_OfficeMedium_STD2019_Tucson.table.htm', [6.299, 3.839, 0.514, 0.228, 4.488, 0.319, 2.615]),
+        'OfficeSmall': ('ASHRAE901_OfficeSmall_STD2019_Tucson.table.htm', [6.299, 3.839, 0.514, 0.228, 4.488, 0.319, 2.615]),
+        'OutPatientHealthCare': ('ASHRAE901_OutPatientHealthCare_STD2019_Tucson.table.htm', [6.299, 3.839, 0.514, 0.228, 3.839, 0.5650E-02, 2.615]),
+        'RestaurantFastFood': ('ASHRAE901_RestaurantFastFood_STD2019_Tucson.table.htm', [6.299, 0.158, 0.547, 4.706, 0.158, 0.350, 2.557]),
+        'RestaurantSitDown': ('ASHRAE901_RestaurantSitDown_STD2019_Tucson.table.htm', [6.299, 0.158, 0.514, 4.706, 0.158, 0.194, 2.557]),
+        'RetailStandalone': ('ASHRAE901_RetailStandalone_STD2019_Tucson.table.htm', [6.299, 0.047, 0.984, 0.228, 0.228, 0.047, 3.695]),
+        'RetailStripmall': ('ASHRAE901_RetailStripmall_STD2019_Tucson.table.htm', [6.299, 0.1125, 0.514, 0.228, 0.228, 0.1125, 3.695]),
+        'SchoolPrimary': ('ASHRAE901_SchoolPrimary_STD2019_Tucson.table.htm', [6.299, 0.144, 0.514, 0.228, 0.228, 0.144, 2.672]),
+        'SchoolSecondary': ('ASHRAE901_SchoolSecondary_STD2019_Tucson.table.htm', [6.299, 3.839, 0.514, 0.228, 3.839, 0.144, 2.672]),
+        'Warehouse': ('ASHRAE901_Warehouse_STD2019_Tucson.table.htm', [0.774, 0.1926, 1.044, 0.5892, 10.06, 0.1926, 2.557])}
     GroundTemp_dic = {'Albuquerque':[13.7,7.0,2.1,2.6,4.3,8.8,13.9,17.8,23.2,25.6,24.1,20.5],
                       'Atlanta':[16.0,11.9,7.7,4.0,7.9,13.8,17.2,20.8,24.8,26.1,26.5,22.5],
                       'Buffalo':[9.7,6.0,-2.2,-3.4,-4.2,2.7,7.5,13.7,18.6,22.0,20.7,16.5],
@@ -412,6 +469,7 @@ def ParameterGenerator(Building,Weather,Location,U_Wall=0,Ground_Tp=0,
                                  np.ones(30*24*3600//time_reso)*city[10],np.ones(31*24*3600//time_reso)*city[11]])
 
     # Check if Building is in Building_dic, otherwise use Building as filename
+
     if Building not in Building_dic:
         filename = Building
     else:
@@ -457,7 +515,6 @@ def ParameterGenerator(Building,Weather,Location,U_Wall=0,Ground_Tp=0,
     solardatanew = f(xnew)
 
     # Define constants and calculate SHGC
-    Air = 1.225  # kg/m^3
     SpecificHeat_avg = 1000
     SHGC = shgc*shgc_weight*(max(data[0]['ghi'])/(abs(data[1]['TZ'])/60))
 
@@ -472,10 +529,10 @@ def ParameterGenerator(Building,Weather,Location,U_Wall=0,Ground_Tp=0,
 
     # Assign ground connection values and populate the connectivity matrix
     for room in groundrooms:
-        ground_connectlist[room[11]] = room[8]*U_Wall[5]*ground_weight  # for those rooms, assign 1/R table by floor area and u factor
+        ground_connectlist[room[11]] = float(room[8])*float(U_Wall[5])*float(ground_weight)  # for those rooms, assign 1/R table by floor area and u factor
 
     for i in range(len(buildall)):
-        connect_list = dicRoom[buildall[i][0]]
+        connect_list = dicRoom[str(buildall[i][0])]
 
         for number in connect_list:
             connectmap[i][number] = 1

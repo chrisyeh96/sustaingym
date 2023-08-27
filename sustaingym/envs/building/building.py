@@ -141,7 +141,6 @@ class BuildingEnv(gym.Env):
         self._reward_breakdown = {'comfort_level':0.0,'power_consumption':0.0}
 
         # Define matrices for the state update equations
-        connect_indoor = self.connectmap[:, :-1]
         Amatrix = self.RCtable[:, :-1]
         diagvalue = (-self.RCtable) @ self.connectmap.T - np.array([self.weightCmap.T[1]]).T
         np.fill_diagonal(Amatrix, np.diag(diagvalue))
