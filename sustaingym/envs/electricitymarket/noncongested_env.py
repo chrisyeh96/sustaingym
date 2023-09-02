@@ -11,7 +11,7 @@ import pkgutil
 from typing import Any
 
 import cvxpy as cp
-from gym import Env, spaces
+from gymnasium import Env, spaces
 import numpy as np
 import pandas as pd
 import pytz
