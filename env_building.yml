@@ -12,8 +12,10 @@ channels:
 dependencies:
   - python=3.9
   - scikit-learn
+  - pip
   - pvlib
   - cvxpy
+  - scipy   
   - matplotlib
   - seaborn
   - pandas
@@ -26,3 +28,6 @@ dependencies:
   - pip:
     - sb3_contrib>=2.0.0a1
     - stable_baselines3>=2.0.0a1
+    - pettingzoo  
+    - gymnasium  
+

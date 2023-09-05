@@ -473,14 +473,19 @@ def ParameterGenerator(
     if Building not in Building_dic:
         filename = Building
     else:
-        filename = Building_dic[Building][0]
+        # Get the absolute path of the script
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+
+        # Construct the path to the "Data" folder
+        data_dir = os.path.join(script_dir, 'Data/')
+        filename = data_dir+Building_dic[Building][0]
         U_Wall = Building_dic[Building][1]
 
     # Check if Weather is in weather_dic, otherwise use Weather as weatherfile
     if Weather not in weather_dic:
         weatherfile = [Weather,groundtemp]
     else:
-        weatherfile = [weather_dic[Weather],groundtemp]
+        weatherfile = [data_dir+weather_dic[Weather],groundtemp]
 
     # Update file paths if root is not user-defined
     if root != 'userdefined':

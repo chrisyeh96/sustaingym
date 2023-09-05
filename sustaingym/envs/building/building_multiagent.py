@@ -54,8 +54,10 @@ class MultiAgentBuildingEnv(ParallelEnv):
         self.Occupower = 0
         self.timestep = Parameter['time_resolution']
         self.datadriven = False
-        self.agents = Parameter['num_agents']
+        self.agents = range(Parameter['num_agents'])
+        self.periods_delay = 0
         self.verbose = verbose
+        
 
         # Create internal single-agent environment
         # observations are dictionaries

@@ -117,7 +117,7 @@ class BuildingEnv(gym.Env):
         self.datadriven = False
 
         # Define action space bounds based on room number and air conditioning map
-        self.Qlow = np.ones(self.roomnum, dtype=np.float32) * (-1.0)*self.acmap.astype(np.float32)+1e-12
+        self.Qlow = np.ones(self.roomnum, dtype=np.float32) * (-1.0)*self.acmap.astype(np.float32)
         self.Qhigh = np.ones(self.roomnum, dtype=np.float32) * (1.0)*self.acmap.astype(np.float32)
 
         # Set the action space based on the space type
