@@ -16,7 +16,7 @@ class DiscreteActionWrapper(ActionWrapper):
     EVChargingEnv).
 
     Attributes:
-        action_space: tructure of actions expected by environment, now discrete
+        action_space: MultiDiscrete action space
     """
     def __init__(self, env: EVChargingEnv):
         """
