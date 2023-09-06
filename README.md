@@ -1,6 +1,13 @@
 # sustaingym
 Reinforcement learning environments for sustainability applications
 
+# Git clone website
+
+```bash
+git clone https://github.com/chrisyeh96/sustaingym.git --branch gh_pages --single-branch sustaingym_website
+git checkout -b gh_pages_edit
+```
+
 # Install Jekyll
 
 I find it best to use the conda package manager to install ruby, then use ruby to install the `github-pages` gem, which contains the set of gems (including Jekyll) used by GitHub Pages itself to compile each site. If conda is not already installed, [install conda first](https://docs.conda.io/en/latest/miniconda.html). Then, run the following commands:
