@@ -6,6 +6,8 @@ nav_order: 6
 use_math: true
 ---
 
+# BuildingEnv
+
 BuildingEnv considers the control of the heat flow in a multi-zone building so as to maintain a desired temperature setpoint.  Building temperature simulation uses first-principled physics models. Users can either choose from a pre-defined list of buildings (Office small, School primary, Apartment midrise, and Office large) and three climate types and cities (San Diego, Tucson, New York) provided by the Building Energy Codes Program or define a customized BuildingEnv environment by importing any self-defined EnergyPlus building models. Each episode runs for 1 day, with 5-minute time intervals ($$H = 288$$, $$\tau = 5/60$$ hours).
 
 ## Observation Space

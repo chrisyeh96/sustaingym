@@ -1,0 +1,12 @@
+// For format details, see https://aka.ms/devcontainer.json. For config options, see the
+// README at: https://github.com/devcontainers/templates/tree/main/src/jekyll
+{
+	"name": "Ruby",
+
+	// GitHub Pages expects Ruby 2.7, see https://pages.github.com/versions/
+	// For more info on this image, see https://github.com/devcontainers/images/blob/main/src/ruby/
+	"image": "mcr.microsoft.com/devcontainers/ruby:2.7",
+
+	// install github-pages gem
+	"postCreateCommand": "bundle install"
+}

@@ -6,6 +6,8 @@ nav_order: 4
 use_math: true
 ---
 
+# DatacenterEnv
+
 DatacenterEnv is a simulator for carbon-aware job scheduling in datacenters, which aims to reduce the carbon emissions associated with electrcity usage in a datacenter. Carbon-aware job scheduling is premised upon two facts: (i) a significant fraction of a datacenter's workload (_e.g._, up to 50% in some of Google datacenters) is comprised of low priority jobs whose execution can be delayed, and (ii) the carbon intensity of the electric grid fluctuates predictably over time. Therefore, if the execution of low priority workload is delayed to a time of day with "greener" energy, the datacenter's carbon emissions can be minimized.
 
 We assume that jobs are scheduled according to a priority queue, with jobs spread evenly across the available machines. Following [Radovanovic et al. (2022)](https://arxiv.org/abs/2106.11750), we implement workload execution delay by artificially limiting the total datacenter capacity with a _virtual capacity curve_ (VCC) at each time step. If more jobs are enqueued than the VCC permits, then the jobs must wait until the VCC is raised high enough to allow the jobs to run. Simulation is carried out by replaying a sample of [real job traces from a Google cluster from May 2019](https://github.com/google/cluster-data/blob/master/ClusterData2019.md). One timestep in the environment corresponds to one hour, and each episode lasts the whole month.

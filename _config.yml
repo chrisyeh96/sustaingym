@@ -3,7 +3,7 @@ description: A Benchmark Suite of Reinforcement Learning for Sustainability Appl
 baseurl: "/sustaingym" # the subpath of your site, e.g. /blog
 
 # use just-the-docs theme
-remote_theme: pmarsceill/just-the-docs@v0.3.3
+remote_theme: just-the-docs/just-the-docs@v0.6.1
 plugins:
   - jekyll-remote-theme
 
