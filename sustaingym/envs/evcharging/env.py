@@ -231,7 +231,7 @@ class EVChargingEnv(Env):
         Calls the step function of the internal simulator.
 
         Args:
-            action: action: shape [num_stations], normalized charging rate
+            action: shape [num_stations], normalized charging rate
                 for each charging station between 0 and 1.
             return_all_info: info is always returned, but if return_all_info is
                 set to False, only 'max_profit' and 'reward_breakdown' are
@@ -464,7 +464,7 @@ class EVChargingEnv(Env):
 
     def close(self) -> None:
         """Close the environment. Delete internal variables."""
-        del self._simulator, self._interface, self.cn
+        del self._simulator, self.cn
 
 
 def magnitude_constraint(action: cp.Variable, cn: acns.ChargingNetwork
