@@ -17,10 +17,38 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+dependencies = [
+    "pettingzoo==1.22.*",
+    "gymnasium==0.26.*",
+    "numpy>=1.24"
+]
+
+[project.optional-dependencies]
+# Update dependencies in `all` if any are added or removed
+evcharging = [
+    "acnportal==0.3.2",
+    "cvxpy>=1.3, <2",         # semver
+    "mosek>=10.0.44, <11",    # semver
+    "pandas==1.1.*",            # semver
+    "pytz",
+    "requests>=2.31.0"        # semver
+]
+cogen = [
+    "openpyxl>=3.1",
+    "onnxruntime>=1.15, <2",  # semver
+    "pandas>=2, <3",          # semver
+    "xlrd>=2",
+
+    # remove if RLLib ParallelPettingZooEnv wrapper supports
+    # agents with different observation and action spaces.
+    # - See: https://github.com/ray-project/ray/pull/39459
+    "ray[rllib]==2.6.3",
+]
 
 [project.urls]
-"Homepage" = "https://github.com/chrisyeh96/sustaingym"
+Homepage = "https://chrisyeh96.github.io/sustaingym/"
+Repository = "https://github.com/chrisyeh96/sustaingym"
 "Bug Tracker" = "https://github.com/chrisyeh96/sustaingym/issues"
 
-[tool.setuptools.packages.find]
-include = ["sustaingym"]
+[tool.setuptools.package-data]
+"*" = ["*.csv", "*.csv.gz", "*.xlsx", "*.pkl", "*.onnx"]
