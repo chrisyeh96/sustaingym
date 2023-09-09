@@ -30,7 +30,8 @@ evcharging = [
     "mosek>=10.0.44, <11",      # semver
     "pandas==1.1.*",            # semver
     "pytz",
-    "requests>=2.31.0"          # semver
+    "requests>=2.31.0",         # semver
+    "scikit-learn>=1.1.1",      # semver
 ]
 cogen = [
     "openpyxl>=3.1",
