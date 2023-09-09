@@ -4,18 +4,23 @@ Loads the ambient conditions data from for the cogen environment
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 import pandas as pd
 
+from sustaingym.data.utils import read_csv, read_to_bytesio, save_pickle
 
-save_dir = 'sustaingym/data/cogen/ambients_data/'  # 'data/cogen/ambients_data/'
+
+DATA_DIR = 'data/cogen/ambients_data/'
 
 
 def load_wind_data(n_mw: float) -> np.ndarray:
     """
     Load the wind speed data from local folder
     """
-    df = pd.read_csv(save_dir + '0_39.97_-128.77_2019_15min.csv', header=1)
+    csv_path = os.path.join(DATA_DIR, '0_39.97_-128.77_2019_15min.csv')
+    df = read_csv(csv_path, header=1)
     # points to interpolate for an IEC Class 2 wind turbine
     wind_curve_pts = [0, 0, 0, 0.0052, 0.0423, 0.1031, 0.1909,
                       0.3127, 0.4731, 0.6693, 0.8554, 0.9641, 0.9942, 0.9994,
@@ -40,18 +45,21 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
 
     # try to load the dataframe
     try:
-        df = pd.read_pickle(save_dir + f'ambients_wind={renewables_magnitude}.pkl')
+        path = os.path.join(DATA_DIR, f'ambients_wind={renewables_magnitude}.pkl')
+        df = pd.read_pickle(read_to_bytesio(path))
     except FileNotFoundError:
         # if it doesn't exist, construct it
 
         # ===== ELECTRICITY PRICE DATA =====
 
-        sheet_to_df_map_2021 = pd.read_excel(save_dir + 'rpt.00013060.0000000000000000.DAMLZHBSPP_2021.xlsx', sheet_name=None)
-        sheet_to_df_map_2022 = pd.read_excel(save_dir + 'rpt.00013060.0000000000000000.DAMLZHBSPP_2022.xlsx', sheet_name=None)
+        bytesio = read_to_bytesio(os.path.join(DATA_DIR, 'rpt.00013060.0000000000000000.DAMLZHBSPP_2021.xlsx'))
+        sheet_to_df_map_2021 = pd.read_excel(bytesio, sheet_name=None)
+        bytesio = read_to_bytesio(os.path.join(DATA_DIR, 'rpt.00013060.0000000000000000.DAMLZHBSPP_2022.xlsx'))
+        sheet_to_df_map_2022 = pd.read_excel(bytesio, sheet_name=None)
         energy_df = pd.concat([
             df[df['Settlement Point'] == 'HB_HOUSTON']
             for df in list(sheet_to_df_map_2021.values()) + list(sheet_to_df_map_2022.values())
-        ])
+        ]).reset_index(drop=True)
 
         # set Hour Beginning = Hour Ending minus 1 hour
         # convert the date and hour beginning columns to a single datetime
@@ -70,8 +78,8 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
         energy_df_15min = energy_df.resample('15min').ffill()
 
         # ===== GAS SPOT PRICE DATA =====
-
-        gas_df = pd.read_csv(save_dir + 'Henry_Hub_Natural_Gas_Spot_Price.csv', sep=',', header=4)
+        csv_path = os.path.join(DATA_DIR, 'Henry_Hub_Natural_Gas_Spot_Price.csv')
+        gas_df = read_csv(csv_path, sep=',', header=4)
 
         # add missing days, and fill in NaNs with the previous day's price
         gas_df['Day'] = pd.to_datetime(gas_df['Day'])
@@ -84,7 +92,8 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
 
         # ===== AMBIENT CONDITIONS DATA =====
 
-        df = pd.read_excel(save_dir + 'operating_data.xlsx', header=3)
+        bytesio = read_to_bytesio(os.path.join(DATA_DIR, 'operating_data.xlsx'))
+        df = pd.read_excel(bytesio, header=3)
         df = df[[
             'Timestamp',               # datetime64[ns]
             'Target Net Power',        # float64 [MW]
@@ -117,13 +126,21 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
         #         # then we're just going to throw away this day anyway
         #         pass
 
-        df.to_pickle(save_dir + f'ambients_wind={renewables_magnitude}.pkl')
+        try:
+            path = os.path.join(DATA_DIR, f'ambients_wind={renewables_magnitude}.pkl')
+            save_pickle(df, path)
+        except Exception as e:
+            print('Saving pkl raised the following Exception:')
+            print(e)
+            print('This Exception means that we cannot cache files for faster'
+                  ' future loads, but it has no other effect.')
 
     dates = df['Timestamp'].dt.date.unique()
     # drop the first and last days so each day has 96 datapoints
     dfs = [df[df['Timestamp'].dt.date == val] for val in dates][1:-1]
     # exclude any day that has more or fewer than 96 intervals
-    # since this means the row is corrupted (fix this later TODO)
+    # since this means the row is corrupted
+    # TODO: fix this later. Culprit is daylight savings.
     dfs = [df for df in dfs if len(df) == 96]
 
     return dfs

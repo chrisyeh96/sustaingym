@@ -11,15 +11,15 @@ SGIP_CAISO_PGE and SGIP_CAISO_SCE.
 from __future__ import annotations
 
 from datetime import datetime, timedelta
-from io import BytesIO
 import os
-import pkgutil
 from typing import Literal
 
 import numpy as np
 import pandas as pd
 import pytz
 import requests
+
+from .utils import read_csv
 
 DEFAULT_DATE_RANGES = [
     ('2019-05', '2021-08'),
@@ -49,7 +49,7 @@ TIME_COLUMN = {
 SGIP_DT_FORMAT = r'%Y-%m-%dT%H:%M:%S%z'  # timezone-aware ISO 8601 timestamp
 
 FNAME_FORMAT_STR = '{ba}_{year}-{month:02}.csv.gz'
-DEFAULT_SAVE_DIR = 'moer'
+DEFAULT_SAVE_DIR = os.path.join(os.path.dirname(__file__), 'moer')
 COMPRESSION = 'gzip'
 INDEX_NAME = 'time'
 
@@ -180,9 +180,9 @@ def get_historical_and_forecasts(starttime: datetime, endtime: datetime, ba: str
             dfs.append(df)
         dfs = pd.concat(dfs, axis=0)
         combined_dfs.append(dfs)
-    combined_dfs = pd.concat(combined_dfs, axis=1)
-    combined_dfs.sort_index(axis=0, inplace=True)
-    return combined_dfs
+    combined_df = pd.concat(combined_dfs, axis=1)
+    combined_df.sort_index(axis=0, inplace=True)
+    return combined_df
 
 
 def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
@@ -264,6 +264,7 @@ def save_moer_default_ranges() -> None:
 def load_monthly_moer(year: int, month: int, ba: str,
                       save_dir: str | None = None) -> pd.DataFrame:
     """Loads pandas DataFrame from file.
+
     Args:
         year: year of requested month
         month: requested month
@@ -276,19 +277,18 @@ def load_monthly_moer(year: int, month: int, ba: str,
     """
     # first search through custom models
     file_name = FNAME_FORMAT_STR.format(ba=ba, year=year, month=month)
-
     if save_dir is not None:
-        file_or_bytes: str | BytesIO = os.path.join(save_dir, file_name)
+        local_path = os.path.join(save_dir, file_name)
 
-    # search default models
-    if save_dir is None or not os.path.exists(file_or_bytes):
-        data = pkgutil.get_data(
-            'sustaingym', os.path.join('data', 'moer', file_name))
-        assert data is not None
-        file_or_bytes = BytesIO(data)
+    if save_dir is not None and os.path.exists(local_path):
+        # read from local path
+        df = pd.read_csv(local_path, compression=COMPRESSION,
+                         index_col=INDEX_NAME)
+    else:
+        # search default models
+        path = os.path.join('data', 'moer', file_name)
+        df = read_csv(path, compression=COMPRESSION, index_col=INDEX_NAME)
 
-    df = pd.read_csv(file_or_bytes, compression=COMPRESSION,
-                     index_col=INDEX_NAME)
     df.index = pd.to_datetime(pd.DatetimeIndex(df.index))  # set datetime index to UTC
     df.sort_index(inplace=True)
     return df
