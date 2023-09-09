@@ -49,10 +49,12 @@ rm sustaingym/data/cogen/ambients_data/*.pkl
 
 # clean cached build files
 rm -r sustaingym.egg-info
+rm -r dist
 
 # build source dist (.sdist) and wheel (.whl) files
 python -m build
 
 # upload built files to PyPI
+twine upload --repository testpypi dist/*  # for testpypi
 twine upload dist/*
 ```
