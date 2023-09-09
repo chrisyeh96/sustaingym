@@ -8,6 +8,7 @@ logs/
 oldlogs/
 log/
 plots/
+examples/plots
 ## END CUSTOM EXCLUSIONS
 
 # Byte-compiled / optimized / DLL files

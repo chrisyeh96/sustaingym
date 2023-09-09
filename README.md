@@ -5,6 +5,10 @@ The lack of standardized benchmarks for reinforcement learning (RL) in sustainab
 [**Paper**](https://s3.us-east-1.amazonaws.com/climate-change-ai/papers/neurips2022/38/paper.pdf)
 | [**Website**](https://chrisyeh96.github.io/sustaingym/)
 
+SustainGym contains both single-agent and multi-agent RL environments.
+- Single-agent environments follow the [Gymnasium API](https://gymnasium.farama.org/) and are designed to be easily used with the [StableBaselines3](https://stable-baselines3.readthedocs.io/) and [Ray RLLib](https://docs.ray.io/en/latest/rllib/) libraries for training RL algorithms.
+- Multi-agent environments follow the [PettingZoo Parallel API](https://pettingzoo.farama.org/api/parallel/) and are designed to be easily used with the [Ray RLLib](https://docs.ray.io/en/latest/rllib/) library for training multi-agent RL algorithms.
+
 Please see the [SustainGym website](https://chrisyeh96.github.io/sustaingym/) for a getting started guide.
 
 
@@ -20,47 +24,12 @@ sustaingym/             # main Python package
         {env}/          # per-env data files
     envs/
         {env}/          # per-env modules
+tests/                  # unit tests
 ```
 
+## Contributing
 
-## Development Guide
-
-1. Install [miniconda3](https://docs.conda.io/en/latest/miniconda.html).
-2. Create conda environment. Replace `XX` below with the name of the SustainGym environment you want to work on.
-    ```bash
-    conda env update --file env_XX.yml --prune
-    ```
-
-   If you are using RLLib with a GPU, you will also need to [configure TensorFlow for GPU](https://www.tensorflow.org/install/pip#4_gpu_setup):
-    ```bash
-    mkdir -p $CONDA_PREFIX/etc/conda/activate.d
-    echo 'CUDNN_PATH=$(dirname $(python -c "import nvidia.cudnn;print(nvidia.cudnn.__file__)"))' >> $CONDA_PREFIX/etc/conda/activate.d/env_vars.sh
-    echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/:$CUDNN_PATH/lib' >> $CONDA_PREFIX/etc/conda/activate.d/env_vars.sh
-    ```
-
-3. Make code modifications in a separate git branch
-    ```bash
-    git checkout -b new_feature
-    ```
-4. From repo root folder, run mypy type checker and fix any errors.
-    ```bash
-    mypy sustaingym
-    ```
-5. From repo root folder, run code linter and fix any linting errors.
-    ```bash
-    flake8 sustaingym
-    ```
-6. Commit changes in git and push.
-7. Submit pull request on GitHub.
-
-
-## Unit Tests
-
-First, set your terminal directory to this repo's root directory. Next, make sure you have activated the appropriate conda environment for the SustainGym environment you want to test (e.g., `conda activate sustaingym_ev`). Finally, run the unit tests for the desired SustainGym environment:
-
-```bash
-python -m unittest -v tests/test_evcharging.py
-```
+If you would like to add a new environment, propose bug fixes, or otherwise contribute to SustainGym, please see the [Contributing Guide](CONTRIBUTING.md).
 
 
 ## Citation

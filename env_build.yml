@@ -1,0 +1,19 @@
+# This conda environment is to be used for building SustainGym, i.e., turning
+# the source code into a releasable PyPI package that users can install
+# using pip.
+#
+# Install or update environment
+# conda env update --file env_build.yml --prune
+#
+# Remove environment
+# conda remove --name build --all
+#
+# Last updated: September 8, 2023
+name: build
+dependencies:
+- python=3.11
+- pip
+
+- pip:
+  - build
+  - twine
