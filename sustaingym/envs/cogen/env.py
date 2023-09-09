@@ -202,6 +202,7 @@ class CogenEnv(gym.Env):
 
         # initial action is drawn randomly from the action space
         # not sure if this is reasonable, TODO: check this
+        self.action_space.seed(seed)
         self.current_action = self.action_space.sample()
 
         self.obs = self._get_obs()

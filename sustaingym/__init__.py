@@ -6,8 +6,8 @@ register(
 )
 
 register(
-    id='sustaingym/BatteryStorage-v0',
-    entry_point='sustaingym.envs:BatteryStorageEnv'
+    id='sustaingym/ElectricityMarket-v0',
+    entry_point='sustaingym.envs:ElectricityMarketEnv'
 )
 
 register(
