@@ -12,6 +12,7 @@ import onnxruntime as rt
 import pandas as pd
 
 from sustaingym.data.cogen import load_ambients
+from sustaingym.data.utils import read_bytes, read_to_bytesio
 
 
 class CogenEnv(gym.Env):
@@ -91,8 +92,10 @@ class CogenEnv(gym.Env):
         #     max          float64
         #     unit             str
         #     data_type        str
-        with open('sustaingym/data/cogen/onnx_model/model.json', 'r') as f:  # TODO(Chris): pkgutil
-            json_data = json.load(f)
+        bytesio = read_to_bytesio('data/cogen/onnx_model/model.json')
+        json_data = json.load(bytesio)
+        bytesio.close()
+
         inputs_table = pd.DataFrame(json_data['inputs'])
         inputs_table.drop(columns=['index'], inplace=True)
         inputs_table.set_index('id', inplace=True)
@@ -188,7 +191,8 @@ class CogenEnv(gym.Env):
         # However, an ONNX InferenceSession cannot be "pickled" and therefore
         # cannot be forked across RLLib worker processes.
         if self._model is None:
-            self._model = rt.InferenceSession('sustaingym/data/cogen/onnx_model/model.onnx')  # TODO(Chris): pkgutil
+            b = read_bytes('data/cogen/onnx_model/model.onnx')
+            self._model = rt.InferenceSession(b)
 
         # randomly pick a day for the episode
         # subtract 1 as temporary fix to make sure we don't go over the number of days with lookahead window

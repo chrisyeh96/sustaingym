@@ -7,10 +7,8 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import timedelta, datetime
-from io import BytesIO
 import os
 import pickle
-import pkgutil
 from typing import Any, Literal
 
 import acnportal.acndata as acnd
@@ -19,6 +17,8 @@ import numpy as np
 import pandas as pd
 import pytz
 import sklearn.mixture as mixture
+
+from sustaingym.data.utils import read_csv, read_to_bytesio
 
 
 # API Token for ACN-Data
@@ -196,10 +196,7 @@ def get_real_events(start_date: datetime, end_date: datetime,
             file_path = os.path.join(
                 'data', 'evcharging', 'acn_data', site,
                 f'{date_range[0]} {date_range[1]}.csv.gz')
-            data = pkgutil.get_data('sustaingym', file_path)
-            assert data is not None
-            df = pd.read_csv(BytesIO(data), compression='gzip')
-
+            df = read_csv(file_path, compression='gzip')
             for col in ['arrival', 'departure', 'estimated_departure']:
                 df[col] = pd.to_datetime(df[col], utc=True).dt.tz_convert(AM_LA)
 
@@ -280,9 +277,8 @@ def load_gmm_model(site: SiteStr, begin: datetime, end: datetime,
     # search through default models
     else:
         mpath = os.path.join('data', 'evcharging', GMMS_DIR, site, filename)
-        data = pkgutil.get_data('sustaingym', mpath)
-        assert data is not None
-        return pickle.loads(data)
+        bytesio = read_to_bytesio(mpath)
+        return pickle.load(bytesio)
 
 
 def round(arr: np.ndarray, thresh: float = 0.7) -> np.ndarray:

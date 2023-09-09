@@ -10,6 +10,17 @@ import pickle
 import pandas as pd
 
 
+def read_bytes(path: str) -> bytes:
+    """Reads bytes from file pre-packaged with SustainGym.
+
+    Args:
+        path: path to file
+
+    Returns: bytes
+    """
+    return files('sustaingym').joinpath(path).read_bytes()
+
+
 def read_to_bytesio(path: str) -> BytesIO:
     """Reads file pre-packaged with SustainGym into a buffered IO stream.
 
@@ -18,7 +29,7 @@ def read_to_bytesio(path: str) -> BytesIO:
 
     Returns: BytesIO
     """
-    return BytesIO(files('sustaingym').joinpath(path).read_bytes())
+    return BytesIO(read_bytes(path))
 
 
 def read_csv(csv_path: str, **kwargs: Any) -> pd.DataFrame:
