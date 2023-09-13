@@ -1,4 +1,4 @@
-# Contributing Code
+# Contributing code
 
 1. Install [miniconda3](https://docs.conda.io/en/latest/miniconda.html).
 2. Create conda environment. Replace `XX` below with the name of the SustainGym environment you want to work on.
@@ -29,7 +29,7 @@
 7. Submit pull request on GitHub.
 
 
-## Unit Tests
+## Unit tests
 
 First, set your terminal directory to this repo's root directory. Next, make sure you have activated the appropriate conda environment for the SustainGym environment you want to test (e.g., `conda activate sustaingym_ev`). Finally, run the unit tests for the desired SustainGym environment:
 
@@ -38,7 +38,7 @@ python -m unittest -v tests/test_evcharging.py
 ```
 
 
-## Building PyPI Package
+## Building PyPI package
 
 ```bash
 # create a conda environment with appropriate build tools
@@ -61,9 +61,9 @@ twine upload dist/*
 ```
 
 
-# Documentation
+# Website and documentation
 
-SustainGym documentation is written in the `docs/` folder and built using [Sphinx](https://www.sphinx-doc.org/). The API reference documentation is automatically generated from class and function docstrings, which must adhere to the Google style guide. See the section [coding style guide](#coding-style-guide) below for details.
+The SustainGym website and documentation is written in the `docs/` folder and built using [Sphinx](https://www.sphinx-doc.org/). The [API reference documentation](https://chrisyeh96.github.io/sustaingym/api/sustaingym/) is automatically generated from class and function docstrings. See the section [coding style guide](#coding-style-guide) below for details.
 
 We use the following Sphinx extensions to build our documentation site:
 - [`MyST Parser (myst_parser)`](https://myst-parser.readthedocs.io/): allows using Markdown files instead of ReStructuredText files. See the [MyST Roles and Directives documentation](https://myst-parser.readthedocs.io/en/latest/syntax/roles-and-directives.html) for instructions on how to use Sphinx directives in Markdown files.
@@ -77,13 +77,13 @@ We use the following Sphinx extensions to build our documentation site:
     ```
 
 
-## Coding Style Guide
+## Coding style guide
 
-An example of the required coding style is shown below. It is based on the [Google Python style guide](https://google.github.io/styleguide/pyguide.html). Several specific points deserve elaboration:
+An example of the required coding style is shown below. It is based on the [Google Python style guide](https://google.github.io/styleguide/pyguide.html). Several points deserve elaboration:
 - The arguments of a class's `__init__()` function should be documented in the class docstring, instead of the `__init__()` function docstring. Only use the `__init__()` function docstring to document any implementation details. This is because [Sphinx AutoAPI does not explicitly document the `__init__()` function](https://sphinx-autoapi.readthedocs.io/en/latest/reference/config.html#confval-autoapi_python_class_content).
-- Class attributes should be documented with type information in the class docstring.
-- Function arguments do not need to be documented with type information in the function docstring as long as appropriate type annotations are provided in the function signature.
-- Function return values should be documented just like arguments.
+- In a class docstring, class attributes should be documented with type information.
+- In a function docstring, function arguments do not need to be documented with type information as long as appropriate type annotations are provided in the function signature.
+- In a function docstring, function return values should be documented just like arguments.
 
 ```python
 """This module implements MyClass."""
@@ -128,29 +128,38 @@ class MyClass:
 ```
 
 
-## Building documentation with Sphinx
+## Building website locally with Sphinx
 
-1. Use `conda` to install the necessary software. Run the following commands from the repo root folder:
+To build the website, you can follow these steps either locally on your computer or in a [GitHub Codespace](https://github.com/features/codespaces).
 
-    ```bash
-    conda env update --file env_build.yml --prune
-    conda activate build
-    ```
-
-2. Clear out the `docs/_build` directory if it exists, including any hidden files (i.e., dotfiles). This isn't always necessary, but at a minimum, do this every time you change `docs/conf.py`.
+1. If you are installing dependencies locally, I recommend first creating a conda environment by running the following commands from the repo root folder. If you are using a GitHub Codespace, skip this step.
 
     ```bash
-    cd docs/_build
-    rm -r . .*
+    # create a new conda environment named "docs", and activate it
+    conda create -n docs python=3.11 pip
+    conda activate docs
     ```
 
-3. Build the documentation using Sphinx. From the `docs/` directory:
+2. Install the necessary dependencies from `docs/requirements.txt`. From the `docs/` folder:
+
+    ```bash
+    # install dependencies needed to build website locally
+    pip install -r requirements.txt
+    ```
+
+3. Clear out the `docs/_build` directory if it exists, including any hidden folders or files (i.e., dotfiles). This isn't always necessary, but at a minimum, do this every time you change `docs/conf.py`. From the `docs/` folder:
+
+    ```bash
+    rm -r _build/* _build/.*
+    ```
+
+4. Build the documentation using Sphinx. From the `docs/` folder:
 
     ```bash
     sphinx-build -b html . _build
     ```
 
-4. Launch a server to view the docs. From the `docs/_build` directory:
+5. Launch a server to view the docs. From the `docs/_build` folder:
 
     ```bash
     python -m http.server
@@ -161,3 +170,8 @@ class MyClass:
     ```bash
     python -m http.server <port>
     ```
+
+
+## Deploying website on GitHub Pages
+
+The SustainGym repo automatically compiles and deploys the website from the `main` branch's `docs/` folder to GitHub Pages whenever the `main` branch is pushed to. This process can also be triggered manually from the "Build documentation" workflow in the Actions tab. The GitHub workflow configuration can be found at [.github/workflows/build_docs.yml](.github/workflows/build_docs.yml).

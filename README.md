@@ -9,12 +9,13 @@ SustainGym contains both single-agent and multi-agent RL environments.
 - Single-agent environments follow the [Gymnasium API](https://gymnasium.farama.org/) and are designed to be easily used with the [StableBaselines3](https://stable-baselines3.readthedocs.io/) and [Ray RLLib](https://docs.ray.io/en/latest/rllib/) libraries for training RL algorithms.
 - Multi-agent environments follow the [PettingZoo Parallel API](https://pettingzoo.farama.org/api/parallel/) and are designed to be easily used with the [Ray RLLib](https://docs.ray.io/en/latest/rllib/) library for training multi-agent RL algorithms.
 
-Please see the [SustainGym website](https://chrisyeh96.github.io/sustaingym/) for a getting started guide.
+Please see the [SustainGym website](https://chrisyeh96.github.io/sustaingym/) for a getting started guide and complete documentation.
 
 
 ## Folder structure
 
 ```
+docs/                   # website and documentation
 examples/               # example code for running each environment
 sustaingym/             # main Python package
     algorithms/
@@ -31,6 +32,9 @@ tests/                  # unit tests
 
 If you would like to add a new environment, propose bug fixes, or otherwise contribute to SustainGym, please see the [Contributing Guide](CONTRIBUTING.md).
 
+## License
+
+SustainGym is released under a [Creative Commons Attribution 4.0 International Public License (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/). See the [LICENSE](LICENSE) file for the full terms.
 
 ## Citation
 

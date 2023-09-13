@@ -15,6 +15,8 @@ The lack of standardized benchmarks for reinforcement learning (RL) in sustainab
     <a href="https://github.com/chrisyeh96/sustaingym/" class="btn fs-5 mb-4 mb-md-0">View it on GitHub</a>
 </p>
 
+SustainGym is released under a [Creative Commons Attribution 4.0 International Public License (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/).
+
 Please cite SustainGym as
 
 > C. Yeh, V. Li, R. Datta, Y. Yue, and A. Wierman, "SustainGym: A Benchmark Suite of Reinforcement Learning for Sustainability Applications," in _NeurIPS 2022 Workshop on Tackling Climate Change with Machine Learning_, Dec. 2022. [Online]. Available: [https://www.climatechange.ai/papers/neurips2022/38](https://www.climatechange.ai/papers/neurips2022/38).
