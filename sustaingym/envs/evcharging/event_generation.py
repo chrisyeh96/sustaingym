@@ -25,9 +25,19 @@ from sustaingym.data.load_moer import MOERLoader
 
 
 class AbstractTraceGenerator:
-    """Abstract class for EventQueue generator.
+    """Abstract class for ``EventQueue`` generator.
 
-    Subclasses are expected to implement the methods _create_events() and __repr__().
+    Subclasses are expected to implement the methods `_create_events()` and
+    `__repr__()`.
+
+    Args:
+        site: garage to get events from, either 'caltech' or 'jpl'
+        date_period: either a pre-defined date period or a custom date period.
+            If custom, the input must be a 2-tuple of strings with both strings
+            in the format YYYY-MM-DD. Otherwise, should be a default period
+            string.
+        requested_energy_cap: max amount of requested energy allowed (kWh)
+        seed: seed for random sampling
 
     Attributes:
         site: either 'caltech' or 'jpl'
@@ -61,16 +71,6 @@ class AbstractTraceGenerator:
                  date_period: tuple[str, str] | DefaultPeriodStr,
                  requested_energy_cap: float = 100,
                  seed: int | None = None):
-        """
-        Args:
-            site: garage to get events from, either 'caltech' or 'jpl'
-            date_period: either a pre-defined date period or a
-                custom date period. If custom, the input must be a 2-tuple
-                of strings with both strings in the format YYYY-MM-DD.
-                Otherwise, should be a default period string.
-            requested_energy_cap: max amount of requested energy allowed (kWh)
-            seed: seed for random sampling
-        """
         # Name of site, name of stations on site, and number of stations on site
         self.site = site
         self.station_ids = site_str_to_site(site).station_ids
@@ -126,7 +126,8 @@ class AbstractTraceGenerator:
         """Creates a DataFrame of charging events for the current day.
 
         Returns:
-            DataFrame containing charging info.
+            events: DataFrame containing charging info::
+
                 arrival                   int
                 departure                 int
                 requested_energy (kWh)    float64
@@ -137,15 +138,17 @@ class AbstractTraceGenerator:
                 claimed                   bool
 
         Notes:
-            The attributes arrival, departure, and estimated_departure must
-            be integers representing the timestamp during the day, which is
-            the number of discrete periods that have elapsed. The ``station_id``
-            attribute is expected to be included at the site's charging network.
+            The attributes ``arrival``, ``departure``, and
+            ``estimated_departure`` must be integers representing the timestamp
+            during the day, which is the number of discrete periods that have
+            elapsed. The ``station_id`` attribute is expected to be included at
+            the site's charging network.
         """
         raise NotImplementedError
 
     def get_event_queue(self) -> tuple[acns.EventQueue, list[acns.EV], int]:
-        """Creates an EventQueue for the current day, and then updates the day.
+        """Creates an ``EventQueue`` for the current day, and then updates the
+        day.
 
         Sessions are added as Plugin events, and Recompute events are added
         every period so that the algorithm can be continually called. Unplug
@@ -153,9 +156,9 @@ class AbstractTraceGenerator:
         be explicitly added.
 
         Returns:
-            (EventQueue) event queue of EV charging sessions
-            (List[acnm.ev.EV]) list of all EVs in event queue
-            (int) number of plug in events (not counting recompute events)
+            events: event queue of EV charging sessions
+            evs: list of all EVs in event queue
+            num_plugin: number of plug in events (not counting recompute events)
         """
         samples = self._create_events()
         non_recompute_timesteps = set()
@@ -204,10 +207,10 @@ class AbstractTraceGenerator:
         return events, evs, num_plugin
 
     def get_moer(self) -> np.ndarray:
-        """Retrieves MOER data from the MOERLoader().
+        """Retrieves MOER data from the `MOERLoader()`.
 
         Returns:
-            array of shape (289, 37). The first column is the historical
+            data: array of shape (289, 37). The first column is the historical
                 MOER. The remaining columns are forecasts for the next 36
                 five-min time steps. Units kg CO2 per kWh. Rows are sorted
                 chronologically.
@@ -216,7 +219,19 @@ class AbstractTraceGenerator:
 
 
 class RealTraceGenerator(AbstractTraceGenerator):
-    """Class for EventQueue generator using real traces from ACNData.
+    """Class for ``EventQueue`` generator using real traces from ACNData.
+
+    See `AbstractTraceGenerator` for more arguments and attributes
+
+    Args:
+        sequential: whether to draw simulated days sequentially from date
+            range or randomly
+        use_unclaimed: whether to use unclaimed sessions, which do not have
+            the "requested energy" or "estimated departure" attributes. If
+            True, the generator uses the energy delivered in the session and
+            the disconnect time in place of those attributes, eliminating
+            real-world uncertainty in user requests.
+        seed: if sequential, the seed determines which day to start on
 
     Attributes:
         sequential: whether to draw simulated days sequentially from date
@@ -226,7 +241,6 @@ class RealTraceGenerator(AbstractTraceGenerator):
             True, the generator uses the energy delivered in the session and
             the disconnect time in place of those attributes, eliminating
             real-world uncertainty in user requests.
-        *See AbstractTraceGenerator for more attributes
     """
     def __init__(self,
                  site: SiteStr,
@@ -235,18 +249,6 @@ class RealTraceGenerator(AbstractTraceGenerator):
                  use_unclaimed: bool = False,
                  requested_energy_cap: float = 100,
                  seed: int | None = None):
-        """
-        Args:
-            sequential: whether to draw simulated days sequentially from date
-                range or randomly
-            use_unclaimed: whether to use unclaimed sessions, which do not have
-                the "requested energy" or "estimated departure" attributes. If
-                True, the generator uses the energy delivered in the session and
-                the disconnect time in place of those attributes, eliminating
-                real-world uncertainty in user requests.
-            seed: if sequential, the seed determines which day to start on
-            *See AbstractTraceGenerator for more arguments
-        """
         super().__init__(site, date_period, requested_energy_cap, seed)
 
         self.sequential = sequential
@@ -291,9 +293,10 @@ class RealTraceGenerator(AbstractTraceGenerator):
     def _create_events(self) -> pd.DataFrame:
         """Retrieves and filters real events from a given day.
 
+        See `_create_events()` in `AbstractTraceGenerator` for more info.
+
         Returns:
-            DataFrame of real sessions with datetimes in terms of timestamps.
-            *See _create_events() in AbstractTraceGenerator for more information.
+            df: DataFrame of real sessions with datetimes in terms of timestamps.
         """
         df = self.events_df[(self.day <= self.events_df.arrival) &
                             (self.events_df.arrival < self.day + timedelta(days=1))]
@@ -326,7 +329,19 @@ class RealTraceGenerator(AbstractTraceGenerator):
 
 
 class GMMsTraceGenerator(AbstractTraceGenerator):
-    """Class for EventQueue generator by sampling from trained GMMs.
+    """Class for ``EventQueue`` generator by sampling from trained GMMs.
+
+    See `AbstractTraceGenerator` for more arguments and attributes
+
+    Args:
+        site: garage to get events from, either 'caltech' or 'jpl'
+        date_period: either a pre-defined date period or a
+            custom date period. If custom, the input must be a 2-tuple
+            of strings with both strings in the format YYYY-MM-DD.
+            Otherwise, should be a default period string.
+        n_components: number of components in GMM
+        requested_energy_cap: max amount of requested energy allowed (kWh)
+        seed: seed for random sampling
 
     Attributes:
         n_components: int, number of components in use for GMM
@@ -335,9 +350,11 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
             sessions on each day
         station_usage: np.ndarray, shape [num_stations], total number of
             sessions during interval for each station
-        *See AbstractTraceGenerator for more attributes
 
-    Notes about saved GMMs:
+    Notes about saved GMMs
+
+    .. code:: none
+
         default gmm directory: in package sustaingym/data/evcharging/gmms
             gmms
             |----caltech
@@ -366,10 +383,6 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
                  requested_energy_cap: float = 100,
                  seed: int | None = None):
         """
-        Args:
-            n_components: number of components in GMM
-            *See AbstractTraceGenerator for more arguments
-
         Notes:
             The generator first searches for a matching GMM directory. If
                 unfound, it creates one.
@@ -404,15 +417,15 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
         """Returns samples from GMM.
 
         This function over-generates samples and discards those that are not in
-        bounds (i.e. arrival >= departure).
+        bounds (i.e., arrival >= departure).
 
         Args:
             n: number of samples to generate.
             oversample_factor: fractional amount of n to oversample.
 
         Returns:
-            array of shape (n, 4) whose columns are arrival time in minutes,
-                departure time in minutes, estimated departure time in
+            samples: array of shape (n, 4) whose columns are arrival time in
+                minutes, departure time in minutes, estimated departure time in
                 minutes, and requested energy in kWh.
         """
         if n == 0:
@@ -452,15 +465,15 @@ class GMMsTraceGenerator(AbstractTraceGenerator):
     def _create_events(self) -> pd.DataFrame:
         """Creates artificial events for the event queue for a single day.
 
-        This method first calls _sample() to generate the arrival, departure,
+        This method first calls `_sample()` to generate the arrival, departure,
         estimated departure, and requested energy fields. Then, it fills
-        in the other attributes, namely session_id and station_id, that were
-        not included in modeling. The session_id is generated randomly, and
-        the station_id is sampled from the empirical probability density
-        distribution of stations on the date range.
+        in the other attributes, namely ``session_id`` and ``station_id``, that
+        were not included in modeling. The ``session_id`` is generated
+        randomly, and the ``station_id`` is sampled from the empirical
+        probability density distribution of stations on the date range.
 
         Returns:
-            DataFrame of artificial sessions.
+            events: DataFrame of artificial sessions.
         """
         # number of events from empirical pdf
         n = int(self.rng.choice(self.cnt))

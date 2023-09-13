@@ -1,28 +1,27 @@
-"""Implements a wrapper supporting discrete actions in EVChargingEnv."""
+"""Implements a wrapper supporting discrete actions in `EVChargingEnv`."""
 from __future__ import annotations
 
 from gymnasium import ActionWrapper, spaces
 import numpy as np
 
-from sustaingym.envs.evcharging.env import EVChargingEnv
+from .env import EVChargingEnv
 
 
 class DiscreteActionWrapper(ActionWrapper):
     """Discrete action wrapper.
 
     This wrapper maps discrete actions to normalized continuous actions on the
-    EVChargingEnv. Using discrete actions guarantees that non-zero actions will
-    not get zeroed out as in the continuous case (see _to_schedule() in
-    EVChargingEnv).
+    `EVChargingEnv`. Using discrete actions guarantees that non-zero actions
+    will not get zeroed out as in the continuous case (see
+    `EVChargingEnv._to_schedule()`).
+
+    Args:
+        env: EV charging environment
 
     Attributes:
         action_space: MultiDiscrete action space
     """
     def __init__(self, env: EVChargingEnv):
-        """
-        Args:
-            env: EV charging environment
-        """
         super().__init__(env)
         assert isinstance(env.action_space, spaces.Box), \
             "Should only be used to wrap continuous env"

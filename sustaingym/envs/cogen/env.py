@@ -18,6 +18,9 @@ from sustaingym.data.utils import read_bytes, read_to_bytesio
 class CogenEnv(gym.Env):
     """
     Actions:
+
+    .. code:: none
+
         Type: Dict(Box(1), Discrete(2), Discrete(2), Box(1),
                    Box(1), Discrete(2), Discrete(2), Box(1),
                    Box(1), Discrete(2), Discrete(2), Box(1),
@@ -40,6 +43,9 @@ class CogenEnv(gym.Env):
         CT_NrBays (int)               1                   12
 
     Observation:
+
+    .. code:: none
+
         Type: Dict(Box(1), Action_Dict,
                    Box(forecast_horizon + 1), Box(forecast_horizon + 1),
                    Box(forecast_horizon + 1), Box(forecast_horizon + 1),
@@ -55,6 +61,14 @@ class CogenEnv(gym.Env):
         Target process steam (klb/hr) 0                   1300
         Electricity price ($/MWh)     0                   1500
         Natural gas price ($/MMBtu)   0                   7
+
+    Args:
+        renewables_magnitude: TODO
+        ramp_penalty: TODO
+        supply_imbalance_penalty: TODO
+        constraint_violation_penalty: TODO
+        forecast_horizon: TODO
+        forecast_noise_std: TODO
     """
     def __init__(self,
                  renewables_magnitude: float = 0.,
@@ -64,9 +78,6 @@ class CogenEnv(gym.Env):
                  forecast_horizon: int = 3,
                  forecast_noise_std: float = 0.1,
                  ):
-        """
-        Constructs the CogenEnv object
-        """
         self.ramp_penalty = ramp_penalty
         self.supply_imbalance_penalty = supply_imbalance_penalty
         self.constraint_violation_penalty = constraint_violation_penalty
@@ -182,7 +193,8 @@ class CogenEnv(gym.Env):
             options: includes optional settings like reward type (not implemented)
 
         Returns:
-            tuple containing the initial observation for env's episode
+            obs: initial state
+            info: initial info dict
         """
         super().reset(seed=seed)
 
@@ -354,7 +366,11 @@ class CogenEnv(gym.Env):
             action: an action provided by the environment
 
         Returns:
-            tuple containing the next observation, reward, terminated flag, truncated flag, and info dict
+            obs: new state
+            reward: reward
+            terminated: termination flag
+            truncated: always ``False``
+            info: info dict
         """
         # compute the loss of taking the action
         self.current_reward, self.current_info = self._compute_reward(self.obs, action)

@@ -34,7 +34,7 @@ def plot_lines(site: SiteStr, period: DefaultPeriodStr) -> None:
         reward = list(np.array(df.reward))
         for r, di in zip(reward, day):
             records.append((alg, r, di))
-    
+
     df = pd.DataFrame.from_records(records, columns=['alg', 'reward', 'day'])
     sns.lineplot(data=df, x="day", y="reward", hue="alg")
     plt.title('7-Day Rolling Median of Rewards')
@@ -80,7 +80,7 @@ def plot_violins(site: SiteStr, period: DefaultPeriodStr) -> None:
                 df = read_rl(exp, rld)
                 if np.mean(df.reward) > best_mean_reward:
                     best_mean_reward, reward = np.mean(df.reward), df.reward
-            
+
             # Add reward to records
             reward = list(np.array(reward))
             for r in reward:
@@ -163,9 +163,9 @@ def reward_curve_separate() -> None:
         axes[r][c].legend()
         axes[r][c].set_title(f'{group[1]} {group[0]}')
 
-    fig.suptitle(f'Reward Breakdown on 07/05/2021-07/18/2021 During Training')
+    fig.suptitle('Reward Breakdown on 07/05/2021-07/18/2021 During Training')
     fig.tight_layout()
-    print(f"Save to: 'plots/training_curves_separate.png'")
+    print("Save to: 'plots/training_curves_separate.png'")
     fig.savefig('plots/training_curves_separate.png', dpi=300, bbox_inches='tight')
 
 
@@ -201,13 +201,12 @@ def reward_curve_all():
 
         plt.plot(timesteps, reward_means, label=f'{group[1]} {group[0]}')
         plt.fill_between(timesteps, reward_means-reward_stds, reward_means+reward_stds, alpha=0.2)
-    plt.title(f'Reward on 07/05/2021-07/18/2021 During Training')
+    plt.title('Reward on 07/05/2021-07/18/2021 During Training')
     plt.xlabel('timesteps')
     plt.ylabel('reward')
     plt.legend()
-    print(f"Save to: 'plots/training_curves_all.png'")
+    print("Save to: 'plots/training_curves_all.png'")
     plt.savefig('plots/training_curves_all.png', dpi=300)
-
 
 
 if __name__ == '__main__':

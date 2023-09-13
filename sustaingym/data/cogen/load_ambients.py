@@ -16,9 +16,7 @@ DATA_DIR = 'data/cogen/ambients_data/'
 
 
 def load_wind_data(n_mw: float) -> np.ndarray:
-    """
-    Load the wind speed data from local folder
-    """
+    """Load wind speed data."""
     csv_path = os.path.join(DATA_DIR, '0_39.97_-128.77_2019_15min.csv')
     df = read_csv(csv_path, header=1)
     # points to interpolate for an IEC Class 2 wind turbine

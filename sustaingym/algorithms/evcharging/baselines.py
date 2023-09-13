@@ -1,5 +1,5 @@
 """
-This module implements baseline algorithms for the EVChargingEnv.
+This module implements baseline algorithms for EVChargingEnv.
 """
 from __future__ import annotations
 
@@ -54,18 +54,18 @@ class RandomAlgorithm(BaseAlgorithm):
 class MPC(BaseAlgorithm):
     """Model predictive control.
 
+    See `BaseAlgorithm` for more attributes.
+
+    Args:
+        env: EV charging environment
+        lookahead: number of timesteps to forecast future trajectory
+
     Attributes:
         lookahead: number of timesteps to forecast future trajectory. Note that
             MPC cannot see future car arrivals and does not take them into
             account.
-        *See BaseEVChargingAlgorithm for more attributes.
     """
     def __init__(self, env: EVChargingEnv, lookahead: int = 12):
-        """
-        Args:
-            env (EVChargingEnv): EV charging environment
-            lookahead: number of timesteps to forecast future trajectory
-        """
         super().__init__(env)
         assert isinstance(env.action_space, spaces.Box), \
             "MPC only supports continuous action space"
@@ -129,14 +129,13 @@ class MPC(BaseAlgorithm):
 
 class OfflineOptimal(BaseAlgorithm):
     """Calculates best performance of a controller that knows the future.
+
+    Args:
+        env: EV charging environment
     """
     TOTAL_TIMESTEPS = 288
 
     def __init__(self, env: EVChargingEnv):
-        """
-        Args:
-            env (EVChargingEnv): EV charging environment
-        """
         super().__init__(env)
         assert isinstance(env.action_space, spaces.Box), \
             "Offline optimal only supports continuous action space"
@@ -197,15 +196,15 @@ class OfflineOptimal(BaseAlgorithm):
 
                 # Set starting demand constraints
                 self._constraints.append(
-                    self.demands[ev_idx, ev.arrival] == ev.requested_energy /
-                        env.A_PERS_TO_KWH / env.ACTION_SCALE_FACTOR)
+                    self.demands[ev_idx, ev.arrival]
+                    == ev.requested_energy / env.A_PERS_TO_KWH / env.ACTION_SCALE_FACTOR)
 
                 # Set inter-period charge and remaining demand constraints
                 if ev.arrival + 1 < ev.departure:
                     self._constraints.append(
                         self.demands[ev_idx, ev.arrival+1:ev.departure]
-                            == self.demands[ev_idx, ev.arrival:ev.departure-1]
-                            - self.traj[ev_idx, ev.arrival:ev.departure-1])
+                        == self.demands[ev_idx, ev.arrival:ev.departure-1]
+                        - self.traj[ev_idx, ev.arrival:ev.departure-1])
             self.mask.value = mask
 
             # Formulate problem
@@ -224,7 +223,7 @@ class OfflineOptimal(BaseAlgorithm):
         return action
 
 
-# class RLAlgorithm(BaseEVChargingAlgorithm):
+# class RLAlgorithm(BaseAlgorithm):
 #     """RL algorithm wrapper.
 
 #     Attributes:
@@ -244,9 +243,9 @@ class OfflineOptimal(BaseAlgorithm):
 #         """Returns output of RL model.
 
 #         Args:
-#             *See get_action() in BaseEVChargingAlgorithm.
+#             *See get_action() in BaseAlgorithm.
 
 #         Returns:
-#             *See get_action() in BaseEVChargingAlgorithm.
+#             *See get_action() in BaseAlgorithm.
 #         """
 #         return self.rl_model.predict(observation, deterministic=True)[0]

@@ -10,9 +10,9 @@ from gymnasium import spaces
 import numpy as np
 from pettingzoo import ParallelEnv
 
-from sustaingym.envs.evcharging.discrete_action_wrapper import DiscreteActionWrapper
-from sustaingym.envs.evcharging.env import EVChargingEnv
-from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
+from .discrete_action_wrapper import DiscreteActionWrapper
+from .env import EVChargingEnv
+from .event_generation import AbstractTraceGenerator
 
 
 class MultiAgentEVChargingEnv(ParallelEnv):
@@ -23,7 +23,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
 
     Observations for each agent are flattened.
 
-    Attributes
+    Attributes:
         # attributes required by pettingzoo.ParallelEnv
         agents: list[str], agent IDs (which are the charging station IDs)
         possible_agents: list[str], same as agents
@@ -68,7 +68,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
         self.observation_spaces = {
             agent: spaces.flatten_space(self._dict_observation_spaces[agent])
             for agent in self.agents}  # flattened observations
-        
+
         # per-agent action space
         if discrete:
             action_space = spaces.Discrete(5)
@@ -87,7 +87,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             obs_agg: observation from single-agent env
             init: whether this is the obs to return for reset()
 
-        Returns: dictionary of observations separated by agent
+        Returns:
+            observations: dictionary of observations separated by agent
         """
         # Without time delay, agent gets global information
         if self.periods_delay == 0:
@@ -134,7 +135,12 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             dict[str, np.ndarray], dict[str, float], dict[str, bool],
             dict[str, bool], dict[str, dict[str, Any]]]:
         """
-        Returns: obs, reward, terminateds, truncateds, infos
+        Returns:
+            obss: dict mapping agent_id to observation
+            rewards: dict mapping agent_id to reward
+            terminateds: dict mapping agent_id to terminated
+            truncateds: dict mapping agent_id to truncated
+            infos: dict mapping agent_id to info
         """
         # Build action
         actions = np.zeros(self.num_agents, dtype=np.float32)
