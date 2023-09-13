@@ -13,9 +13,8 @@ from gymnasium import Env, spaces
 from gymnasium.envs.registration import EnvSpec
 import numpy as np
 
-from sustaingym.envs.evcharging.event_generation import AbstractTraceGenerator
-from sustaingym.envs.evcharging.utils import (
-    MINS_IN_DAY, site_str_to_site, round)
+from .event_generation import AbstractTraceGenerator
+from .utils import MINS_IN_DAY, site_str_to_site
 from sustaingym.envs.utils import solve_mosek
 
 
@@ -26,18 +25,26 @@ class EVChargingEnv(Env):
     connected to an EV charging network. It is based on ACN-Data and ACN-Sim
     developed at Caltech. Each episode is a 24-hour day of charging, and the
     simulation can be done using real data from ACN-Data or a Gaussian mixture
-    model (GMM) fitted on the data (see train_artificial_data_model.py). The
+    model (GMM) fitted on the data (see train_gmm_model.py). The
     gym supports the Caltech and JPL sites.
 
-    n = number of stations in the EV charging network
-    k = number of steps for the MOER CO2 forecast
+    In what follows:
+
+    - ``n`` = number of stations in the EV charging network
+    - ``k`` = number of steps for the MOER CO2 forecast
 
     Actions:
+
+    .. code:: none
+
         Type: Box(n)
         Action                              Shape   Min     Max
         normalized pilot signal             n       0       1
 
     Observations:
+
+    .. code:: none
+
         Type: Dict(Box(n), Box(n), Box(1), Box(k), Box(1))
                                             Shape   Min     Max
         Estimated departures (timesteps)    n       -288    288
@@ -45,6 +52,21 @@ class EVChargingEnv(Env):
         Previous MOER value                 1       0       1
         Forecasted MOER (kg CO2 / kWh)      k       0       1
         Timestep (fraction of day)          1       0       1
+
+    Args:
+        data_generator: generator for sampling EV charging events and MOER
+            forecasts
+        moer_forecast_steps: number of steps of MOER forecast to include,
+            minimum of 1 and maximum of 36. Each step is 5 mins, for a
+            maximum of 3 hrs.
+        project_action_in_env: whether gym should project action to obey
+            network constraints and not overcharge vehicles
+        verbose: level of verbosity for print out
+
+            - 0: nothing
+            - 1: print description of current simulation day
+            - 2: print warnings from network constraint violations and
+              convex optimization solver
 
     Attributes:
         # attributes required by gym.Env
@@ -63,10 +85,11 @@ class EVChargingEnv(Env):
         project_action_in_env: bool, whether gym should project action to obey
             network constraints and not overcharge vehicles
         verbose: int, level of verbosity for print out
-            0: nothing
-            1: print description of current simulation day
-            2: print warnings from network constraint violations and convex
-                optimization solver
+
+            - 0: nothing
+            - 1: print description of current simulation day
+            - 2: print warnings from network constraint violations and convex
+              optimization solver
         cn: acns.ChargingNetwork, EV charging network
         num_stations: int, number of stations in EV charging network
         timestep: int, current timestep in episode, from 0 to 288
@@ -92,21 +115,6 @@ class EVChargingEnv(Env):
                  moer_forecast_steps: int = 36,
                  project_action_in_env: bool = True,
                  verbose: int = 0):
-        """
-        Args:
-            data_generator: generator for sampling EV charging events and MOER
-                forecasts
-            moer_forecast_steps: number of steps of MOER forecast to include,
-                minimum of 1 and maximum of 36. Each step is 5 mins, for a
-                maximum of 3 hrs.
-            project_action_in_env: whether gym should project action to obey
-                network constraints and not overcharge vehicles
-            verbose: level of verbosity for print out
-                0: nothing
-                1: print description of current simulation day
-                2: print warnings from network constraint violations and
-                    convex optimization solver
-        """
         assert 1 <= moer_forecast_steps <= 36
 
         # Set arguments
@@ -201,15 +209,18 @@ class EVChargingEnv(Env):
     def _project_action(self, action: np.ndarray) -> np.ndarray:
         """Projects action to satisfy charging network constraints.
 
+        The projection ensures that network constraints are obeyed and no more
+        charge is provided than is demanded. The projected action is the action
+        in the feasible space that minimizes the L2 norm between it and the
+        suggested action.
+
         Args:
             action: shape [num_stations], normalized charging rate in [0, 1]
                 for each charging station.
 
         Returns:
-            projected action (still a normalized charging rate) so that network
-            constraints are obeyed and no more charge is provided than is
-            demanded. It is the action in the feasible space that minimizes the
-            L2 norm between it and the suggested action.
+            projected_action: array of shape [num_stations], still a normalized
+                charging rate in [0, 1]
         """
         self._projected_action.value = action  # initialize value for faster convergence
         self._agent_action.value = action
@@ -233,46 +244,47 @@ class EVChargingEnv(Env):
         Args:
             action: shape [num_stations], normalized charging rate
                 for each charging station between 0 and 1.
-            return_all_info: info is always returned, but if return_all_info is
-                set to False, only 'max_profit' and 'reward_breakdown' are
-                returned.
 
         Returns:
             observation: state
-                'est_departures': shape [num_stations], the estimated number of
-                    periods until departure. If there is no EVSE at the index,
-                    the entry is set to zero.
-                'demands': shape [num_stations], amount of charge demanded by
-                    each EVSE in kWh.
-                'prev_moer': shape [1], emissions rate for the current timestep
-                    in kg CO2 per kWh. Between 0 and 1.
-                'forecasted_moer': shape [moer_forecast_steps], forecasted
-                    emissions rate for next timestep(s) in kg CO2 per kWh.
-                    Between 0 and 1.
-                'timestep': shape [1], fraction of day between 0 and 1.
+
+                - 'est_departures': shape [num_stations], the estimated number of
+                  periods until departure. If there is no EVSE at the index,
+                  the entry is set to zero.
+                - 'demands': shape [num_stations], amount of charge demanded by
+                  each EVSE in kWh.
+                - 'prev_moer': shape [1], emissions rate for the current timestep
+                  in kg CO2 per kWh. Between 0 and 1.
+                - 'forecasted_moer': shape [moer_forecast_steps], forecasted
+                  emissions rate for next timestep(s) in kg CO2 per kWh.
+                  Between 0 and 1.
+                - 'timestep': shape [1], fraction of day between 0 and 1.
+
             reward: scheduler's performance metric per timestep
             terminated: whether episode is terminated
             truncated: whether episode has reached a time limit. Here, truncated
                 is always the same as terminated because the episode is always
                 across the entire day.
             info: auxiliary useful information
-                'num_evs' (int): number of charging sessions in episode.
-                'avg_plugin_time' (float): average plugin time in periods
-                    (5 mins) across sessions in episode.
-                'max_profit' (float): maximum profit if all EVs were charged
-                    maximally while they are connected to the network. This does
-                    not take into account network constraints or carbon emissions,
-                    and it is a good proxy for info['reward_breakdown']['profit'].
-                'reward_breakdown' (dict[str, float]): breakdown of evaluation
-                    metrics cumulative over the episode.
-                    'profit' ($) : profit over charge delivered to all EVs.
-                    'carbon_cost'($): cost of marginal emissions.
-                    'excess_charge' ($): cost of network violations.
-                'evs' (List[acnm.ev.EV]): list of EVs in the event queue
-                'active_evs' (List[acnm.ev.EV]): list of active EVs at current
-                    timestep
-                'moer': shape [289, 37] emissions rate for entire episode.
-                'pilot_signals' (DataFrame): pilot signals received by simulator
+
+                - 'num_evs': int, number of charging sessions in episode.
+                - 'avg_plugin_time': float, average plugin time in periods
+                  (5 mins) across sessions in episode.
+                - 'max_profit': float, maximum profit if all EVs were charged
+                  maximally while they are connected to the network. This does
+                  not take into account network constraints or carbon emissions,
+                  and it is a good proxy for info['reward_breakdown']['profit'].
+                - 'reward_breakdown': dict[str, float], breakdown of evaluation
+                  metrics cumulative over the episode.
+
+                  - 'profit' ($) : profit over charge delivered to all EVs.
+                  - 'carbon_cost'($): cost of marginal emissions.
+                  - 'excess_charge' ($): cost of network violations.
+                - 'evs': list[acnm.ev.EV], list of EVs in the event queue
+                - 'active_evs': list[acnm.ev.EV], list of active EVs at current
+                  timestep
+                - 'moer': array, shape [289, 37] emissions rate for entire episode.
+                - 'pilot_signals': DataFrame, pilot signals received by simulator
         """
         self.t += 1
 
@@ -301,11 +313,12 @@ class EVChargingEnv(Env):
             seed: seed for resetting the environment. An episode is entirely
                 reproducible no matter the generator used.
             options: resetting options
-                'verbose': set verbosity level [0-2]
+
+                - 'verbose': set verbosity level [0-2]
 
         Returns:
-            obs: state. See step().
-            info: other information (when return_info = True). See step().
+            observation: state dict, see `step()`
+            info: info dict, see `step()`
         """
         super().reset(seed=seed)
         self.data_generator.set_seed(seed)
@@ -354,8 +367,8 @@ class EVChargingEnv(Env):
                 charging station.
 
         Returns:
-            pilot_signals: dict, str => [int]. Maps station ids to a
-                single-element list of pilot signals in Amps
+            pilot_signals: mapping of station ids to a single-element list of
+                pilot signals in Amps
         """
         if self.project_action_in_env:
             action = self._project_action(action)
@@ -391,7 +404,7 @@ class EVChargingEnv(Env):
         return self._obs
 
     def _get_info(self, all: bool = False) -> dict[str, Any]:
-        """Returns info. See step().
+        """Returns info. See `step()`.
 
         Args:
             all: whether all information should be returned. Otherwise, only
@@ -426,7 +439,7 @@ class EVChargingEnv(Env):
         return max_profit
 
     def _get_reward(self, schedule: Mapping[str, Sequence[float]]) -> float:
-        """Returns reward for scheduler's performance on timestep.
+        """Returns total reward for scheduler performance on current timestep.
 
         The reward is a weighted sum of charging rewards, carbon costs,
         and network constraint violation costs.
@@ -437,8 +450,6 @@ class EVChargingEnv(Env):
 
         Returns:
             total_reward: weighted reward awarded to the current timestep
-            info: dict containing the individual, unweighted components making
-                up total reward. See step().
         """
         # profit calculation (Amp * period) -> ($)
         total_charging_rate = np.sum(self._simulator.charging_rates[:, self.t-1])  # in (A)
@@ -476,7 +487,8 @@ def magnitude_constraint(action: cp.Variable, cn: acns.ChargingNetwork
         action: shape [num_stations] or [num_stations, T], charging rates
             normalized to [0, 1]
 
-    Returns: constraint on aggregate magnitude
+    Returns:
+        constr: constraint on aggregate magnitude
     """
     phase_factor = np.exp(1j * np.deg2rad(cn._phase_angles))  # shape [num_stations]
     A_tilde = cn.constraint_matrix * phase_factor[None, :]  # shape [num_constraints, num_stations]

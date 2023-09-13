@@ -2,28 +2,36 @@
 GMM training script.
 
 The GMMs are fitted to 4 feature dimensions. The 4 features are, in order,
-- 'arrival_time': minute of day, normalized to [0, 1)
-- 'departure_time': minute of day, normalized to [0, 1)
-- 'estimated_departure_time': minute of day, normalized to [0, 1)
-- 'requested_energy': energy requested; multiply by 100 to get kWh
+
+- ``'arrival_time'``: minute of day, normalized to [0, 1)
+- ``'departure_time'``: minute of day, normalized to [0, 1)
+- ``'estimated_departure_time'``: minute of day, normalized to [0, 1)
+- ``'requested_energy'``: energy requested; multiply by 100 to get kWh
 
 Example command line usage
-python -m sustaingym.envs.evcharging.train_gmm_model --site caltech --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
-python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
 
-usage: train_gmm_model.py [-h] [--site SITE] [--gmm_n_components GMM_N_COMPONENTS]
-                          [--date_ranges DATE_RANGES [DATE_RANGES ...]]
+.. code:: bash
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --site SITE           Name of site: 'caltech' or 'jpl'
-  --gmm_n_components GMM_N_COMPONENTS
-  --date_ranges DATE_RANGES [DATE_RANGES ...]
-                        Date ranges for GMM models to be trained on.
-                        Number of dates must be divisible by 2,
-                        with the second later than the first.
-                        Dates should be formatted as YYYY-MM-DD.
-                        Supported ranges in between 2018-11-01 and 2021-08-31.
+    python -m sustaingym.envs.evcharging.train_gmm_model --site caltech --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
+    python -m sustaingym.envs.evcharging.train_gmm_model --site jpl --gmm_n_components 30 --date_range 2019-05-01 2019-08-31 2019-09-01 2019-12-31 2020-02-01 2020-05-31 2021-05-01 2021-08-31
+
+Usage
+
+.. code:: none
+
+    usage: train_gmm_model.py [-h] [--site SITE] [--gmm_n_components GMM_N_COMPONENTS]
+                            [--date_ranges DATE_RANGES [DATE_RANGES ...]]
+
+    optional arguments:
+    -h, --help            show this help message and exit
+    --site SITE           Name of site: 'caltech' or 'jpl'
+    --gmm_n_components GMM_N_COMPONENTS
+    --date_ranges DATE_RANGES [DATE_RANGES ...]
+                          Date ranges for GMM models to be trained on. Number
+                          of dates must be divisible by 2, with the second
+                          later than the first. Dates should be formatted as
+                          YYYY-MM-DD. Supported ranges in between 2018-11-01
+                          and 2021-08-31.
 """
 from __future__ import annotations
 
@@ -50,11 +58,11 @@ def preprocess(df: pd.DataFrame, filter: bool = True) -> pd.DataFrame:
 
     Args:
         df: DataFrame of charging events, expected to be gotten from
-            get_real_events in the .utils module.
+            `utils.get_real_events()`
         filter: option to filter cars staying overnight
 
     Returns:
-        Filtered copy of DataFrame with normalized parameters.
+        df: filtered copy of DataFrame with normalized parameters.
     """
     if filter:
         # Filter cars staying overnight
@@ -146,7 +154,7 @@ def parse_string_date_list(date_range: Sequence[str]
 
 def create_gmm(site: SiteStr, n_components: int,
                date_range: tuple[datetime, datetime]) -> None:
-    """Creates a custom GMM and saves in the `gmms` folder.
+    """Creates a custom GMM and saves in the ``gmms`` folder.
 
     Args:
         site: either 'caltech' or 'jpl'
@@ -183,7 +191,7 @@ def create_gmm(site: SiteStr, n_components: int,
 def create_gmms(site: SiteStr, n_components: int,
                 date_ranges: Sequence[tuple[str, str]] = DEFAULT_DATE_RANGES
                 ) -> None:
-    """Creates multiple gmms and saves them in gmm_folder.
+    """Creates multiple gmms and saves them in ``gmms`` folder.
 
     Args:
         site: either 'caltech' or 'jpl'

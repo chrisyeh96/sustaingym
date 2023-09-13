@@ -16,9 +16,12 @@ from tqdm import tqdm
 class BaseAlgorithm:
     """Base abstract class for running an agent in an environment.
 
-    Subclasses are expected to implement the get_action() method.
-    """
+    Subclasses are expected to implement the `get_action()` method.
 
+    Args:
+        env: environment to run algorithm on
+        multiagent: whether the environment is multiagent
+    """
     def __init__(self, env: gym.Env | ParallelEnv, multiagent: bool = False):
         self.env = env
         self.multiagent = multiagent
@@ -39,14 +42,19 @@ class BaseAlgorithm:
         and returns the resulting reward.
 
         Args:
-            seeds: if a list, on each episode run, self.env is reset using
-                the seed. If an integer, a list is created using range(seeds)
-                and used to reset the env instead.
+            seeds: if a list, on each episode run, ``self.env`` is reset using
+                the seed. If an integer, a list is created using
+                ``range(seeds)`` and used to reset the env instead.
 
         Returns:
-            DataFrame of length len(seeds) or seeds containing reward info.
-                seed                      int
-                return                    float64
+            results: DataFrame of length len(seeds) or seeds containing reward
+                info
+
+                .. code:: none
+
+                    column                  dtype
+                    seed                    int
+                    return                  float64
         """
         if isinstance(seeds, int):
             seeds = list(range(seeds))
@@ -100,14 +108,7 @@ class RLLibAlgorithm(BaseAlgorithm):
 
     def get_action(self, observation: dict[str, Any]
                    ) -> np.ndarray | dict[str, np.ndarray]:
-        """Returns output of RL model.
-
-        Args:
-            *See get_action() in BaseAlgorithm.
-
-        Returns:
-            *See get_action() in BaseAlgorithm.
-        """
+        """Returns output of RL model."""
         if self.multiagent:
             multiagent_config = self.algo.config['multiagent']
             if len(multiagent_config['policies']) == 1:

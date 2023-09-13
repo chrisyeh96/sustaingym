@@ -1,4 +1,4 @@
-## Development Guide
+# Contributing Code
 
 1. Install [miniconda3](https://docs.conda.io/en/latest/miniconda.html).
 2. Create conda environment. Replace `XX` below with the name of the SustainGym environment you want to work on.
@@ -37,6 +37,7 @@ First, set your terminal directory to this repo's root directory. Next, make sur
 python -m unittest -v tests/test_evcharging.py
 ```
 
+
 ## Building PyPI Package
 
 ```bash
@@ -58,3 +59,105 @@ python -m build
 twine upload --repository testpypi dist/*  # for testpypi
 twine upload dist/*
 ```
+
+
+# Documentation
+
+SustainGym documentation is written in the `docs/` folder and built using [Sphinx](https://www.sphinx-doc.org/). The API reference documentation is automatically generated from class and function docstrings, which must adhere to the Google style guide. See the section [coding style guide](#coding-style-guide) below for details.
+
+We use the following Sphinx extensions to build our documentation site:
+- [`MyST Parser (myst_parser)`](https://myst-parser.readthedocs.io/): allows using Markdown files instead of ReStructuredText files. See the [MyST Roles and Directives documentation](https://myst-parser.readthedocs.io/en/latest/syntax/roles-and-directives.html) for instructions on how to use Sphinx directives in Markdown files.
+    - Even though we use Markdown for the documentation files, Python docstrings in SustainGym code still must use ReStructuredText syntax for formatting.
+- [Sphinx AutoAPI (`autoapi.extension`)](https://sphinx-autoapi.readthedocs.io/): automatically generates API documentation based on Python docstrings. Unlike [`sphinx.ext.autosummary`](https://www.sphinx-doc.org/en/master/usage/extensions/autosummary.html), Sphinx AutoAPI uses static code analysis without needing to import Python code to read the docstrings. This is important for SustainGym because the different environments within SustainGym are allowed to have conflicting dependencies.
+    - Unfortunately, Sphinx AutoAPI does not properly handle namespace packages yet. See [this GitHub issue](https://github.com/readthedocs/sphinx-autoapi/issues/298). This is why have  `__init__.py` files in every directory in the SustainGym codebase, even though many of these files are empty.
+- [`sphinx.ext.napoleon`](https://www.sphinx-doc.org/en/master/usage/extensions/napoleon.html): allows using Google-style docstrings for documenting functions.
+    - By default, the this extension does not let us easily document functions that return multiple variables at once (i.e., a tuple return type). Following [this StackOverflow response](https://stackoverflow.com/a/67177881), we choose to use the same documentation format for function arguments and return values by using the following line in our Sphinx configuration at [`docs/conf.py`](./docs/conf.py).
+    ```python
+    napoleon_custom_sections = [("Returns", "params_style")]
+    ```
+
+
+## Coding Style Guide
+
+An example of the required coding style is shown below. It is based on the [Google Python style guide](https://google.github.io/styleguide/pyguide.html). Several specific points deserve elaboration:
+- The arguments of a class's `__init__()` function should be documented in the class docstring, instead of the `__init__()` function docstring. Only use the `__init__()` function docstring to document any implementation details. This is because [Sphinx AutoAPI does not explicitly document the `__init__()` function](https://sphinx-autoapi.readthedocs.io/en/latest/reference/config.html#confval-autoapi_python_class_content).
+- Class attributes should be documented with type information in the class docstring.
+- Function arguments do not need to be documented with type information in the function docstring as long as appropriate type annotations are provided in the function signature.
+- Function return values should be documented just like arguments.
+
+```python
+"""This module implements MyClass."""
+
+class MyClass:
+    """Short description of class.
+
+    Longer description of class.
+    Can be multi-line.
+
+    Args:
+        option: str, description of option
+
+    Attributes:
+        first_line: str, first line that gets printed
+        num_prints: int, number of times that print() has been called. When
+            description is long, indent the subsequent lines.
+
+    Example::
+
+        my_obj = MyClass(option='hello')
+        text, num_prints = my_obj.print(name='John')
+    """
+    def __init__(self, option: str):
+        self.first_line = option + ' world!'
+        self.num_prints = 0
+
+    def print(self, name: str) -> tuple[str, int]:
+        """Prints two lines and returns the printed string.
+
+        Args:
+            name: str, name that gets printed
+
+        Returns:
+            text: text that was printed
+            num_prints: number of times that print() has been called
+        """
+        text = f'{self.instance_var}\nMy name is {name}!'
+        self.num_prints += 1
+        print(text)
+        return text, self.num_prints
+```
+
+
+## Building documentation with Sphinx
+
+1. Use `conda` to install the necessary software. Run the following commands from the repo root folder:
+
+    ```bash
+    conda env update --file env_build.yml --prune
+    conda activate build
+    ```
+
+2. Clear out the `docs/_build` directory if it exists, including any hidden files (i.e., dotfiles). This isn't always necessary, but at a minimum, do this every time you change `docs/conf.py`.
+
+    ```bash
+    cd docs/_build
+    rm -r . .*
+    ```
+
+3. Build the documentation using Sphinx. From the `docs/` directory:
+
+    ```bash
+    sphinx-build -b html . _build
+    ```
+
+4. Launch a server to view the docs. From the `docs/_build` directory:
+
+    ```bash
+    python -m http.server
+    ```
+
+   Optionally, change the port:
+
+    ```bash
+    python -m http.server <port>
+    ```

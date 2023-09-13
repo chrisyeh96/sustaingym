@@ -10,10 +10,17 @@
 #
 # Last updated: September 8, 2023
 name: build
+channels:
+- conda-forge   # for sphinx
 dependencies:
 - python=3.11
+- furo
+- myst-parser
 - pip
+- python-build
+- sphinx>7.0
+- sphinx-copybutton
+- twine
 
 - pip:
-  - build
-  - twine
+  - sphinx-autoapi

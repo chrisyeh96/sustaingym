@@ -97,14 +97,15 @@ def get_sessions(start_date: datetime, end_date: datetime,
         start_date: beginning time of interval. Only year, month, and day
             are considered. The datetime is expected to be localized in
             LA time, the timezone of the charging garages.
-        end_date: ending time of interval, exclusive. See start_date.
+        end_date: ending time of interval, exclusive. See ``start_date``.
         site: 'caltech' or 'jpl'
 
     Returns:
-        iterator of sessions with a connection time starting on
-            `start_date` and ending the day before `end_date`
+        sessions: iterator of sessions with a connection time starting on
+            ``start_date`` and ending the day before ``end_date``
 
-    Example:
+    Example::
+
         fall2020_sessions = get_sessions(
                 datetime(2020, 9, 1), datetime(2020, 12, 1))
     """
@@ -122,19 +123,21 @@ def fetch_real_events(start_date: datetime, end_date: datetime, site: SiteStr
                       ) -> pd.DataFrame:
     """Returns a pandas DataFrame of charging events from ACN-Data.
 
-    Args:
-        *See get_sessions()
+    See `get_sessions()` for arguments.
 
     Returns:
-        DataFrame containing charging info.
-            arrival                   datetime64[ns, America/Los_Angeles]
-            departure                 datetime64[ns, America/Los_Angeles]
-            requested_energy (kWh)    float64
-            delivered_energy (kWh)    float64
-            station_id                str
-            session_id                str
-            estimated_departure       datetime64[ns, America/Los_Angeles]
-            claimed                   bool
+        events: DataFrame containing charging info
+
+            .. code:: none
+
+                arrival                   datetime64[ns, America/Los_Angeles]
+                departure                 datetime64[ns, America/Los_Angeles]
+                requested_energy (kWh)    float64
+                delivered_energy (kWh)    float64
+                station_id                str
+                session_id                str
+                estimated_departure       datetime64[ns, America/Los_Angeles]
+                claimed                   bool
     """
     print(f'Fetching {site} sessions from {start_date.strftime(DATE_FORMAT)} '
           f'to {end_date.strftime(DATE_FORMAT)} from ACNData')
@@ -183,12 +186,8 @@ def get_real_events(start_date: datetime, end_date: datetime,
 
     Either loads data from package or retrieves from ACN-Data.
 
-    Args:
-        *See fetch_real_events(), except function is now inclusive of
-            ``end_date``
-
-    Returns:
-        *See fetch_real_events()
+    See `fetch_real_events()` for arguments and return value, except function
+    is now inclusive of ``end_date``.
     """
     # search in package
     for date_range in DEFAULT_DATE_RANGES:
@@ -224,7 +223,7 @@ def save_gmm_model(site: SiteStr, gmm: mixture.GaussianMixture,
             session counts per day during date period, expected to have
             the same length as the number of days, inclusive, in the date
             period
-        station_usage: a 1-D np.ndarray
+        sid: a 1-D np.ndarray
             stations' usage counts for entire date period, expected to
             have the same length as the number of stations in the network
         begin: beginning of training period, for folder name
@@ -262,11 +261,12 @@ def load_gmm_model(site: SiteStr, begin: datetime, end: datetime,
         n_components: number of GMM components
 
     Returns:
-        A dictionary containing the following key-value pairs:
-            'gmm' (mixture.GaussianMixture): trained gmm, date range and
-                components are specified on folder
-            'count' (np.ndarray): session counts per day
-            'station_usage' (np.ndarray): stations' usage counts for date range
+        data: dict containing the following key-value pairs:
+
+            - 'gmm': mixture.GaussianMixture, trained gmm, date range and
+              components are specified on folder
+            - 'count': np.ndarray, session counts per day
+            - 'station_usage': np.ndarray, stations' usage counts for date range
     """
     folder_path = os.path.join(GMMS_DIR, site)
     filename = get_model_name(begin, end, n_components)

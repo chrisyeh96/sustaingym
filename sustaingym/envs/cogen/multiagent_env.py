@@ -8,9 +8,9 @@ from typing import Any
 from gymnasium import spaces
 import numpy as np
 from pettingzoo.utils.env import ParallelEnv
-
 from ray.rllib.env import MultiAgentEnv
-from sustaingym.envs.cogen import CogenEnv
+
+from .env import CogenEnv
 
 
 class MultiAgentCogenEnv(ParallelEnv):
@@ -72,7 +72,11 @@ class MultiAgentCogenEnv(ParallelEnv):
             action: an action provided by the environment
 
         Returns:
-            tuple containing the next observation, reward, terminated flag, truncated flag, and info dict
+            obss: dict mapping agent_id to observation
+            rewards: dict mapping agent_id to reward
+            terminateds: dict mapping agent_id to terminated
+            truncateds: dict mapping agent_id to truncated
+            infos: dict mapping agent_id to info
         """
         actions = {}
         for agent in self.agents:
@@ -182,7 +186,11 @@ class MultiAgentRLLibCogenEnv(MultiAgentCogenEnv, MultiAgentEnv):
             action_dict: maps agent ID to dict representing agent's action
 
         Returns:
-            next observations, rewards, terminated flags, truncated flags, and info dicts
+            obss: dict mapping agent_id to observation
+            rewards: dict mapping agent_id to reward
+            terminateds: dict mapping agent_id to terminated
+            truncateds: dict mapping agent_id to truncated
+            infos: dict mapping agent_id to info
         """
         obss, rewards, terminateds, truncateds, infos = super().step(action_dict)
         terminateds['__all__'] = any(terminateds.values())

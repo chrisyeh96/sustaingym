@@ -15,8 +15,6 @@ def read_bytes(path: str) -> bytes:
 
     Args:
         path: path to file
-
-    Returns: bytes
     """
     return files('sustaingym').joinpath(path).read_bytes()
 
@@ -26,8 +24,6 @@ def read_to_bytesio(path: str) -> BytesIO:
 
     Args:
         path: path to file
-
-    Returns: BytesIO
     """
     return BytesIO(read_bytes(path))
 
@@ -38,8 +34,6 @@ def read_csv(csv_path: str, **kwargs: Any) -> pd.DataFrame:
     Args:
         csv_path: path to CSV, relative to main sustaingym package
         **kwargs: parameters to pass on to pd.read_csv()
-
-    Returns: pd.DataFrame
     """
     bytesio = read_to_bytesio(csv_path)
     return pd.read_csv(bytesio, **kwargs)
@@ -54,7 +48,10 @@ def get_save_path(path: str) -> str:
     installed in a write-enabled directory.
 
     Args:
-        path: path for saving file, relative to main sustaingym package
+        path: path for saving file, relative to sustaingym package
+
+    Returns:
+        full_path: final path
     """
     # sustaingym package
     basedir = os.path.dirname(os.path.dirname(__file__))
@@ -70,6 +67,11 @@ def get_save_path(path: str) -> str:
 
 
 def save_pickle(obj: Any, path: str) -> None:
+    """
+    Args:
+        obj: any Python object
+        path: path for saving file, relative to sustaingym package
+    """
     full_path = get_save_path(path)
     with open(full_path, 'wb') as f:
         pickle.dump(obj, f)
@@ -84,7 +86,7 @@ def to_csv(df: pd.DataFrame, path: str, **kwargs: Any) -> None:
     Args:
         df: DataFrame to save to disk
         path: path to save CSV, relative to main sustaingym package
-        **kwargs: parameters to pass on to pd.to_csv()
+        **kwargs: parameters to pass on to ``df.to_csv()``
     """
     full_path = get_save_path(path)
 
