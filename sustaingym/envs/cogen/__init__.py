@@ -1,2 +1,8 @@
-from .cogen import CogenEnv
-from .multiagent_cogen import MultiAgentCogenEnv
+from .env import CogenEnv
+from .multiagent_env import MultiAgentCogenEnv, MultiAgentRLLibCogenEnv
+
+__all__ = [
+    'CogenEnv',
+    'MultiAgentCogenEnv',
+    'MultiAgentRLLibCogenEnv'
+]

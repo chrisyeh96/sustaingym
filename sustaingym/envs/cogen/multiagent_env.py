@@ -8,12 +8,14 @@ from typing import Any
 from gymnasium import spaces
 import numpy as np
 from pettingzoo.utils.env import ParallelEnv
-
 from ray.rllib.env import MultiAgentEnv
-from sustaingym.envs.cogen import CogenEnv
+
+from .env import CogenEnv
 
 
-class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
+class MultiAgentCogenEnv(ParallelEnv):
+    """Multi-agent version of CogenEnv following the PettingZoo API (v1.22.3).
+    """
 
     # PettingZoo API
     metadata = {}
@@ -26,9 +28,6 @@ class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
                  forecast_horizon: int = 12,
                  forecast_noise_std: float = 0.1,
                  ):
-        """
-        Constructs the CogenEnv object
-        """
         self.single_env = CogenEnv(
             renewables_magnitude=renewables_magnitude,
             ramp_penalty=ramp_penalty,
@@ -37,12 +36,9 @@ class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
             forecast_horizon=forecast_horizon,
             forecast_noise_std=forecast_noise_std)
 
-        # Petting zoo API
+        # PettingZoo API
         self.agents = ['GT1', 'GT2', 'GT3', 'ST']
         self.possible_agents = self.agents
-
-        # RLLib API
-        self._agent_ids = set(self.agents)
 
         # every agent gets the same flattened observation space
         flat_observation_space = spaces.flatten_space(self.single_env.observation_space)
@@ -67,7 +63,7 @@ class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
 
         super().__init__()
 
-    def step(self, action: dict[str, np.ndarray]) -> tuple[
+    def step(self, action: dict[str, dict[str, np.ndarray]]) -> tuple[
             dict[str, np.ndarray], dict[str, float], dict[str, bool],
             dict[str, bool], dict[str, dict[str, Any]]]:
         """Run one timestep of the Cogen environment's dynamics.
@@ -76,7 +72,11 @@ class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
             action: an action provided by the environment
 
         Returns:
-            tuple containing the next observation, reward, terminated flag, truncated flag, and info dict
+            obss: dict mapping agent_id to observation
+            rewards: dict mapping agent_id to reward
+            terminateds: dict mapping agent_id to terminated
+            truncateds: dict mapping agent_id to truncated
+            infos: dict mapping agent_id to info
         """
         actions = {}
         for agent in self.agents:
@@ -100,9 +100,6 @@ class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
             truncateds[agent] = truncated
             infos[agent] = {}
 
-        terminateds['__all__'] = any(terminateds.values())
-        truncateds['__all__'] = any(truncateds.values())
-
         # Delete all agents when day is finished
         if terminated or truncated:
             self.agents = []
@@ -113,7 +110,7 @@ class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
     # reset() function definition may need to change
     def reset(self, *,
               seed: int | None = None,
-              return_info: bool = True,
+              return_info: bool = False,
               options: dict | None = None
               ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
         """Resets the environment."""
@@ -147,3 +144,55 @@ class MultiAgentCogenEnv(ParallelEnv, MultiAgentEnv):
 
     def action_space(self, agent: str) -> spaces.Box | spaces.Discrete:
         return self.action_spaces[agent]
+
+
+class MultiAgentRLLibCogenEnv(MultiAgentCogenEnv, MultiAgentEnv):
+    """MultiAgentRLLibCogenEnv extends MultiAgentCogenEnv to support the RLLib
+    MultiAgentEnv API (RLLib v2.6.3).
+    """
+    def __init__(self,
+                 renewables_magnitude: float = 0.,
+                 ramp_penalty: float = 2.,
+                 supply_imbalance_penalty: float = 1000,
+                 constraint_violation_penalty: float = 1000,
+                 forecast_horizon: int = 12,
+                 forecast_noise_std: float = 0.1,
+                 ):
+        super().__init__(
+            renewables_magnitude=renewables_magnitude,
+            ramp_penalty=ramp_penalty,
+            supply_imbalance_penalty=supply_imbalance_penalty,
+            constraint_violation_penalty=constraint_violation_penalty,
+            forecast_horizon=forecast_horizon,
+            forecast_noise_std=forecast_noise_std)
+
+        self._agent_ids = set(self.agents)
+        self.action_space = spaces.Dict(self.action_spaces)
+        self.observation_space = spaces.Dict(self.observation_spaces)
+
+    def reset(self, *,
+              seed: int | None = None,
+              options: dict | None = None
+              ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
+        """Resets the environment."""
+        return super().reset(seed=seed, return_info=True, options=options)
+
+    def step(self, action_dict: dict[str, dict[str, np.ndarray]]) -> tuple[
+            dict[str, np.ndarray], dict[str, float], dict[str, bool],
+            dict[str, bool], dict[str, dict[str, Any]]]:
+        """Run one timestep of the Cogen environment's dynamics.
+
+        Args:
+            action_dict: maps agent ID to dict representing agent's action
+
+        Returns:
+            obss: dict mapping agent_id to observation
+            rewards: dict mapping agent_id to reward
+            terminateds: dict mapping agent_id to terminated
+            truncateds: dict mapping agent_id to truncated
+            infos: dict mapping agent_id to info
+        """
+        obss, rewards, terminateds, truncateds, infos = super().step(action_dict)
+        terminateds['__all__'] = any(terminateds.values())
+        truncateds['__all__'] = any(truncateds.values())
+        return obss, rewards, terminateds, truncateds, infos

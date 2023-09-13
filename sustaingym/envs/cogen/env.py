@@ -12,11 +12,15 @@ import onnxruntime as rt
 import pandas as pd
 
 from sustaingym.data.cogen import load_ambients
+from sustaingym.data.utils import read_bytes, read_to_bytesio
 
 
 class CogenEnv(gym.Env):
     """
     Actions:
+
+    .. code:: none
+
         Type: Dict(Box(1), Discrete(2), Discrete(2), Box(1),
                    Box(1), Discrete(2), Discrete(2), Box(1),
                    Box(1), Discrete(2), Discrete(2), Box(1),
@@ -39,6 +43,9 @@ class CogenEnv(gym.Env):
         CT_NrBays (int)               1                   12
 
     Observation:
+
+    .. code:: none
+
         Type: Dict(Box(1), Action_Dict,
                    Box(forecast_horizon + 1), Box(forecast_horizon + 1),
                    Box(forecast_horizon + 1), Box(forecast_horizon + 1),
@@ -54,6 +61,14 @@ class CogenEnv(gym.Env):
         Target process steam (klb/hr) 0                   1300
         Electricity price ($/MWh)     0                   1500
         Natural gas price ($/MMBtu)   0                   7
+
+    Args:
+        renewables_magnitude: TODO
+        ramp_penalty: TODO
+        supply_imbalance_penalty: TODO
+        constraint_violation_penalty: TODO
+        forecast_horizon: TODO
+        forecast_noise_std: TODO
     """
     def __init__(self,
                  renewables_magnitude: float = 0.,
@@ -63,9 +78,6 @@ class CogenEnv(gym.Env):
                  forecast_horizon: int = 3,
                  forecast_noise_std: float = 0.1,
                  ):
-        """
-        Constructs the CogenEnv object
-        """
         self.ramp_penalty = ramp_penalty
         self.supply_imbalance_penalty = supply_imbalance_penalty
         self.constraint_violation_penalty = constraint_violation_penalty
@@ -91,8 +103,10 @@ class CogenEnv(gym.Env):
         #     max          float64
         #     unit             str
         #     data_type        str
-        with open('sustaingym/data/cogen/onnx_model/model.json', 'r') as f:  # TODO(Chris): pkgutil
-            json_data = json.load(f)
+        bytesio = read_to_bytesio('data/cogen/onnx_model/model.json')
+        json_data = json.load(bytesio)
+        bytesio.close()
+
         inputs_table = pd.DataFrame(json_data['inputs'])
         inputs_table.drop(columns=['index'], inplace=True)
         inputs_table.set_index('id', inplace=True)
@@ -179,7 +193,8 @@ class CogenEnv(gym.Env):
             options: includes optional settings like reward type (not implemented)
 
         Returns:
-            tuple containing the initial observation for env's episode
+            obs: initial state
+            info: initial info dict
         """
         super().reset(seed=seed)
 
@@ -188,7 +203,8 @@ class CogenEnv(gym.Env):
         # However, an ONNX InferenceSession cannot be "pickled" and therefore
         # cannot be forked across RLLib worker processes.
         if self._model is None:
-            self._model = rt.InferenceSession('sustaingym/data/cogen/onnx_model/model.onnx')  # TODO(Chris): pkgutil
+            b = read_bytes('data/cogen/onnx_model/model.onnx')
+            self._model = rt.InferenceSession(b)
 
         # randomly pick a day for the episode
         # subtract 1 as temporary fix to make sure we don't go over the number of days with lookahead window
@@ -202,6 +218,7 @@ class CogenEnv(gym.Env):
 
         # initial action is drawn randomly from the action space
         # not sure if this is reasonable, TODO: check this
+        self.action_space.seed(seed)
         self.current_action = self.action_space.sample()
 
         self.obs = self._get_obs()
@@ -349,7 +366,11 @@ class CogenEnv(gym.Env):
             action: an action provided by the environment
 
         Returns:
-            tuple containing the next observation, reward, terminated flag, truncated flag, and info dict
+            obs: new state
+            reward: reward
+            terminated: termination flag
+            truncated: always ``False``
+            info: info dict
         """
         # compute the loss of taking the action
         self.current_reward, self.current_info = self._compute_reward(self.obs, action)
