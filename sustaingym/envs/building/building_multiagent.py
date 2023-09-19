@@ -54,17 +54,17 @@ class MultiAgentBuildingEnv(ParallelEnv):
         self.Occupower = 0
         self.timestep = Parameter['time_resolution']
         self.datadriven = False
-        self.agents = range(Parameter['num_agents'])
+        self.agents = ["player_" + str(i) for i in range(Parameter['num_agents'])]
         self.periods_delay = 0
         self.verbose = verbose
-        
 
         # Create internal single-agent environment
         # observations are dictionaries
         self.single_env = BuildingEnv(Parameter)
 
         # PettingZoo API
-        self.possible_agents = ["player_" + str(r) for r in range(2)]
+        # self.possible_agents = ["player_" + str(r) for r in range(2)]
+        self.possible_agents = ["player_" + str(r) for r in range(Parameter['num_agents'])]
         self.metadata = {}
 
         # Create observation spaces w/ dictionary to help in flattening
@@ -75,8 +75,9 @@ class MultiAgentBuildingEnv(ParallelEnv):
             agent: spaces.flatten_space(self._dict_observation_spaces[agent])
             for agent in self.agents}  # flattened observations
 
-        action_space = spaces.Box(0., 1., shape=(1,))
-        self.action_spaces = {agent: action_space for agent in self.agents}
+        # action_space = spaces.Box(0., 1., shape=(1,))
+        # self.action_spaces = {agent: action_space for agent in self.agents}
+        self.action_spaces = {agent: self.single_env.action_space for agent in self.agents}
 
         # Create queue of previous observations to implement time-delay
         self._past_obs_agg = deque[dict[str, Any]](maxlen=self.periods_delay)
@@ -139,13 +140,16 @@ class MultiAgentBuildingEnv(ParallelEnv):
         Returns: obs, reward, terminateds, truncateds, infos
         """
         # Build action
-        actions = np.zeros(self.num_agents, dtype=np.float32)
+        # actions = np.zeros(self.num_agents, dtype=np.float32)
+        n = len(action[next(iter(self.agents))])  # assuming all agents have the same action dimension
+        actions = np.zeros((self.num_agents, n), dtype=np.float32)
+        
         for i, agent in enumerate(self.agents):
             actions[i] = action[agent]
 
         # Use internal single-agent environment
-        obs, reward, terminated, truncated, info = self.single_env.step(actions)
-
+        # obs, reward, terminated, truncated, info = self.single_env.step(actions)
+        obs, reward, terminated, truncated, info = self.single_env.step(actions[0])
         obss = self._create_dict_from_obs_agg(obs)
         rewards, terminateds, truncateds, infos = {}, {}, {}, {}
         for agent in self.agents:
@@ -169,8 +173,11 @@ class MultiAgentBuildingEnv(ParallelEnv):
               ) -> dict[str, np.ndarray]:
         """Resets the environment."""
         obs_agg, info_agg = self.single_env.reset(seed=seed, options=options)
+
         self.agents = self.possible_agents[:]
+
         obs = self._create_dict_from_obs_agg(obs_agg, init=True)
+        print('obs',obs)
 
         if return_info:
             return obs, self._create_dict_from_infos_agg(info_agg)
@@ -190,8 +197,9 @@ class MultiAgentBuildingEnv(ParallelEnv):
         """Close the environment."""
         self.single_env.close()
 
-    def observation_space(self, agent: str) -> spaces.Space:
+    def get_observation_space(self, agent: str) -> spaces.Space:
+        print('hi')
         return self.observation_spaces[agent]
 
-    def action_space(self, agent: str) -> spaces.Box | spaces.Discrete:
+    def get_action_space(self, agent: str) -> spaces.Box | spaces.Discrete:
         return self.action_spaces[agent]
