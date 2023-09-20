@@ -262,9 +262,7 @@ class EVChargingEnv(Env):
 
             reward: scheduler's performance metric per timestep
             terminated: whether episode is terminated
-            truncated: whether episode has reached a time limit. Here, truncated
-                is always the same as terminated because the episode is always
-                across the entire day.
+            truncated: always ``False``, since there is no intermediate stopping condition
             info: auxiliary useful information
 
                 - 'num_evs': int, number of charging sessions in episode.
@@ -298,8 +296,7 @@ class EVChargingEnv(Env):
         reward = self._get_reward(schedule)
         info = self._get_info()
 
-        # terminated, truncated at end of day
-        return observation, reward, done, done, info
+        return observation, reward, done, False, info
 
     def reset(self, *, seed: int | None = None, options: dict | None = None
               ) -> tuple[dict[str, Any], dict[str, Any]]:
