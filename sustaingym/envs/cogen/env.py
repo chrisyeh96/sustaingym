@@ -164,13 +164,13 @@ class CogenEnv(gym.Env):
         """Get the current observation.
 
         The following values must be updated before calling self._get_obs():
-        - self.current_timestep
+        - self.t
         - self.current_day
         - self.current_action
         """
-        forecast_df = self._forecast_from_time(self.current_day, self.current_timestep)
+        forecast_df = self._forecast_from_time(self.current_day, self.t)
         obs = {
-            'Time': np.array([self.current_timestep / self.timesteps_per_day], dtype=np.float32),
+            'Time': np.array([self.t / self.timesteps_per_day], dtype=np.float32),
             'Prev_Action': self.current_action,
             'TAMB': forecast_df['Ambient Temperature'].values,
             'PAMB': forecast_df['Ambient Pressure'].values,
@@ -213,8 +213,7 @@ class CogenEnv(gym.Env):
         else:
             self.current_day = seed % self.n_days
 
-        self.current_timestep = 0  # keeps track of which timestep we are on
-        self.current_terminated = False
+        self.t = 0  # keeps track of which timestep we are on
 
         # initial action is drawn randomly from the action space
         # not sure if this is reasonable, TODO: check this
@@ -351,14 +350,6 @@ class CogenEnv(gym.Env):
         }
         return total_reward, reward_breakdown
 
-    def _terminated(self) -> bool:
-        """Determines if the episode is terminated or not.
-
-        Returns:
-            terminated: True if the episode is terminated, False otherwise
-        """
-        return self.current_timestep > self.timesteps_per_day - 1
-
     def step(self, action: dict[str, Any]) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
         """Run one timestep of the Cogen environment's dynamics.
 
@@ -369,7 +360,7 @@ class CogenEnv(gym.Env):
             obs: new state
             reward: reward
             terminated: termination flag
-            truncated: always ``False``
+            truncated: always ``False``, since there is no intermediate stopping condition
             info: info dict
         """
         # compute the loss of taking the action
@@ -379,18 +370,18 @@ class CogenEnv(gym.Env):
         self.current_action = action
 
         # update the current timestep
-        self.current_timestep += 1
+        self.t += 1
 
         # update the current observation
         self.obs = self._get_obs()
 
         # update the current done
-        self.current_terminated = self._terminated()
+        terminated = (self.t >= self.timesteps_per_day)
 
         # always False due to no intermediate stopping conditions
         truncated = False
 
-        return self.obs, self.current_reward, self.current_terminated, truncated, self.current_info
+        return self.obs, self.current_reward, terminated, truncated, self.current_info
 
     def close(self):
         return
