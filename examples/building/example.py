@@ -1,21 +1,22 @@
 from __future__ import annotations
+
 import sys
-sys.path.append("../..")
-from sustaingym.envs.building.building import BuildingEnv
-from sustaingym.envs.building.utils import ParameterGenerator
+sys.path.append('..')
+
+from sustaingym.envs.building import BuildingEnv, ParameterGenerator
 
 
-Parameter = ParameterGenerator(
-    "OfficeSmall", "Hot_Dry", "Tucson"
-)  # Description of ParameterGenerator in bldg_utils.py
 # Create environment
+# see sustaingym/envs/building/utils.py for more info
+Parameter = ParameterGenerator(
+    Building='OfficeSmall', Weather='Hot_Dry', Location='Tucson')
 env = BuildingEnv(Parameter)
-numofhours = 24
-# Initialize
-env.reset()
-for i in range(numofhours):
+
+num_hours = 24
+for i in range(num_hours):
     a = env.action_space.sample()  # Randomly select an action
     obs, r, terminated, truncated, _ = env.step(a)  # Return observation and reward
+
 RandomController_state = env.statelist  # Collect the state list
 RandomController_action = env.actionlist  # Collect the action list
 
@@ -27,5 +28,5 @@ upper_bound = env.action_space.high[0]
 lower_bound = env.action_space.low[0]
 print("Max Value of Action ->  {}".format(upper_bound))
 print("Min Value of Action ->  {}".format(lower_bound))
-print("Sample State :", RandomController_state[0])
-print("Sample Action :", RandomController_action[0])
+print('Sample State :', RandomController_state[0])
+print('Sample Action :', RandomController_action[0])

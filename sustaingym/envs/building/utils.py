@@ -1,27 +1,30 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import os
+from typing import Any
 
 import numpy as np
 import pvlib
 from scipy import interpolate
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.results_plotter import load_results, ts2xy
-from typing import Any
 
 
 def Getroominfor(
     filename: str,
 ) -> tuple[list[list[list[str | float]]], int, list[list[str | float]]]:
-    """
-    This function gets information from the html file and sorts each zone by layer.
+    """Gets information from the html file and sorts each zone by layer.
+
     zoneinfor: [Zone_name, Zaxis, Xmin, Xmax, Ymin, Ymax, Zmin, Zmax, ExteriorGrossArea, ExteriorWindowArea]
+
     Args:
         filename (str): HTML file.
+
     Returns:
-        layerAll (List[List[Union[str, float]]]): nxm zoneinfor list. n: zones number in this layer, m: layers number.
+        layerAll (list[list[str | float]]): nxm zoneinfor list. n: zones number in this layer, m: layers number.
         roomnum (int): Room number as an integer.
-        cordall (List[List[Union[str, float]]]): n zoneinfor list. n: total zones number.
+        cordall (list[list[str | float]]): n zoneinfor list. n: total zones number.
     """
     # Initialize lists for storing zone information
     cord: list[str | float] = []
@@ -143,7 +146,7 @@ def checkconnect(
     room1min: list[float] | tuple[float, float],
     room1max: list[float] | tuple[float, float],
     room2min: list[float] | tuple[float, float],
-    room2max: list[float] | tuple[float, float],
+    room2max: list[float] | tuple[float, float]
 ) -> bool:
     """
     This function check whether zones in the same layer are connected.
@@ -167,7 +170,7 @@ def checkconnect_layer(
     room1min: list[float] | tuple[float, float],
     room1max: list[float] | tuple[float, float],
     room2min: list[float] | tuple[float, float],
-    room2max: list[float] | tuple[float, float],
+    room2max: list[float] | tuple[float, float]
 ) -> bool:
     """
     This function check whether zones in different layers are connected.
@@ -349,9 +352,8 @@ class SaveOnBestTrainingRewardCallback(BaseCallback):
       It must contain the file created by the ``Monitor`` wrapper.
     :param verbose: (int)
     """
-
     def __init__(self, check_freq: int, log_dir: str, verbose: int = 1):
-        super(SaveOnBestTrainingRewardCallback, self).__init__(verbose)
+        super().__init__(verbose)
         self.check_freq: int = check_freq
         self.log_dir: str = log_dir
         self.save_path: str = os.path.join(log_dir, "best_model")
@@ -394,8 +396,8 @@ def ParameterGenerator(
     Building: str,
     Weather: str,
     Location: str,
-    U_Wall: list[float] = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-    Ground_Tp: list[float] = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    U_Wall: Sequence[float] = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0),
+    Ground_Tp: Sequence[float] = (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
     shgc: float = 0.252,
     shgc_weight: float = 0.01,
     ground_weight: float = 0.5,
@@ -410,31 +412,33 @@ def ParameterGenerator(
     spacetype: str = "continuous",
     root: str = "userdefined",
 ) -> dict[str, Any]:
-    """
-    This function could generate parameters from the selected building and temperature file for the env.
+    """Generates parameters from the selected building and temperature file for the env.
 
     Args:
-      Building (str): Either name of a building in the predefined `Building_dic` or the file path to a htm file for building idf.
-      Weather (str): Either name of a weather condition in the predefined `weather_dic` or the file path to an epw file.
-      Location (str): Name of the location that matches an entry in `GroundTemp_dic`.
-      U_Wall (list of floats): U-values (thermal transmittance) for different surfaces in the building in the order of [intwall, floor, outwall, roof, ceiling, groundfloor, window].
-      Ground_Tp (float): Ground temperature when location is not in `GroundTemp_dic`.
-      shgc (float): Solar Heat Gain Coefficient for the window. Default is 0.252.
-      shgc_weight (float): Weight factor for extra loss of solar irradiance (ghi). Default is 0.01.
-      ground_weight (float): Weight factor for extra loss of heat from ground. Default is 0.5.
-      full_occ (numpy array): Shape (roomnum,1). Max number of people that can occupy each room. Default is all zeros.
-      max_power (int): Maximum power output of a single HVAC unit, in watts. Default is 8000.
-      AC_map (numpy array): Shape (roomnum,). Boolean map indicating presence (1) or absence (0) of AC in each room. Default is all ones.
-      time_reso (int): Length of 1 timestep in seconds. Default is 3600 (1 hour).
-      reward_gamma (list of two floats): [Energy penalty, temperature error penalty]. Default is [0.001,0.999].
-      target (float or numpy array): Shape (roomnum,). Target temperature setpoints for each zone. Default is 22 degrees Celsius.
-      activity_sch (numpy array): Shape (length of the simulation,). Activity schedule of people in the building in watts/person. Default is all 120.
-      temp_range (list of two ints or floats): [Min temperature, max temperature], defining comfort range. Default is [-40,40] degrees Celsius.
-      spacetype (str): Defines if it is a continuous or discrete space. Default is 'continuous'.
-      root (str): The root directory for data files. Default is 'userdefined'. If not 'userdefined', the file paths of building and weather files are updated with this root.
+        Building: Either name of a building in the predefined `Building_dic`
+            or the file path to a htm file for building idf.
+        Weather: Either name of a weather condition in the predefined `weather_dic`
+            or the file path to an epw file.
+        Location: Name of the location that matches an entry in `GroundTemp_dic`.
+        U_Wall: U-values (thermal transmittance) for different surfaces in the building
+            in the order [intwall, floor, outwall, roof, ceiling, groundfloor, window].
+        Ground_Tp: Ground temperature when location is not in `GroundTemp_dic`.
+        shgc (float): Solar Heat Gain Coefficient for the window. Default is 0.252.
+        shgc_weight (float): Weight factor for extra loss of solar irradiance (ghi). Default is 0.01.
+        ground_weight (float): Weight factor for extra loss of heat from ground. Default is 0.5.
+        full_occ (numpy array): Shape (roomnum,1). Max number of people that can occupy each room. Default is all zeros.
+        max_power (int): Maximum power output of a single HVAC unit, in watts. Default is 8000.
+        AC_map (numpy array): Shape (roomnum,). Boolean map indicating presence (1) or absence (0) of AC in each room. Default is all ones.
+        time_reso (int): Length of 1 timestep in seconds. Default is 3600 (1 hour).
+        reward_gamma (list of two floats): [Energy penalty, temperature error penalty]. Default is [0.001,0.999].
+        target (float or numpy array): Shape (roomnum,). Target temperature setpoints for each zone. Default is 22 degrees Celsius.
+        activity_sch: shape (length of the simulation,). Activity schedule of people in the building in watts/person. Default is all 120.
+        temp_range: (Min temperature, max temperature) in Celcius, defining comfort range
+        spacetype: Defines if it is a continuous or discrete space. Default is 'continuous'.
+        root: The root directory for data files. Default is 'userdefined'. If not 'userdefined', the file paths of building and weather files are updated with this root.
 
     Returns:
-      Parameter (dict): Contains all parameters needed for environment initialization.
+        Parameter: Contains all parameters needed for environment initialization.
     """
     # Define dictionaries for Building, Ground Temperature, and Weather
     Building_dic = {
@@ -504,220 +508,25 @@ def ParameterGenerator(
         ),
     }
     GroundTemp_dic = {
-        "Albuquerque": [
-            13.7,
-            7.0,
-            2.1,
-            2.6,
-            4.3,
-            8.8,
-            13.9,
-            17.8,
-            23.2,
-            25.6,
-            24.1,
-            20.5,
-        ],
-        "Atlanta": [
-            16.0,
-            11.9,
-            7.7,
-            4.0,
-            7.9,
-            13.8,
-            17.2,
-            20.8,
-            24.8,
-            26.1,
-            26.5,
-            22.5,
-        ],
+        "Albuquerque": [13.7, 7.0, 2.1, 2.6, 4.3, 8.8, 13.9, 17.8, 23.2, 25.6, 24.1, 20.5],
+        "Atlanta": [16.0, 11.9, 7.7, 4.0, 7.9, 13.8, 17.2, 20.8, 24.8, 26.1, 26.5, 22.5],
         "Buffalo": [9.7, 6.0, -2.2, -3.4, -4.2, 2.7, 7.5, 13.7, 18.6, 22.0, 20.7, 16.5],
         "Denver": [7.1, 3.0, -1.0, 0.8, -0.2, 4.8, 6.1, 13.7, 22.2, 22.7, 21.7, 18.5],
-        "Dubai": [
-            29.5,
-            25.5,
-            21.1,
-            19.2,
-            20.8,
-            23.1,
-            26.5,
-            31.4,
-            33.0,
-            35.1,
-            35.3,
-            32.5,
-        ],
-        "ElPaso": [
-            18.3,
-            11.2,
-            6.8,
-            8.1,
-            10.3,
-            12.5,
-            19.2,
-            23.8,
-            27.9,
-            27.5,
-            26.3,
-            23.4,
-        ],
-        "Fairbanks": [
-            -3.1,
-            -17.7,
-            -19.3,
-            -17.6,
-            -15.4,
-            -10.3,
-            0.7,
-            10.6,
-            16.0,
-            16.9,
-            14.2,
-            6.7,
-        ],
-        "GreatFalls": [
-            8.6,
-            2.8,
-            -4.1,
-            -8.8,
-            -2.2,
-            0.3,
-            6.7,
-            10.1,
-            16.5,
-            20.6,
-            19.2,
-            14.7,
-        ],
-        "HoChiMinh": [
-            26.9,
-            26.7,
-            26.0,
-            26.4,
-            27.5,
-            28.3,
-            29.2,
-            29.0,
-            28.9,
-            27.2,
-            27.5,
-            27.6,
-        ],
-        "Honolulu": [
-            26.2,
-            24.8,
-            23.7,
-            22.5,
-            22.8,
-            23.2,
-            23.8,
-            25.2,
-            25.9,
-            26.9,
-            27.1,
-            26.9,
-        ],
-        "InternationalFalls": [
-            5.4,
-            -2.0,
-            -14.6,
-            -16.9,
-            -11.5,
-            -6.2,
-            4.0,
-            13.4,
-            18.0,
-            19.7,
-            17.9,
-            12.3,
-        ],
-        "NewDelhi": [
-            25.1,
-            19.6,
-            14.5,
-            13.4,
-            17.0,
-            22.4,
-            29.1,
-            33.0,
-            33.6,
-            31.7,
-            30.0,
-            28.7,
-        ],
+        "Dubai": [29.5, 25.5, 21.1, 19.2, 20.8, 23.1, 26.5, 31.4, 33.0, 35.1, 35.3, 32.5],
+        "ElPaso": [18.3, 11.2, 6.8, 8.1, 10.3, 12.5, 19.2, 23.8, 27.9, 27.5, 26.3, 23.4],
+        "Fairbanks": [-3.1, 17.7, 19.3, 17.6, 15.4, 10.3, 0.7, 10.6, 16.0, 16.9, 14.2, 6.7],
+        "GreatFalls": [8.6, 2.8, 4.1, 8.8, 2.2, 0.3, 6.7, 10.1, 16.5, 20.6, 19.2, 14.7],
+        "HoChiMinh": [26.9, 26.7, 26.0, 26.4, 27.5, 28.3, 29.2, 29.0, 28.9, 27.2, 27.5, 27.6],
+        "Honolulu": [26.2, 24.8, 23.7, 22.5, 22.8, 23.2, 23.8, 25.2, 25.9, 26.9, 27.1, 26.9],
+        "InternationalFalls": [5.4, 2.0, 14.6, 16.9, 11.5, 6.2, 4.0, 13.4, 18.0, 19.7, 17.9, 12.3],
+        "NewDelhi": [25.1, 19.6, 14.5, 13.4, 17.0, 22.4, 29.1, 33.0, 33.6, 31.7, 30.0, 28.7],
         "NewYork": [14.0, 7.3, 3.3, 1.2, -0.2, 5.6, 10.9, 16.1, 21.7, 25.0, 24.8, 19.9],
-        "PortAngeles": [
-            9.3,
-            6.7,
-            4.1,
-            4.2,
-            4.2,
-            5.9,
-            9.0,
-            10.0,
-            13.3,
-            15.0,
-            15.7,
-            13.4,
-        ],
-        "Rochester": [
-            7.4,
-            -0.0,
-            -7.6,
-            -12.6,
-            -7.7,
-            0.3,
-            7.0,
-            14.2,
-            19.2,
-            20.9,
-            20.0,
-            15.4,
-        ],
-        "SanDiego": [
-            18.8,
-            14.3,
-            13.6,
-            13.2,
-            13.3,
-            12.6,
-            15.3,
-            15.6,
-            17.7,
-            19.4,
-            19.7,
-            18.5,
-        ],
+        "PortAngeles": [9.3, 6.7, 4.1, 4.2, 4.2, 5.9, 9.0, 10.0, 13.3, 15.0, 15.7, 13.4],
+        "Rochester": [7.4, 0.0, 7.6, 12.6, 7.7, 0.3, 7.0, 14.2, 19.2, 20.9, 20.0, 15.4],
+        "SanDiego": [18.8, 14.3, 13.6, 13.2, 13.3, 12.6, 15.3, 15.6, 17.7, 19.4, 19.7, 18.5],
         "Seattle": [11.4, 8.1, 5.4, 4.5, 5.8, 8.3, 10.9, 13.0, 15.6, 17.7, 18.8, 15.1],
-        "Tampa": [
-            24.2,
-            18.9,
-            15.7,
-            13.6,
-            15.5,
-            17.1,
-            21.2,
-            26.9,
-            27.6,
-            27.9,
-            27.4,
-            26.2,
-        ],
-        "Tucson": [
-            20.9,
-            15.4,
-            11.9,
-            14.8,
-            12.7,
-            15.4,
-            23.3,
-            26.3,
-            31.2,
-            30.4,
-            29.8,
-            27.8,
-        ],
+        "Tampa": [24.2, 18.9, 15.7, 13.6, 15.5, 17.1, 21.2, 26.9, 27.6, 27.9, 27.4, 26.2],
+        "Tucson": [20.9, 15.4, 11.9, 14.8, 12.7, 15.4, 23.3, 26.3, 31.2, 30.4, 29.8, 27.8],
     }
     weather_dic = {
         "Very_Hot_Humid": "USA_HI_Honolulu.Intl.AP.911820_TMY3.epw",

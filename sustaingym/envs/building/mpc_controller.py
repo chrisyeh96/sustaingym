@@ -1,27 +1,25 @@
 from __future__ import annotations
-import numpy as np
-import cvxpy as cp
 from typing import Any
+
+import cvxpy as cp
+import numpy as np
 
 
 class MPCAgent:
+    """
+    Args:
+        environment: An object representing the environment for the agent.
+        gamma: A list of discount factors for the objective function.
+        safety_margin: A safety margin factor for constraints.
+        planning_steps: Number of steps over which to plan.
+    """
     def __init__(
         self,
         environment: Any,
         gamma: list[float],
         safety_margin: float = 0.9,
         planning_steps: int = 1,
-    ) -> None:
-        """
-        Args:
-            environment: An object representing the environment for the agent.
-            gamma: A list of discount factors for the objective function.
-            safety_margin: A safety margin factor for constraints.
-            planning_steps: Number of steps over which to plan.
-
-        Returns:
-            None
-        """
+    ):
         self.gamma: list[float] = gamma
         self.safety_margin: float = safety_margin
         self.planning_steps: int = planning_steps
@@ -46,7 +44,7 @@ class MPCAgent:
             environment: An object representing the environment for the agent.
 
         Returns:
-            tuple: First element is the optimal action, second element is the predicted state.
+            tuple: (optimal action, predicted state)
         """
         self.A_d = environment.A_d
         self.B_d = environment.B_d
@@ -120,23 +118,20 @@ class MPCAgent:
 
 
 class MPCAgent_DataDriven:
+    """
+    Args:
+        environment: An object representing the environment for the agent.
+        gamma: A list of discount factors for the objective function.
+        safety_margin: A safety margin factor for constraints.
+        planning_steps: Number of steps over which to plan.
+    """
     def __init__(
         self,
         environment: Any,
         gamma: list[float],
         safety_margin: float = 0.9,
         planning_steps: int = 1,
-    ) -> None:
-        """
-        Args:
-            environment: An object representing the environment for the agent.
-            gamma: A list of discount factors for the objective function.
-            safety_margin: A safety margin factor for constraints.
-            planning_steps: Number of steps over which to plan.
-
-        Returns:
-            None
-        """
+    ):
         self.gamma: list[float] = gamma  # Updated from float to List[float]
         self.Qlow: np.ndarray = environment.Qlow
         self.safety_margin: float = safety_margin
@@ -161,7 +156,7 @@ class MPCAgent_DataDriven:
             environment: An object representing the environment for the agent.
 
         Returns:
-            tuple: First element is the optimal action, second element is the predicted state.
+            tuple: (optimal action, predicted state)
         """
         self.A_d = environment.A_d
         self.B_d = environment.B_d
