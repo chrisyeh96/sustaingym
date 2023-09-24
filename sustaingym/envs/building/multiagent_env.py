@@ -10,7 +10,7 @@ from gymnasium import spaces
 import numpy as np
 from pettingzoo import ParallelEnv
 
-from sustaingym.envs.building.building import BuildingEnv
+from .env import BuildingEnv
 
 
 class MultiAgentBuildingEnv(ParallelEnv):
