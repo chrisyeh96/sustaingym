@@ -6,35 +6,41 @@ from __future__ import annotations
 from typing import Any
 
 import gymnasium as gym
+from gymnasium.envs.registration import EnvSpec
 import numpy as np
-from numpy.linalg import inv
 from numpy import linalg as LA
 from scipy.linalg import expm
 from sklearn import linear_model
-import torch
-
-
-use_cuda = torch.cuda.is_available()
-device = torch.device("cuda" if use_cuda else "cpu")
 
 
 class BuildingEnv(gym.Env):
     """BuildingEnv class.
-    This classes simulates the zonal temperature of a building controlled by a user selected agent.
-    It constructs the physics based building simulation model based on the RC model with an
-    nonlinear residual model. The simulation is based on the EPW weather file provided by the Building
-    Energy Codes Program.
 
-    n = number of zones (rooms) in the building
-    k = number of steps for the MOER CO2 forecast
-    T = length of time-series data
+    This classes simulates the zonal temperature of a building controlled by a
+    user selected agent. It constructs the physics-based building simulation
+    model based on the RC model with a nonlinear residual model. The simulation
+    is based on the EPW weather file provided by the Building Energy Codes Program.
+
+    This environment's API is known to be compatible with Gymnasium v0.28, v0.29.
+
+    In what follows:
+
+    - ``n`` = number of zones (rooms) in the building
+    - ``k`` = number of steps for the MOER CO2 forecast
+    - ``T`` = length of time-series data
 
     Actions:
+
+    .. code:: none
+
         Type: Box(n)
         Action                                           Shape       Min         Max
         HVAC power consumption(cool in - ,heat in +)     n           -1          1
 
     Observations:
+
+    .. code:: none
+
         Type: Box(3n+2)
                                                          Shape       Min         Max
         Temperature of zones (celsius)                   n           temp_min    temp_max
@@ -44,35 +50,41 @@ class BuildingEnv(gym.Env):
         Occupancy power (W)                              n           0           heat_max
 
     Args:
-        Parameter: dict of parameters for the environment.
-            'OutTemp' (np.array, shape=(T,)): Outdoor temperature.
-            'connectmap' (np.array, shape=(n, n)): Connection map of the rooms.
-            'RCtable' (np.array, shape=(n, n+1)): RC table of the rooms. R with unit m2-K/W, C with unit W/m-K.
-            'n' (int): Number of rooms.
-            'zonenames' (list[str]): length ``n``, names of the zones
-            'weightcmap' (np.array, shape=(n, n)): Weight of the connection map.
-            'target' (np.array, shape=(n,)): Target temperature.
-            'gamma' (list, shape=(2,)): Weight factor for the reward function.
-            'ghi' (np.array, shape=(T,)): Global Horizontal Irradiance.
-            'GroundTemp' (np.array, shape=(T,)): Ground temperature.
-            'Occupancy' (np.array, shape=(T, n)): Occupancy of the rooms.
-            'ACmap' (np.array, shape=(n,)): Air conditioning map.
-            'max_power' (int): Maximum power for the air conditioning system.
-            'nonlinear' (np.array, shape=(n,)): Nonlinear factor.
-            'temp_range' (list, shape=(2,)): Temperature range (min and max).
-            'is_continuous_action' (bool): determines action space (Box vs. MultiDiscrete).
-            'time_resolution' (int): Time resolution of the simulation.        
+        parameters: dict of parameters for the environment
+
+            - 'n' (int): number of rooms
+            - 'zones' (list[Zone]): list of length n, information about each zone
+            - 'target' (np.ndarray): shape (n,), target temperature of each room
+            - 'out_temp' (np.ndarray): shape (T,), outdoor temperature
+            - 'ground_temp' (np.ndarray): shape (T,), ground temperature
+            - 'ghi' (np.narray): shape (T,), global horizontal irradiance,
+              normalized to [0, 1]
+            - 'occupancy' (np.ndarray): shape (T,), occupancy of the rooms (in W)
+            - 'connectmap' (np.ndarray): shape (n, n+1), binary connectivity map between
+              rooms, last column represents the outside environment
+            - 'RCtable' (np.ndarray): shape (n, n+1), RC table of the rooms
+              TODO: specify units
+            - 'weightcmap' (np.ndarray): shape (n, n), weight of the connection map,
+              TODO: fix shape
+            - 'gamma' (tuple[float, float]): tuple of (energy penalty, temperature
+              error penalty), for the reward function
+            - 'ac_map' (np.ndarray): boolean array of shape (n,) specifying
+              presence (1) or absence (0) of AC in individual rooms
+            - 'max_power' (float): max power output of a single HVAC unit (in W)
+            - 'nonlinear' (np.array, shape=(n,)): Nonlinear factor.
+            - 'temp_range' (tuple[float, float]): tuple of (min temp, max temp)
+              in Celsius, defining the possible temperature in the building
+            - 'is_continuous_action' (bool): determines action space (Box vs. MultiDiscrete).
+            - 'time_resolution' (int): time resolution of the simulation (in seconds)
 
     Attributes:
-        Parameter (dict): Dictionary containing the parameters for the environment.
+        parameters (dict): Dictionary containing the parameters for the environment.
         observation_space: structure of observations returned by environment
         timestep: current timestep in episode, from 0 to 288
         action_space: structure of actions expected by environment
     """
-
-    metadata: dict[str, Any] = {"render.modes": []}
-
-    # Occupancy nonlinear coefficients, collected from https://energyplus.net/assets/nrel_custom/pdfs/pdfs_v23.1.0/EngineeringReference.pdf
+    # Occupancy nonlinear coefficients, collected from page 1299 of
+    # https://energyplus.net/assets/nrel_custom/pdfs/pdfs_v23.1.0/EngineeringReference.pdf
     OCCU_COEF1 = 6.461927
     OCCU_COEF2 = 0.946892
     OCCU_COEF3 = 0.0000255737
@@ -91,7 +103,10 @@ class BuildingEnv(gym.Env):
     # Scaling factor for the reward function weight
     SCALING_FACTOR = 24
 
-    def __init__(self, Parameter: dict[str, Any]):
+    # instance variables
+    state: np.ndarray
+
+    def __init__(self, parameters: dict[str, Any]):
         """Initializes the environment with the given parameters.
 
         Initializes:
@@ -104,31 +119,33 @@ class BuildingEnv(gym.Env):
             actionlist: List of actions taken in the environment (list).
             epochs: Counter for the number of epochs (int).
         """
-        self.state: np.ndarray
-        self.OutTemp = Parameter["OutTemp"]
-        self.length_of_weather = len(self.OutTemp)
-        self.connectmap = Parameter["connectmap"]
-        self.RCtable = Parameter["RCtable"]
-        self.n = Parameter["n"]
-        self.zonenames = Parameter['zonenames']
-        self.weightCmap = Parameter["weightcmap"]
-        self.target = Parameter["target"]
-        self.gamma = Parameter["gamma"]
-        self.ghi = Parameter["ghi"]
-        self.GroundTemp = Parameter["GroundTemp"]
-        self.Occupancy = Parameter["Occupancy"]
-        self.acmap = Parameter["ACmap"]
-        self.maxpower = Parameter["max_power"]
-        self.nonlinear = Parameter["nonlinear"]
-        self.temp_range = Parameter["temp_range"]
-        self.is_continuous_action = Parameter["is_continuous_action"]
+        self.parameters = parameters
+
+        self.n = parameters['n']
+        self.zones = parameters['zones']
+        self.target = parameters['target']
+        self.out_temp = parameters['out_temp']
+        self.ground_temp = parameters['ground_temp']
+        self.ghi = parameters['ghi']
+        self.occupancy = parameters['occupancy']
+        self.connectmap = parameters['connectmap']
+        self.RCtable = parameters['RCtable']
+        self.weightcmap = parameters['weightcmap']
+        self.gamma = parameters['gamma']
+        self.ac_map = parameters['ac_map']
+        self.maxpower = parameters['max_power']
+        self.nonlinear = parameters['nonlinear']
+        self.temp_range = parameters['temp_range']
+        self.is_continuous_action = parameters['is_continuous_action']
+        self.timestep = parameters['time_resolution']
+
         self.Occupower = 0
-        self.timestep = Parameter["time_resolution"]
         self.datadriven = False
+        self.length_of_weather = len(self.out_temp)
 
         # Define action space bounds based on room number and air conditioning map
-        self.Qlow = -self.acmap.astype(np.float32)  # shape [n]
-        self.Qhigh = self.acmap.astype(np.float32)
+        self.Qlow = -self.ac_map.astype(np.float32)  # shape [n]
+        self.Qhigh = self.ac_map.astype(np.float32)
 
         # Set the action space based on the space type
         if self.is_continuous_action:
@@ -145,20 +162,20 @@ class BuildingEnv(gym.Env):
         self.low = np.concatenate([
             np.ones(self.n + 1) * min_T,  # temp of zones and outdoor
             np.zeros(self.n),             # GHI
-            [min_T],                            # temp of ground
+            [min_T],                      # temp of ground
             np.zeros(self.n)              # occupancy power
         ]).astype(np.float32)
         self.high = np.concatenate([
             np.ones(self.n + 1) * max_T,  # temp of zones and outdoor
             np.ones(self.n) * heat_max,   # GHI
-            [max_T],                            # temp of ground
+            [max_T],                      # temp of ground
             np.ones(self.n) * heat_max    # occupancy power
         ]).astype(np.float32)
         self.observation_space = gym.spaces.Box(self.low, self.high, dtype=np.float32)
 
         # Set the weight for the power consumption and comfort range
-        self.q_rate = Parameter["gamma"][0] * self.SCALING_FACTOR
-        self.error_rate = Parameter["gamma"][1]
+        self.q_rate = parameters["gamma"][0] * self.SCALING_FACTOR
+        self.error_rate = parameters["gamma"][1]
 
         # Track cumulative components of reward
         self._reward_breakdown = {"comfort_level": 0.0, "power_consumption": 0.0}
@@ -166,11 +183,11 @@ class BuildingEnv(gym.Env):
         # Define matrices for the state update equations
         Amatrix = self.RCtable[:, :-1]
         diagvalue = (-self.RCtable) @ self.connectmap.T - np.array(
-            [self.weightCmap.T[1]]
+            [self.weightcmap.T[1]]
         ).T
         np.fill_diagonal(Amatrix, np.diag(diagvalue))
         Amatrix += self.nonlinear * self.OCCU_COEF9 / self.n
-        Bmatrix = self.weightCmap.T
+        Bmatrix = self.weightcmap.T
         Bmatrix[2] = self.connectmap[:, -1] * (self.RCtable[:, -1])
         Bmatrix = Bmatrix.T
 
@@ -178,18 +195,24 @@ class BuildingEnv(gym.Env):
         self.rewardsum = 0
         self.statelist: list[np.ndarray] = []
         self.actionlist: list[np.ndarray] = []
-        self.epochs = 0
+        self.epoch = 0
 
         # Initialize zonal temperature
         self.X_new = self.target
 
         # Compute the discrete-time system matrices
         self.A_d = expm(Amatrix * self.timestep)
-        self.B_d = inv(Amatrix) @ (self.A_d - np.eye(self.A_d.shape[0])) @ Bmatrix
+        self.B_d = LA.inv(Amatrix) @ (self.A_d - np.eye(self.A_d.shape[0])) @ Bmatrix
 
-    def step(
-        self, action: np.ndarray
-    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+        # Define environment spec
+        self.spec = EnvSpec(
+            id='sustaingym/BuildingEnv-v0',
+            entry_point='sustaingym.envs:BuildingEnv',
+            nondeterministic=False,
+            max_episode_steps=288)
+
+    def step(self, action: np.ndarray
+             ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         """Steps the environment.
 
         Updates the state of the environment based on the given action and calculates the
@@ -199,13 +222,13 @@ class BuildingEnv(gym.Env):
             action: Action to be taken in the environment.
 
         Returns:
-            state: Updated state of the environment. Contains:
+            state: array of shape (3n+2,), updated state of the environment. TODO: check shapes. Contains:
 
-                - 'X_new': shape [roomnum], new temperatures of the rooms.
-                - 'OutTemp': shape [1], outdoor temperature at the current timestep.
-                - 'ghi': shape [1], global horizontal irradiance at the current timestep.
-                - 'GroundTemp': shape [1], ground temperature at the current timestep.
-                - 'Occupower': shape [1], occupancy power at the current timestep.
+                - 'X_new': shape [n], new temperatures of the rooms.
+                - 'out_temp': shape [1], outdoor temperature at the current timestep.
+                - 'ghi': shape [n], global horizontal irradiance at the current timestep.
+                - 'ground_temp': shape [1], ground temperature at the current timestep.
+                - 'Occupower': shape [n], occupancy power at the current timestep.
             reward: Reward for the current timestep.
             terminated: Whether the episode is terminated.
             truncated: Whether the episode has reached a time limit.
@@ -228,11 +251,11 @@ class BuildingEnv(gym.Env):
         # Prepare the input matrices X and Y
         X = self.state[: self.n].T
         Y = np.insert(
-            np.append(action, self.ghi[self.epochs]), 0, self.OutTemp[self.epochs]
+            np.append(action, self.ghi[self.epoch]), 0, self.out_temp[self.epoch]
         ).T
-        Y = np.insert(Y, 0, self.GroundTemp[self.epochs]).T
-        avg_temp = np.sum(self.state[: self.n]) / self.n
-        Meta = self.Occupancy[self.epochs]
+        Y = np.insert(Y, 0, self.ground_temp[self.epoch]).T
+        avg_temp = np.sum(self.state[:self.n]) / self.n
+        Meta = self.occupancy[self.epoch]
 
         # If the environment is data-driven, add additional features to the Y matrix
         if self.datadriven:
@@ -242,6 +265,7 @@ class BuildingEnv(gym.Env):
             Y = np.insert(Y, 0, avg_temp**2).T
         else:
             # Calculate Occupower based on the given formula
+            # TODO: can Occupower ever be negative?
             self.Occupower = (
                 self.OCCU_COEF1
                 + self.OCCU_COEF2 * Meta
@@ -263,7 +287,7 @@ class BuildingEnv(gym.Env):
         reward = 0
 
         # Calculate the error
-        error = X_new * self.acmap - self.target * self.acmap
+        error = X_new * self.ac_map - self.target * self.ac_map
 
         # Update the reward based on the action and error
         reward -= LA.norm(action, 2) * self.q_rate + LA.norm(error, 2) * self.error_rate
@@ -276,40 +300,36 @@ class BuildingEnv(gym.Env):
         info = self._get_info()
 
         # Update the state
-        ghi_repeated = np.full(X_new.shape, self.ghi[self.epochs])
+        ghi_repeated = np.full(X_new.shape, self.ghi[self.epoch])
         occ_repeated = np.full(X_new.shape, self.Occupower / 1000)
 
         # self.statelist.append(self.state)
-        self.state = np.concatenate(
-            (
-                X_new,
-                self.OutTemp[self.epochs].reshape(-1,),
-                ghi_repeated,
-                self.GroundTemp[self.epochs].reshape(-1),
-                occ_repeated,
-            ),
-            axis=0,
-        )
+        self.state = np.concatenate([
+            X_new,
+            [self.out_temp[self.epoch]],
+            ghi_repeated,
+            [self.ground_temp[self.epoch]],
+            occ_repeated
+        ]).astype(np.float32)
 
         # Store the action in the actionlist
         self.actionlist.append(action * self.maxpower)
 
         # Increment the epochs counter
-        self.epochs += 1
+        self.epoch += 1
 
         # Check if the environment has reached the end of the weather data
-        if self.epochs >= self.length_of_weather - 1:
+        if self.epoch >= self.length_of_weather - 1:
             done = True
-            self.epochs = 0
+            self.epoch = 0
 
         # Return the new state, reward, done flag, and info
         return self.state, reward, done, done, info
 
-    def reset(
-        self, *, seed: int | None = None, options: dict | None = None
-    ) -> tuple[np.ndarray, dict[str, Any]]:
-        super().reset(seed=seed, options=options)
+    def reset(self, *, seed: int | None = None, options: dict | None = None
+              ) -> tuple[np.ndarray, dict[str, Any]]:
         """Resets the environment.
+
         Prepares the environment for the next episode by setting the initial
         temperatures, average temperature, occupancy, and occupower. The initial state
         is constructed by concatenating these variables.
@@ -317,16 +337,18 @@ class BuildingEnv(gym.Env):
         Args:
             seed: seed for resetting the environment. An episode is entirely
                 reproducible no matter the generator used.
-            options: resetting options
-                'verbose': set verbosity level [0-2]
+            options: optional resetting options
+
+                - 'T_initial': np.ndarray, shape [n], initial temperature of each zone
 
         Returns:
             state: the initial state of the environment.
             info: information.
         """
+        super().reset(seed=seed, options=options)
 
         # Initialize the episode counter
-        self.epochs = 0
+        self.epoch = 0
 
         # Initialize state and action lists
         self.statelist = []
@@ -344,7 +366,7 @@ class BuildingEnv(gym.Env):
         avg_temp = np.sum(T_initial) / self.n
 
         # Get the occupancy value for the current epoch
-        Meta = self.Occupancy[self.epochs]
+        Meta = self.occupancy[self.epoch]
 
         # Calculate the occupower based on occupancy and average temperature
         self.Occupower = (
@@ -359,48 +381,42 @@ class BuildingEnv(gym.Env):
         )
 
         # Construct the initial state by concatenating relevant variables
+        # TODO: why repeat the GHI and occupancy values?
         self.X_new = T_initial
-        ghi_repeated = np.full(T_initial.shape, self.ghi[self.epochs])
+        ghi_repeated = np.full(T_initial.shape, self.ghi[self.epoch])
         occ_repeated = np.full(T_initial.shape, self.Occupower / 1000)
-        self.state = np.concatenate(
-            (
-                T_initial,
-                self.OutTemp[self.epochs].reshape(
-                    -1,
-                ),
-                ghi_repeated,
-                self.GroundTemp[self.epochs].reshape(-1),
-                occ_repeated,
-            ),
-            axis=0,
-        )
+        self.state = np.concatenate([
+            T_initial,
+            [self.out_temp[self.epoch]],
+            ghi_repeated,
+            [self.ground_temp[self.epoch]],
+            occ_repeated
+        ]).astype(np.float32)
 
         # Initialize the rewards
         self.flag = 1
         self.rewardsum = 0
         for re in self._reward_breakdown:
             self._reward_breakdown[re] = 0.0
-        # print("Reset", self.state)
 
         # Return the initial state and an empty dictionary(for gymnasium grammar)
         return self.state, self._get_info()
 
     def _get_info(self, all: bool = False) -> dict[str, Any]:
-        """
-        Returns info. See step().
+        """Returns info. See `step()`.
 
         Args:
             all: whether all information should be returned. Otherwise, only
-                'zone_temperature' and 'reward_breakdown' are returned.
+                ``'zone_temperature'`` and ``'reward_breakdown'`` are returned.
         """
         if all:
             return {
                 "zone_temperature": self.X_new,
-                "out_temperature": self.OutTemp[self.epochs].reshape(
+                "out_temperature": self.out_temp[self.epoch].reshape(
                     -1,
                 ),
-                "ghi": self.ghi[self.epochs].reshape(-1),
-                "ground_temperature": self.GroundTemp[self.epochs].reshape(-1),
+                "ghi": self.ghi[self.epoch].reshape(-1),
+                "ground_temperature": self.ground_temp[self.epoch].reshape(-1),
                 "reward_breakdown": self._reward_breakdown,
             }
         else:
@@ -411,6 +427,7 @@ class BuildingEnv(gym.Env):
 
     def train(self, states: np.ndarray, actions: np.ndarray) -> None:
         """Trains the linear regression model using the given states and actions.
+
         The model is trained to predict the next state based on the current state and action.
         The trained coefficients are stored in the environment for later use.
 
@@ -426,11 +443,11 @@ class BuildingEnv(gym.Env):
         for i in range(len(states) - 1):
             X = states[i]
             Y = np.insert(
-                np.append(actions[i] / self.maxpower, self.ghi[i]), 0, self.OutTemp[i]
+                np.append(actions[i] / self.maxpower, self.ghi[i]), 0, self.out_temp[i]
             ).T
-            Y = np.insert(Y, 0, self.GroundTemp[i]).T
+            Y = np.insert(Y, 0, self.ground_temp[i]).T
             avg_temp = np.sum(X) / self.n
-            Meta = self.Occupancy[i]
+            Meta = self.occupancy[i]
 
             # Calculate the occupower based on occupancy and average temperature
             self.Occupower = (
@@ -472,10 +489,3 @@ class BuildingEnv(gym.Env):
 
         # Set the data-driven flag to True
         self.datadriven = True
-        # return current_state,next_state
-
-    def render(self, mode: str = "human") -> None:
-        pass
-
-    def close(self) -> None:
-        pass
