@@ -17,8 +17,8 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "pettingzoo==1.22.*",
-    "gymnasium==0.26.*",
+    "pettingzoo==1.24.*",
+    "gymnasium==0.28.*",
     "numpy>=1.23"
 ]
 
@@ -43,6 +43,12 @@ cogen = [
     # agents with different observation and action spaces.
     # - See: https://github.com/ray-project/ray/pull/39459
     "ray[rllib]==2.6.3",
+]
+building = [
+    "cvxpy>=1.3, <2",           # semver
+    "pvlib>=0.10",
+    "scikit-learn>=1.1.1",      # semver
+    "scipy>=1.0"
 ]
 
 [project.urls]
