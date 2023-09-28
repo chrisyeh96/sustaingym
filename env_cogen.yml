@@ -5,17 +5,15 @@
 # conda remove --name sustaingym_cogen --all
 #
 # Notes
-# - ray[rllib]==2.6.3 only supports gymnasium 0.26.3, pettingzoo 0.22.*
-# - ray(2.6.3) technically needs pytorch 1.13.0 and tensorflow 2.11.0, but it seems
-#   to work with PyTorch 2.0 and TensorFlow 2.12
-# - last updated: September 7, 2023
+# - ray[rllib]==2.7.0 only supports gymnasium 0.28.1, pettingzoo 0.24.*
+# - last updated: September 27, 2023
 name: sustaingym_cogen
 channels:
 - pytorch           # for pytorch
 - nvidia            # for pytorch-cuda
 - conda-forge
 dependencies:
-- python=3.10
+- python=3.11
 - cudatoolkit=11.8.0  # for TensorFlow 2.12
 - flake8
 - ipympl              # for Jupyter / VSCode notebooks
@@ -34,10 +32,9 @@ dependencies:
 - xlrd                # for reading Excel files
 
 - pip:
-  - gymnasium==0.26.3
-
-  - pettingzoo==1.22.3
-  - "ray[rllib]==2.6.3"
-  - tensorflow==2.12.0
+  - gymnasium==0.28.1
+  - pettingzoo==1.24.1
+  - "ray[rllib]==2.7.0"
+  - tensorflow==2.14.*
   - nvidia-cudnn-cu11==8.6.0.163  # for TensorFlow 2.12
   - onnxruntime

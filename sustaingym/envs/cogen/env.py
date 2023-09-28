@@ -17,6 +17,8 @@ from sustaingym.data.utils import read_bytes, read_to_bytesio
 
 class CogenEnv(gym.Env):
     """
+    This environment's API is known to be compatible with Gymnasium v0.28, v0.29.
+
     Actions:
 
     .. code:: none
@@ -163,7 +165,7 @@ class CogenEnv(gym.Env):
     def _get_obs(self) -> dict[str, Any]:
         """Get the current observation.
 
-        The following values must be updated before calling self._get_obs():
+        The following values must be updated before calling `self._get_obs()`:
         - self.t
         - self.current_day
         - self.current_action
@@ -182,7 +184,7 @@ class CogenEnv(gym.Env):
         }
         return obs
 
-    def reset(self, seed: int | None = None, options: dict | None = None
+    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None
               ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an episode.
 
@@ -204,7 +206,8 @@ class CogenEnv(gym.Env):
         # cannot be forked across RLLib worker processes.
         if self._model is None:
             b = read_bytes('data/cogen/onnx_model/model.onnx')
-            self._model = rt.InferenceSession(b)
+            self._model = rt.InferenceSession(
+                b, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 
         # randomly pick a day for the episode
         # subtract 1 as temporary fix to make sure we don't go over the number of days with lookahead window
@@ -350,7 +353,8 @@ class CogenEnv(gym.Env):
         }
         return total_reward, reward_breakdown
 
-    def step(self, action: dict[str, Any]) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
+    def step(self, action: dict[str, Any]
+             ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
         """Run one timestep of the Cogen environment's dynamics.
 
         Args:
@@ -382,6 +386,3 @@ class CogenEnv(gym.Env):
         truncated = False
 
         return self.obs, self.current_reward, terminated, truncated, self.current_info
-
-    def close(self):
-        return

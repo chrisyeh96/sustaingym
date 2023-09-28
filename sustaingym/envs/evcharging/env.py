@@ -28,6 +28,8 @@ class EVChargingEnv(Env):
     model (GMM) fitted on the data (see train_gmm_model.py). The
     gym supports the Caltech and JPL sites.
 
+    This environment's API is known to be compatible with Gymnasium v0.28, v0.29.
+
     In what follows:
 
     - ``n`` = number of stations in the EV charging network
@@ -298,8 +300,8 @@ class EVChargingEnv(Env):
 
         return observation, reward, done, False, info
 
-    def reset(self, *, seed: int | None = None, options: dict | None = None
-              ) -> tuple[dict[str, Any], dict[str, Any]]:
+    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None
+              ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         """Resets the environment.
 
         Prepares for the next episode by re-creating the charging network,
@@ -385,7 +387,7 @@ class EVChargingEnv(Env):
                 pilot_signals[station_id] = [np.round(action[i] / 8) * 8]  # TODO: smarter rounding?
         return pilot_signals
 
-    def _get_observation(self) -> dict[str, Any]:
+    def _get_observation(self) -> dict[str, np.ndarray]:
         """Returns observations for the current state of simulation."""
         self._est_departures.fill(0)
         self._demands.fill(0)

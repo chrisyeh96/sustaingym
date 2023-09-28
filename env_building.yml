@@ -10,7 +10,7 @@ name: sustaingym_building
 channels:
 - conda-forge
 dependencies:
-- python=3.9
+- python=3.11
 - cvxpy       # for MPC controller
 - flake8      # Optional, for code linting
 - ipympl      # Optional, for Jupyter / VSCode notebooks
@@ -27,7 +27,7 @@ dependencies:
 - tqdm        # Optional, for progress bars
 
 - pip:
-  - stable_baselines3>=2.0.0
-  - pettingzoo==1.24.1
   - gymnasium==0.28.1
+  - pettingzoo==1.24.1
   - ray[rllib]==2.7.0
+  - stable_baselines3>=2.0.0
