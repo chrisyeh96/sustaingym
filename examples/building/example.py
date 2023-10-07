@@ -1,15 +1,13 @@
 from __future__ import annotations
 
 import sys
-sys.path.append('..')
-
+sys.path.append('../..')
 from sustaingym.envs.building import BuildingEnv, ParameterGenerator
 
 
 # Create environment
 # see sustaingym/envs/building/utils.py for more info
-Parameter = ParameterGenerator(
-    Building='OfficeSmall', Weather='Hot_Dry', Location='Tucson')
+Parameter = ParameterGenerator('OfficeSmall', 'Hot_Dry', 'Tucson')
 env = BuildingEnv(Parameter)
 
 num_hours = 24
