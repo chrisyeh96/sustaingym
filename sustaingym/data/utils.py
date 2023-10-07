@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from importlib.resources import files
-from io import BytesIO
+from io import BytesIO, StringIO
 import os
 import pickle
 
@@ -14,18 +14,37 @@ def read_bytes(path: str) -> bytes:
     """Reads bytes from file pre-packaged with SustainGym.
 
     Args:
-        path: path to file
+        path: path to file, relative to main sustaingym package
     """
     return files('sustaingym').joinpath(path).read_bytes()
+
+
+def read_text(path: str, encoding: str = 'utf-8') -> str:
+    """Reads text from file pre-packaged with SustainGym.
+
+    Args:
+        path: path to file, relative to main sustaingym package
+        encoding: any text encoding supported by Python
+    """
+    return files('sustaingym').joinpath(path).read_text(encoding=encoding)
 
 
 def read_to_bytesio(path: str) -> BytesIO:
     """Reads file pre-packaged with SustainGym into a buffered IO stream.
 
     Args:
-        path: path to file
+        path: path to file, relative to main sustaingym package
     """
     return BytesIO(read_bytes(path))
+
+
+def read_to_stringio(path: str) -> StringIO:
+    """Reads file pre-packaged with SustainGym into a buffered IO stream.
+
+    Args:
+        path: path to file, relative to main sustaingym package
+    """
+    return StringIO(read_text(path))
 
 
 def read_csv(csv_path: str, **kwargs: Any) -> pd.DataFrame:
@@ -54,7 +73,7 @@ def get_save_path(path: str) -> str:
         full_path: final path
     """
     # sustaingym package
-    basedir = os.path.dirname(os.path.dirname(__file__))
+    basedir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     # full path for saving CSV file
     full_path = os.path.join(basedir, path)

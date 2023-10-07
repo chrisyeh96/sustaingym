@@ -1,12 +1,13 @@
 """
-This module primarily implements the ParameterGenerator() function which
-generates the parameters dict for BuildingEnv.
+This module primarily implements the `ParameterGenerator()` function which
+generates the parameters dict for `BuildingEnv`.
 
 All of the building layouts, U-factor values (thermal transmittance, in
 W/m2-K), ground temperatures, and weather data come from the Building Energy
 Codes Program: https://www.energycodes.gov/prototype-building-models.
 
 Buildings models
+
 - HTM files were extracted from the "Individual Standard 90.1 Prototype Building
   Models" (version 90.1-2019)
 - We associate each building type with a list of 7 U-factor values (thermal
@@ -19,13 +20,14 @@ Buildings models
 Monthly ground temperature values come from the
 "Site:GroundTemperature:FCfactorMethod" table in the building HTM files.
 
-Weather data come from EnergyPlus TMY3 Weather Files (in *.epw format)
+Weather data come from EnergyPlus TMY3 Weather Files (in ``*.epw`` format)
 also provided by the Building Energy Codes Program.
 """
 from __future__ import annotations
 
 from collections.abc import Sequence
 from collections import defaultdict
+import io
 import os
 from typing import Any, NamedTuple
 
@@ -154,19 +156,19 @@ class Zone(NamedTuple):
     Ymax: float                 # 5
     Zmin: float                 # 6
     Zmax: float                 # 7
-    FloorArea: float            # 8
-    ExteriorGrossArea: float    # 9
-    ExteriorWindowArea: float   # 10
+    FloorArea: float            # 8, in m^2
+    ExteriorGrossArea: float    # 9, in m^2
+    ExteriorWindowArea: float   # 10, in m^2
     ind: int                    # 11, can't use name "index" because of tuple.index()
 
 
 def get_zones(
-    filename: str,
+    path_or_file: str | io.TextIOBase,
 ) -> tuple[list[list[Zone]], int, list[Zone]]:
     """Parses information from the HTM file and sorts each zone by layer.
 
     Args:
-        filename: path to building HTM file.
+        path_or_file: path to building HTM file, or a file-like object
 
     Returns:
         layers: Zones grouped by Zaxis, layers[i] is a list of Zones in layer i
@@ -178,8 +180,13 @@ def get_zones(
     cordall: list[list[str | float]] = []
 
     # Read all lines of the html file
-    with open(filename, 'r') as f:
-        htmllines = f.readlines()
+    if isinstance(path_or_file, str):
+        with open(path_or_file, 'r') as f:
+            htmllines = f.readlines()
+    elif isinstance(path_or_file, io.TextIOBase):
+        htmllines = path_or_file.readlines()
+    else:
+        raise ValueError(f'Unsupported type for {path_or_file}')
 
     # Initialize count and printflag variables
     count = 0
@@ -245,7 +252,8 @@ def get_zones(
     cordall.sort(key=lambda x: x[1])
 
     # Convert cordall to Zone NamedTuples
-    all_zones = [Zone(*cord, ind=int(i)) for i, cord in enumerate(cordall)]
+    # see github.com/python/mypy/issues/6799
+    all_zones = [Zone(*cord, ind=int(i)) for i, cord in enumerate(cordall)]  # type: ignore
 
     layers = []
     current_layer = []
@@ -310,13 +318,13 @@ def Nfind_neighbor(
         U_Wall: list of 7 U-values (thermal transmittance) for different
             surfaces in the building in the order
             [intwall, floor, outwall, roof, ceiling, groundfloor, window].
-        SpecificHeat_avg: Specific heat.
+        SpecificHeat_avg: specific heat of air (in J/kg-K)
 
     Returns:
-        dicRoom: map dictionary for neighbour,n+1 by n,
-        Rtable: shape [n, n+1]
-        Ctable: shape [n]
-        Windowtable: shape [n]
+        dicRoom: maps zone name to a list of neighboring zone indices
+        Rtable: shape [n, n+1], thermal conductance between rooms (in W/K)
+        Ctable: shape [n], heat capacity of each zone (in J/K)
+        Windowtable: shape [n], exterior window area of each zone (in m^2)
     """
     # Initialize Rtable, Ctable, and Windowtable
     Rtable = np.zeros((n, n + 1))
@@ -350,6 +358,9 @@ def Nfind_neighbor(
                         crossarea = x_overlap * y_overlap
 
                         # Calculate heat transfer coefficient (U) for connected zones
+                        # TODO: is this correct?
+                        # - Is this assuming parallel thermal resistance?
+                        # - Is this thermal resistance or thermal conductance?
                         U = crossarea * (Floor * Ceiling / (Floor + Ceiling))
 
                         # Update Rtable for connected zones
@@ -419,19 +430,19 @@ def Nfind_neighbor(
 def ParameterGenerator(
     building: str,
     weather: str,
-    Location: str,
+    location: str,
     U_Wall: Sequence[float] = (0,) * 7,
-    Ground_Tp: Sequence[float] = (0,) * 12,
+    ground_temp: Sequence[float] = (0,) * 12,
     shgc: float = 0.252,
     shgc_weight: float = 0.01,
     ground_weight: float = 0.5,
     full_occ: np.ndarray | float = 0,
     max_power: np.ndarray | int = 8000,
-    AC_map: np.ndarray | int = 1,
-    time_reso: int = 3600,
+    ac_map: np.ndarray | int = 1,
+    time_res: int = 3600,
     reward_gamma: tuple[float, float] = (0.001, 0.9990),
     target: np.ndarray | float = 22,
-    activity_sch: np.ndarray = np.ones(100000000) * 1 * 120,
+    activity_sch: np.ndarray | float = 120,
     temp_range: tuple[float, float] = (-40, 40),
     is_continuous_action: bool = True,
     root: str = ''
@@ -442,79 +453,69 @@ def ParameterGenerator(
         building: name of a building in `BUILDINGS`, or path (relative to ``root``)
             to a htm file for building idf
         weather: name of a weather condition in `WEATHER`, or path to an epw file.
-        Location: name of a location in `GROUND_TEMP`
+        location: name of a location in `GROUND_TEMP`
         U_Wall: list of 7 U-values (thermal transmittance) for different
             surfaces in the building in the order
             [intwall, floor, outwall, roof, ceiling, groundfloor, window].
             Only used if ``building`` cannot be found in `BUILDINGS`
-        Ground_Tp: Monthly ground temperature (in Celsius) when location is not in `GROUND_TEMP`.
-        shgc: Solar Heat Gain Coefficient for the window (unitless)
-        shgc_weight: Weight factor for extra loss of solar irradiance (ghi). Default is 0.01.
-        ground_weight: Weight factor for extra loss of heat from ground. Default is 0.5.
-        full_occ (numpy array): Shape (n,1). Max number of people that can occupy each room. Default is all zeros.
-        max_power (int): Maximum power output of a single HVAC unit, in watts. Default is 8000.
-        AC_map: int, indicating presence (1) or absence (0) of AC in all rooms,
-            or boolean array of shape (n,) to specify AC presence in individual
-            rooms
-        time_reso (int): Length of 1 timestep in seconds. Default is 3600 (1 hour).
-        reward_gamma (list of two floats): [Energy penalty, temperature error penalty]. Default is [0.001,0.999].
-        target (float or numpy array): Shape (n,). Target temperature setpoints for each zone. Default is 22 degrees Celsius.
-        activity_sch: shape (length of the simulation,). Activity schedule of people in the building in watts/person. Default is all 120.
-        temp_range: (Min temperature, max temperature) in Celcius, defining comfort range
-        is_continuous_action: whether to use continuous action space (as opposed to MultiDiscrete)
-        root: root directory for building and weather data files
+        ground_temp: monthly ground temperature (in Celsius) when ``location``
+            is not in `GROUND_TEMP`
+        shgc: Solar Heat Gain Coefficient for windows (unitless)
+        shgc_weight: Weight factor for extra loss of solar irradiance (ghi)
+        ground_weight: Weight factor for extra loss of heat from ground
+        full_occ: max number of people that can occupy each room, either an
+            array of shape (n, 1) specifying maximum for each room, or a scalar
+            maximum that applies to all rooms
+        max_power: max power output of a single HVAC unit (in W)
+        ac_map: binary indicator of presence (1) or absence (0) of AC, either a
+            boolean array of shape (n,) to specify AC presence in individual
+            rooms, or a scalar indicating AC presence in all rooms
+        time_res: length of 1 timestep in seconds. Default is 3600 (1 hour).
+        reward_gamma: tuple of (energy penalty, temperature error penalty)
+        target: target temperature setpoints (in Celsius), either an array
+            specifying individual setpoints for each zone, or a scalar
+            setpoint for all zones
+        activity_sch: metabolic rate of people in the building (in W), either
+            an array of shape (T,) to specify metabolic rate at every time
+            step, or a scalar rate for all time steps
+        temp_range: (min temperature, max temperature) in Celsius, defining
+            the possible temperature in the building
+        is_continuous_action: whether to use continuous action space (as opposed
+            to MultiDiscrete)
+        root: root directory for building and weather data files, only used when
+            ``building`` and ``weather`` do not correspond to keys in `BUILDINGS`
+            and `WEATHER`
 
     Returns:
-        Parameter: Contains all parameters needed for environment initialization.
+        parameters: Contains all parameters needed for environment initialization.
     """
-    # Define dictionaries for building, Ground Temperature, and weather
-
-    # Check if Location is in GROUND_TEMP, otherwise use Ground_Tp as city
-    if Location not in GROUND_TEMP:
-        city = Ground_Tp
-    else:
-        city = GROUND_TEMP[Location]
+    # check if location is in GROUND_TEMP, otherwise use ground_temp
+    monthly_ground_temp = GROUND_TEMP.get(location, ground_temp)
 
     # Calculate ground temperature for each month
-    groundtemp = np.concatenate(
-        [
-            np.ones(31 * 24 * 3600 // time_reso) * city[0],
-            np.ones(28 * 24 * 3600 // time_reso) * city[1],
-            np.ones(31 * 24 * 3600 // time_reso) * city[2],
-            np.ones(30 * 24 * 3600 // time_reso) * city[3],
-            np.ones(31 * 24 * 3600 // time_reso) * city[4],
-            np.ones(30 * 24 * 3600 // time_reso) * city[5],
-            np.ones(31 * 24 * 3600 // time_reso) * city[6],
-            np.ones(31 * 24 * 3600 // time_reso) * city[7],
-            np.ones(30 * 24 * 3600 // time_reso) * city[8],
-            np.ones(31 * 24 * 3600 // time_reso) * city[9],
-            np.ones(30 * 24 * 3600 // time_reso) * city[10],
-            np.ones(31 * 24 * 3600 // time_reso) * city[11],
-        ]
-    )
+    all_ground_temp = np.concatenate([
+        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[0],
+        np.ones(28 * 24 * 3600 // time_res) * monthly_ground_temp[1],
+        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[2],
+        np.ones(30 * 24 * 3600 // time_res) * monthly_ground_temp[3],
+        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[4],
+        np.ones(30 * 24 * 3600 // time_res) * monthly_ground_temp[5],
+        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[6],
+        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[7],
+        np.ones(30 * 24 * 3600 // time_res) * monthly_ground_temp[8],
+        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[9],
+        np.ones(30 * 24 * 3600 // time_res) * monthly_ground_temp[10],
+        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[11],
+    ])
 
     # Check if building is in BUILDINGS, otherwise use building as building_file
+    building_file: str | io.StringIO
     if building in BUILDINGS:
-        # Get the absolute path of the script
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-
-        # Construct the path to the "Data" folder
-        data_dir = os.path.join(script_dir, "Data/")
-        building_file = data_dir + BUILDINGS[building][0]
+        internal_path = os.path.join('data', 'building', BUILDINGS[building][0])
+        building_file = read_to_stringio(internal_path)
         U_Wall = BUILDINGS[building][1]
     else:
-        building_file = building
-
-    # Check if weather is in WEATHER, otherwise use weather as weather_file
-    if weather not in WEATHER:
-        weather_file = [weather, groundtemp]
-    else:
-        weather_file = [data_dir + WEATHER[weather], groundtemp]
-
-    # Update file paths if root is not user-defined
-    if len(root) > 0:
-        building_file = os.path.join(root, building_file)
-        weather_file[0] = os.path.join(root, weather_file[0])
+        building_file = os.path.join(root, building)
 
     # Get room information from the building file
     layers, n, all_zones = get_zones(building_file)
@@ -523,57 +524,61 @@ def ParameterGenerator(
         print(zone.name, " [Zone index]: ", zone.ind)
     print("###################################################")
 
+    # Check if weather is in WEATHER, otherwise use weather as weather_file
+    if weather in WEATHER:
+        internal_path = os.path.join('data', 'building', WEATHER[weather])
+        weather_file = read_to_stringio(internal_path)
+        weather_df, weather_metadata = pvlib.iotools.parse_epw(weather_file)
+    else:
+        weather_path = os.path.join(root, weather)
+        weather_df, weather_metadata = pvlib.iotools.read_epw(weather_path)
+
     # Read the weather data and interpolate temperature values
-    data = pvlib.iotools.read_epw(weather_file[0])
-    oneyear = data[0]["temp_air"]
+    oneyear = weather_df["temp_air"]
     num_datapoint = len(oneyear)
-    x = np.arange(0, num_datapoint)
+    x = np.arange(num_datapoint)
     y = np.array(oneyear)
 
     f = interpolate.interp1d(x, y)
-    xnew = np.arange(0, num_datapoint - 1, 1 / 3600 * time_reso)
+    xnew = np.arange(0, num_datapoint - 1, 1 / 3600 * time_res)
     outtempdatanew = f(xnew)
 
     # Read the weather data and interpolate GHI values to the new time resolution
-    oneyearrad = data[0]["ghi"]
-    x = np.arange(0, num_datapoint)
+    oneyearrad = weather_df["ghi"]  # in Wh/m^2
+    x = np.arange(num_datapoint)
     y = np.array(oneyearrad)
 
     f = interpolate.interp1d(x, y)
-    xnew = np.arange(0, num_datapoint - 1, 1 / 3600 * time_reso)
+    xnew = np.arange(0, num_datapoint - 1, 1 / 3600 * time_res)
     solardatanew = f(xnew)
 
     # Define constants and calculate SHGC
-    # TODO: where does SpecificHeat_avg come from?
-    SpecificHeat_avg = 1000
-    SHGC = shgc * shgc_weight * (max(data[0]["ghi"]) / (abs(data[1]["TZ"]) / 60))
+    SpecificHeat_avg = 1000  # specific heat of indoor air, in J/kg-K
+    SHGC = shgc * shgc_weight * (max(weather_df["ghi"]) / (abs(weather_metadata["TZ"]) / 60))
 
     # Find neighboring rooms, resistance and capacitance tables, and window properties
     dicRoom, Rtable, Ctable, Windowtable = Nfind_neighbor(
         n, layers, U_Wall, SpecificHeat_avg
     )
-
-    # Initialize connectivity matrix and ground connection list
-    connectmap = np.zeros((n, n + 1))
     RCtable = Rtable / np.array([Ctable]).T
-    ground_connectlist = np.zeros((n, 1))  # list to see which room connects to the ground
-    groundrooms = layers[0]  # the first layer connects to the ground
 
-    # Assign ground connection values and populate the connectivity matrix
-    for room in groundrooms:
+    # Initialize binary connectivity matrix
+    connectmap = np.zeros((n, n + 1))
+    for i, zone in enumerate(all_zones):
+        for number in dicRoom[zone.name]:
+            connectmap[i, number] = 1
+
+    # calculate thermal conductance between each zone and the ground (in W/K)
+    # the first layer connects to the ground
+    ground_connectlist = np.zeros((n, 1))
+    for room in layers[0]:
         ground_connectlist[room.ind] = (
             room.FloorArea * U_Wall[5] * ground_weight
         )  # for those rooms, assign 1/R table by floor area and u factor
 
-    for i, zone in enumerate(all_zones):
-        connect_list = dicRoom[zone.name]
-
-        for number in connect_list:
-            connectmap[i][number] = 1
-
     # Calculate occupancy, AC weight, weighted connection map, and non-linear term
     people_full = np.zeros((n, 1)) + np.array([full_occ]).T
-    ACweight = np.diag(np.zeros(n) + AC_map) * max_power
+    ACweight = np.diag(np.zeros(n) + ac_map) * max_power
     weightcmap = (
         np.concatenate(
             (
@@ -590,27 +595,27 @@ def ParameterGenerator(
     nonlinear = people_full / np.array([Ctable]).T
 
     # Store parameters in a dictionary for the simulation
-    Parameter = {}
-    Parameter["OutTemp"] = outtempdatanew
-    Parameter["connectmap"] = connectmap
-    Parameter["RCtable"] = RCtable
-    Parameter["n"] = n
-    Parameter["zonenames"] = [zone.name for zone in all_zones]
-    Parameter["weightcmap"] = weightcmap
-    Parameter["target"] = np.zeros(n) + target
-    Parameter["gamma"] = reward_gamma
-    Parameter["time_resolution"] = time_reso
-    Parameter["ghi"] = (
+    parameters: dict[str, Any] = {}
+    parameters['n'] = n
+    parameters['zones'] = all_zones
+    parameters['target'] = np.zeros(n) + target
+    parameters['out_temp'] = outtempdatanew
+    parameters['ground_temp'] = all_ground_temp
+    parameters['ghi'] = (
         solardatanew
-        / (abs(data[1]["TZ"]) / 60)
-        / (max(data[0]["ghi"]) / (abs(data[1]["TZ"]) / 60))
+        / (abs(weather_metadata['TZ']) / 60)
+        / (max(weather_df['ghi']) / (abs(weather_metadata['TZ']) / 60))
     )
-    Parameter["GroundTemp"] = weather_file[1]
-    Parameter["Occupancy"] = activity_sch
-    Parameter["ACmap"] = np.zeros(n) + AC_map
-    Parameter["max_power"] = max_power
-    Parameter["nonlinear"] = nonlinear
-    Parameter["temp_range"] = temp_range
-    Parameter["is_continuous_action"] = is_continuous_action
+    parameters['occupancy'] = activity_sch * np.ones(len(outtempdatanew))
+    parameters['connectmap'] = connectmap
+    parameters['RCtable'] = RCtable
+    parameters['weightcmap'] = weightcmap
+    parameters['gamma'] = reward_gamma
+    parameters['ac_map'] = np.zeros(n) + ac_map
+    parameters['max_power'] = max_power
+    parameters['nonlinear'] = nonlinear
+    parameters['temp_range'] = temp_range
+    parameters['is_continuous_action'] = is_continuous_action
+    parameters['time_resolution'] = time_res
 
-    return Parameter
+    return parameters

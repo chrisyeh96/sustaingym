@@ -1,17 +1,30 @@
+"""
+This script creates the violin plot for the BuildingEnv experiments.
+It assumes that the trained StableBaselines3 models (saved in *.zip files)
+have been downloaded and placed in
+    examples/building/models/*.zip
+
+The trained StableBaselines3 models can be found in the SustainGym
+GitHub releases:
+    https://github.com/chrisyeh96/sustaingym/releases
+"""
 from __future__ import annotations
+
 import sys
-sys.path.append("../..")
-from sustaingym.envs.building.building import BuildingEnv
-from sustaingym.envs.building.utils import ParameterGenerator
-from sustaingym.envs.building.mpc_controller import MPCAgent
-import numpy as np
-import seaborn as sns
+
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import seaborn as sns
 from stable_baselines3 import PPO,A2C,SAC
 
+sys.path.append("../..")
+from sustaingym.envs.building import BuildingEnv, ParameterGenerator
+from sustaingym.algorithms.building.mpc_controller import MPCAgent
+
+
 Parameter=ParameterGenerator(
-    'OfficeSmall','Hot_Dry','Tucson',time_reso=300)  #Description of ParameterGenerator in bldg_utils.py
+    'OfficeSmall','Hot_Dry','Tucson', time_res=300)  #Description of ParameterGenerator in bldg_utils.py
 #Create environment
 env = BuildingEnv(Parameter)
 numofhours=24
@@ -20,11 +33,12 @@ env.reset()
 
 ############  SAC  ############
 
+print('SAC')
 rwlistsac=[]
 sacstr=[]
 model = SAC("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
-model = SAC.load("plot/SAC_winter0")
+model = SAC.load("models/SAC_winter0")
 obs = vec_env.reset()
 
 #Winter Test
@@ -46,7 +60,7 @@ for i in range(30):
 env.reset()
 model = SAC("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
-model = SAC.load("plot/SAC_summer0")
+model = SAC.load("models/SAC_summer0")
 obs = vec_env.reset()
 
 #First loop through the training data
@@ -64,10 +78,11 @@ for i in range(30):
   rwlistsac.append(rw/288)
 
 ############  PPO  ############
+print('PPO')
 rwlistppo=[]
 model = PPO("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
-model = PPO.load("plot/PPO_winter0")
+model = PPO.load("models/PPO_winter0")
 obs = vec_env.reset()
 
 #Winter Test
@@ -88,7 +103,7 @@ for i in range(30):
 env.reset()
 model = PPO("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
-model = PPO.load("plot/PPO_summer0")
+model = PPO.load("models/PPO_summer0")
 obs = vec_env.reset()
 
 #First loop through the training data
@@ -105,10 +120,11 @@ for i in range(30):
   rwlistppo.append(rw/288)
 
 ############  A2C  ############
+print('A2C')
 rwlista2c=[]
 model = A2C("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
-model = A2C.load("plot/A2C_winter0")
+model = A2C.load("models/A2C_winter0")
 obs = vec_env.reset()
 
 #Winter Test
@@ -129,7 +145,7 @@ for i in range(30):
 env.reset()
 model = A2C("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
-model = A2C.load("plot/A2C_summer0")
+model = A2C.load("models/A2C_summer0")
 obs = vec_env.reset()
 
 #First loop through the training data
@@ -146,6 +162,7 @@ for i in range(30):
   rwlista2c.append(rw/288)
 
 ############  MPC  ############
+print('MPC')
 env.reset()
 rwlistmpc=[]
 mpcstr=[]
@@ -154,19 +171,20 @@ agent = MPCAgent(env,
                 safety_margin=0.96, planning_steps=10)
 
 for k in range(2048):
-  action, _states = agent.predict(env)
+  action, _states = agent.predict()
   obs, rewards, terminated, truncated, info = env.step(action)
 
 for i in range(30):
   rw=0
   for j in range(288):
-    action, _states = agent.predict(env)
+    action, _states = agent.predict()
     obs, rewards, terminated, truncated, info = env.step(action)
     rw+=rewards
   rwlistmpc.append(rw/288)
   mpcstr.append('Winter')
 
 ############  RANDOM  ############
+print('Random')
 env.reset()
 rwlistrandom=[]
 randomstr=[]
@@ -185,7 +203,7 @@ for i in range(30):
   randomstr.append('Winter')
 
 ############# DC ##############
-Parameter=ParameterGenerator('OfficeSmall','Hot_Dry','Tucson',time_reso=300,spacetype='discrete')  #Description of ParameterGenerator in bldg_utils.py
+Parameter=ParameterGenerator('OfficeSmall','Hot_Dry','Tucson',time_res=300,is_continuous_action=False)  #Description of ParameterGenerator in bldg_utils.py
 #Create environment
 env = BuildingEnv(Parameter)
 numofhours=24
@@ -196,10 +214,11 @@ for i in range(numofhours):
     obs, r, terminated, truncated, _ = env.step(a)#Return observation and reward
 
 ############# PPOdc ##############
+print('PPO-discrete')
 rwlistppo_dc=[]
 model = PPO("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
-model = PPO.load("plot/PPOdc_winter0")
+model = PPO.load("models/PPOdc_winter0")
 obs = vec_env.reset()
 
 #Winter Test
@@ -220,7 +239,7 @@ for i in range(30):
 env.reset()
 model = PPO("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
-model = PPO.load("plot/PPOdc_summer0")
+model = PPO.load("models/PPOdc_summer0")
 obs = vec_env.reset()
 
 #First loop through the training data
@@ -237,11 +256,12 @@ for i in range(30):
   rwlistppo_dc.append(rw/288)
 
 ################# A2Cdc ################
+print('A2C-discrete')
 rwlista2c_dc=[]
 model = A2C("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
 # model = PPO.load("Model/PPO5")
-model = A2C.load("plot/A2Cdc_winter0")
+model = A2C.load("models/A2Cdc_winter0")
 obs = vec_env.reset()
 
 #Winter Test
@@ -262,7 +282,7 @@ for i in range(30):
 env.reset()
 model = A2C("MlpPolicy", env, verbose=1)
 vec_env = model.get_env()
-model = A2C.load("plot/A2Cdc_summer0")
+model = A2C.load("models/A2Cdc_summer0")
 obs = vec_env.reset()
 
 #First loop through the training data
@@ -346,5 +366,5 @@ plt.plot([x_value, x_value], y_range, linestyle=':', color='black', linewidth=3)
 ax.set_ylim(y_range)
 
 # Save and show the figure
-plt.savefig('plot/BuildingViolin.png')
+plt.savefig('BuildingViolin.png')
 plt.show()
