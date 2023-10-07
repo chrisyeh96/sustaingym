@@ -592,7 +592,11 @@ def ParameterGenerator(
         )
         / np.array([Ctable]).T
     )
-    nonlinear = people_full / np.array([Ctable]).T
+
+    # Construct A,B,and D matrix
+    OCCU_COEF9 = 7.139322
+    Amatrix = construct_A_matrix(RCtable, weightcmap, connectmap, OCCU_COEF9, n)
+    Bmatrix,Dmatrix = construct_BD_matrix(weightcmap, connectmap, RCtable)
 
     # Store parameters in a dictionary for the simulation
     parameters: dict[str, Any] = {}
@@ -607,15 +611,87 @@ def ParameterGenerator(
         / (max(weather_df['ghi']) / (abs(weather_metadata['TZ']) / 60))
     )
     parameters['occupancy'] = activity_sch * np.ones(len(outtempdatanew))
-    parameters['connectmap'] = connectmap
-    parameters['RCtable'] = RCtable
-    parameters['weightcmap'] = weightcmap
     parameters['gamma'] = reward_gamma
     parameters['ac_map'] = np.zeros(n) + ac_map
     parameters['max_power'] = max_power
-    parameters['nonlinear'] = nonlinear
     parameters['temp_range'] = temp_range
     parameters['is_continuous_action'] = is_continuous_action
     parameters['time_resolution'] = time_res
-
+    parameters["Amatrix"] = Amatrix
+    parameters["Bmatrix"] = Bmatrix
+    parameters["Dmatrix"] = Dmatrix
     return parameters
+def construct_A_matrix(
+    RCtable: np.ndarray, 
+    weightcmap: np.ndarray, 
+    connectmap: np.ndarray, 
+    OCCU_COEF9: float, 
+    n: int
+) -> np.ndarray:
+    """
+    Constructs the A matrix for the building environment.
+    
+    Args:
+        RCtable (np.ndarray): A matrix of shape (n, n+1) representing 1/resistance-capacitance values for each room.
+            The last column represents the connection to the outside.
+        
+        weightcmap (np.ndarray): A matrix of shape (n, n+4) representing weighted connections for each room.
+            Columns represent [people, ground, outside, AC, window, solar gain].
+        
+        connectmap (np.ndarray): A matrix of shape (n, n+1) representing connectivity between rooms.
+            A value of 1 indicates a connection, 0 indicates no connection. The last column represents the connection to the outside.
+        
+        OCCU_COEF9 (float): Occupancy linear coefficient. Represents the effect of occupancy on the room's temperature.
+        
+        n (int): Number of rooms or zones in the building.
+    
+    Returns:
+        np.ndarray: The constructed A matrix of shape (n, n).
+    """
+    # Calculate the diagonal values for the A matrix. The ground is also considered as a node.
+    ground=weightcmap.T[1]
+    diagvalue = (-RCtable) @ connectmap.T - np.array([ground]).T
+
+    # Copy the 1/RC table excluding the last column, which is the connection map to outside.
+    Amatrix = RCtable[:, :-1].copy()
+
+    # Replace the diagonal of A with the calculated diagonal values
+    np.fill_diagonal(Amatrix, np.diag(diagvalue))
+
+    # Adjust the values of A based on numberofpeople/C(the first column in weightcmap) and n
+    Amatrix += weightcmap[:,0] * OCCU_COEF9 / n
+    return Amatrix
+
+def construct_BD_matrix(
+    weightcmap: np.ndarray, 
+    connectmap: np.ndarray, 
+    RCtable: np.ndarray
+) -> np.ndarray:
+    """
+    Constructs the B matrix for the building environment.
+    
+    Args:
+        weightcmap (np.ndarray): A matrix of shape (n, n+4) representing weighted connections for each room.
+            Columns represent [people, ground, outside, AC, window, solar gain].
+        
+        connectmap (np.ndarray): A matrix of shape (n, n+1) representing connectivity between rooms.
+            A value of 1 indicates a connection, 0 indicates no connection. The last column represents the connection to the outside.
+        
+        RCtable (np.ndarray): A matrix of shape (n, n+1) representing resistance-capacitance values for each room.
+            The last column represents the connection to the outside.
+    
+    Returns:
+        np.ndarray: The constructed B matrix of shape (n, n+3).
+        np.ndarray: The constructed D matrix of shape (n, 1).
+    """
+    BD = weightcmap.copy()
+
+    # Fill in the outside column. Address the RC affect with outdoor temperature. 
+    connection_to_out=connectmap[:, -1]
+    RCout=RCtable[:, -1]
+    BD[:, 2] = connection_to_out * RCout
+    Bmatrix=BD[:,1:]
+
+    #Construct D matrix with first column of weightcmap, which is numberofpeople/C
+    Dmatrix=BD[:,0]
+    return Bmatrix,Dmatrix

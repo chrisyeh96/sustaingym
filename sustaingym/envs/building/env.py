@@ -60,18 +60,11 @@ class BuildingEnv(gym.Env):
             - 'ghi' (np.narray): shape (T,), global horizontal irradiance,
               normalized to [0, 1]
             - 'occupancy' (np.ndarray): shape (T,), occupancy of the rooms (in W)
-            - 'connectmap' (np.ndarray): shape (n, n+1), binary connectivity map between
-              rooms, last column represents the outside environment
-            - 'RCtable' (np.ndarray): shape (n, n+1), RC table of the rooms
-              TODO: specify units
-            - 'weightcmap' (np.ndarray): shape (n, n), weight of the connection map,
-              TODO: fix shape
             - 'gamma' (tuple[float, float]): tuple of (energy penalty, temperature
               error penalty), for the reward function
             - 'ac_map' (np.ndarray): boolean array of shape (n,) specifying
               presence (1) or absence (0) of AC in individual rooms
             - 'max_power' (float): max power output of a single HVAC unit (in W)
-            - 'nonlinear' (np.array, shape=(n,)): Nonlinear factor.
             - 'temp_range' (tuple[float, float]): tuple of (min temp, max temp)
               in Celsius, defining the possible temperature in the building
             - 'is_continuous_action' (bool): determines action space (Box vs. MultiDiscrete).
@@ -128,17 +121,15 @@ class BuildingEnv(gym.Env):
         self.ground_temp = parameters['ground_temp']
         self.ghi = parameters['ghi']
         self.occupancy = parameters['occupancy']
-        self.connectmap = parameters['connectmap']
-        self.RCtable = parameters['RCtable']
-        self.weightcmap = parameters['weightcmap']
         self.gamma = parameters['gamma']
         self.ac_map = parameters['ac_map']
         self.maxpower = parameters['max_power']
-        self.nonlinear = parameters['nonlinear']
         self.temp_range = parameters['temp_range']
         self.is_continuous_action = parameters['is_continuous_action']
         self.timestep = parameters['time_resolution']
-
+        self.Amatrix= parameters["Amatrix"]
+        self.Bmatrix= parameters["Bmatrix"]
+        self.Dmatrix= parameters["Dmatrix"]
         self.Occupower = 0
         self.datadriven = False
         self.length_of_weather = len(self.out_temp)
@@ -180,16 +171,8 @@ class BuildingEnv(gym.Env):
         # Track cumulative components of reward
         self._reward_breakdown = {"comfort_level": 0.0, "power_consumption": 0.0}
 
-        # Define matrices for the state update equations
-        Amatrix = self.RCtable[:, :-1]
-        diagvalue = (-self.RCtable) @ self.connectmap.T - np.array(
-            [self.weightcmap.T[1]]
-        ).T
-        np.fill_diagonal(Amatrix, np.diag(diagvalue))
-        Amatrix += self.nonlinear * self.OCCU_COEF9 / self.n
-        Bmatrix = self.weightcmap.T
-        Bmatrix[2] = self.connectmap[:, -1] * (self.RCtable[:, -1])
-        Bmatrix = Bmatrix.T
+        # Stack B and D matrix together for easy calculation
+        BDmatrix = np.hstack((self.Dmatrix[:, np.newaxis], self.Bmatrix))
 
         # Initialize reward sum, state list, action list, and epoch counter
         self.rewardsum = 0
@@ -201,8 +184,8 @@ class BuildingEnv(gym.Env):
         self.X_new = self.target
 
         # Compute the discrete-time system matrices
-        self.A_d = expm(Amatrix * self.timestep)
-        self.B_d = LA.inv(Amatrix) @ (self.A_d - np.eye(self.A_d.shape[0])) @ Bmatrix
+        self.A_d = expm(self.Amatrix * self.timestep)
+        self.BD_d = LA.inv(self.Amatrix) @ (self.A_d - np.eye(self.A_d.shape[0])) @ BDmatrix
 
         # Define environment spec
         self.spec = EnvSpec(
