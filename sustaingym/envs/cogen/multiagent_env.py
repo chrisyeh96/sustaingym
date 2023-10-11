@@ -14,7 +14,7 @@ from .env import CogenEnv
 
 
 class MultiAgentCogenEnv(ParallelEnv):
-    """Multi-agent version of CogenEnv following the PettingZoo API (v1.22.3).
+    """Multi-agent version of CogenEnv following the PettingZoo API (v1.24.1).
     """
 
     # PettingZoo API
@@ -28,6 +28,8 @@ class MultiAgentCogenEnv(ParallelEnv):
                  forecast_horizon: int = 12,
                  forecast_noise_std: float = 0.1,
                  ):
+        super().__init__()
+
         self.single_env = CogenEnv(
             renewables_magnitude=renewables_magnitude,
             ramp_penalty=ramp_penalty,
@@ -61,11 +63,13 @@ class MultiAgentCogenEnv(ParallelEnv):
             for agent, action_keys in self.agents_to_action_keys.items()
         }
 
-        super().__init__()
-
-    def step(self, action: dict[str, dict[str, np.ndarray]]) -> tuple[
-            dict[str, np.ndarray], dict[str, float], dict[str, bool],
-            dict[str, bool], dict[str, dict[str, Any]]]:
+    def step(self, actions: dict[str, dict[str, np.ndarray]]
+             ) -> tuple[
+                dict[str, np.ndarray],
+                dict[str, float],
+                dict[str, bool],
+                dict[str, bool],
+                dict[str, dict[str, Any]]]:
         """Run one timestep of the Cogen environment's dynamics.
 
         Args:
@@ -78,12 +82,12 @@ class MultiAgentCogenEnv(ParallelEnv):
             truncateds: dict mapping agent_id to truncated
             infos: dict mapping agent_id to info
         """
-        actions = {}
+        action = {}
         for agent in self.agents:
-            actions |= action[agent]
+            action |= actions[agent]
 
         # Use internal single-agent environment
-        obs, _, terminated, truncated, info = self.single_env.step(actions)
+        obs, _, terminated, truncated, info = self.single_env.step(action)
         flat_obs = spaces.flatten(self.single_env.observation_space, obs)
 
         obss, rewards, terminateds, truncateds, infos = {}, {}, {}, {}, {}
@@ -108,11 +112,8 @@ class MultiAgentCogenEnv(ParallelEnv):
 
     # TODO: once we update to a newer version of PettingZoo (>=1.23), the
     # reset() function definition may need to change
-    def reset(self, *,
-              seed: int | None = None,
-              return_info: bool = False,
-              options: dict | None = None
-              ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
+    def reset(self, seed: int | None = None, options: dict | None = None
+              ) -> tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
         """Resets the environment."""
         obs, info = self.single_env.reset(seed=seed, options=options)
         flat_obs = spaces.flatten(self.single_env.observation_space, obs)
@@ -120,16 +121,7 @@ class MultiAgentCogenEnv(ParallelEnv):
         self.agents = self.possible_agents[:]
         obss = {agent: flat_obs for agent in self.agents}
         infos = {agent: info for agent in self.agents}
-
-        if return_info:
-            return obss, infos
-        else:
-            return obss
-
-    # TODO: once we update to a newer version of PettingZoo (>=1.23), the
-    # seed() function should be removed
-    def seed(self, seed: int | None = None) -> None:
-        self.reset(seed=seed)
+        return obss, infos
 
     def render(self) -> None:
         """Render environment."""
@@ -175,7 +167,7 @@ class MultiAgentRLLibCogenEnv(MultiAgentCogenEnv, MultiAgentEnv):
               options: dict | None = None
               ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
         """Resets the environment."""
-        return super().reset(seed=seed, return_info=True, options=options)
+        return super().reset(seed=seed, options=options)
 
     def step(self, action_dict: dict[str, dict[str, np.ndarray]]) -> tuple[
             dict[str, np.ndarray], dict[str, float], dict[str, bool],

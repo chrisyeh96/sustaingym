@@ -43,6 +43,8 @@ class MultiAgentBuildingEnv(ParallelEnv):
     # metadata = {}
 
     def __init__(self, parameters: dict[str, Any]) -> None:
+        super().__init__()
+
         # Create internal single-agent environment
         self.single_env = BuildingEnv(parameters)
 

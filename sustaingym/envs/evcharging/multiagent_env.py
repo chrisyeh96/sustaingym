@@ -21,6 +21,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
     Each charging station is modeled as an independent agent with a single
     action of the pilot signal to supply.
 
+    This environment's API is known to be compatible with PettingZoo v1.24.1
+
     Observations for each agent are flattened.
 
     Attributes:
@@ -45,6 +47,8 @@ class MultiAgentEVChargingEnv(ParallelEnv):
                  project_action_in_env: bool = True,
                  discrete: bool = False,
                  verbose: int = 0):
+        super().__init__()
+
         self.periods_delay = periods_delay
 
         # Create internal single-agent environment
@@ -131,7 +135,7 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             infos[agent] = infos_agg
         return infos
 
-    def step(self, action: dict[str, np.ndarray]) -> tuple[
+    def step(self, actions: dict[str, np.ndarray]) -> tuple[
             dict[str, np.ndarray], dict[str, float], dict[str, bool],
             dict[str, bool], dict[str, dict[str, Any]]]:
         """
@@ -143,12 +147,12 @@ class MultiAgentEVChargingEnv(ParallelEnv):
             infos: dict mapping agent_id to info
         """
         # Build action
-        actions = np.zeros(self.num_agents, dtype=np.float32)
+        action = np.zeros(self.num_agents, dtype=np.float32)
         for i, agent in enumerate(self.agents):
-            actions[i] = action[agent]
+            action[i] = actions[agent]
 
         # Use internal single-agent environment
-        obs, reward, terminated, truncated, info = self.single_env.step(actions)
+        obs, reward, terminated, truncated, info = self.single_env.step(action)
 
         obss = self._create_dict_from_obs_agg(obs)
         rewards, terminateds, truncateds, infos = {}, {}, {}, {}
@@ -164,27 +168,14 @@ class MultiAgentEVChargingEnv(ParallelEnv):
 
         return obss, rewards, terminateds, truncateds, infos
 
-    # TODO: once we update to a newer version of PettingZoo (>=1.23), the
-    # reset() function definition may need to change
-    def reset(self, *,
-              seed: int | None = None,
-              return_info: bool = False,
-              options: dict | None = None
-              ) -> dict[str, np.ndarray]:
+    def reset(self, seed: int | None = None, options: dict | None = None
+              ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
         """Resets the environment."""
         obs_agg, info_agg = self.single_env.reset(seed=seed, options=options)
         self.agents = self.possible_agents[:]
-        obs = self._create_dict_from_obs_agg(obs_agg, init=True)
-
-        if return_info:
-            return obs, self._create_dict_from_infos_agg(info_agg)
-        else:
-            return obs
-
-    # TODO: once we update to a newer version of PettingZoo (>=1.23), the
-    # seed() function should be removed
-    def seed(self, seed: int | None = None) -> None:
-        self.reset(seed=seed)
+        obss = self._create_dict_from_obs_agg(obs_agg, init=True)
+        infos = self._create_dict_from_infos_agg(info_agg)
+        return obss, infos
 
     def render(self) -> None:
         """Render environment."""
