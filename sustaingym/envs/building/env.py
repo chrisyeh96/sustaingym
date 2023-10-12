@@ -156,13 +156,13 @@ class BuildingEnv(gym.Env):
             np.ones(self.n + 1) * min_T,  # temp of zones and outdoor
             [0],                          # GHI
             [min_T],                      # temp of ground
-            -min_T * self.OCCU_COEF_LINEAR / 1000  # occupancy power
+            [-min_T * self.OCCU_COEF_LINEAR / 1000]  # occupancy power
         ]).astype(np.float32)
         self.high = np.concatenate([
             np.ones(self.n + 1) * max_T,  # temp of zones and outdoor
-            heat_max,                     # GHI
+            [heat_max],                     # GHI
             [max_T],                      # temp of ground
-            heat_max                      # occupancy power
+            [heat_max]                      # occupancy power
         ]).astype(np.float32)
         self.observation_space = gym.spaces.Box(self.low, self.high, dtype=np.float32)
 
@@ -282,9 +282,9 @@ class BuildingEnv(gym.Env):
         self.state = np.concatenate([
             X_new,
             [self.out_temp[self.epoch]],
-            self.ghi[self.epoch],
+            [self.ghi[self.epoch]],
             [self.ground_temp[self.epoch]],
-            self.Occupower / 1000
+            [self.Occupower / 1000]
         ]).astype(np.float32)
 
         # Store the action in the actionlist
@@ -351,9 +351,9 @@ class BuildingEnv(gym.Env):
         self.state = np.concatenate([
             T_initial,
             [self.out_temp[self.epoch]],
-            self.ghi[self.epoch],
+            [self.ghi[self.epoch]],
             [self.ground_temp[self.epoch]],
-            self.Occupower / 1000
+            [self.Occupower / 1000]
         ]).astype(np.float32)
 
         # Initialize the rewards

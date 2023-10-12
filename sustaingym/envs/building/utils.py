@@ -560,8 +560,7 @@ def ParameterGenerator(
 
     # Define constants and calculate SHGC
     SpecificHeat_avg = 1000  # specific heat of indoor air, in J/kg-K
-    SHGC = shgc * shgc_weight * (max(weather_df["ghi"]) / (abs(weather_metadata["TZ"]) / 60))
-
+    SHGC = shgc * shgc_weight * (max(weather_df["ghi"]) / (1 / 3600 * time_res))# GHI change from Wh to W
     # Find neighboring rooms, resistance and capacitance tables, and window properties
     neighbors, Rtable, Ctable, Windowtable = Nfind_neighbor(
         n, layers, U_Wall, SpecificHeat_avg
@@ -616,8 +615,8 @@ def ParameterGenerator(
     parameters['ground_temp'] = all_ground_temp
     parameters['ghi'] = (
         solardatanew
-        / (abs(weather_metadata['TZ']) / 60)
-        / (max(weather_df['ghi']) / (abs(weather_metadata['TZ']) / 60))
+        / (1 / 3600 * time_res)
+        / (max(weather_df['ghi']) / (1 / 3600 * time_res))
     )
     parameters['occupancy'] = activity_sch * np.ones(len(outtempdatanew))
     parameters['gamma'] = reward_gamma
