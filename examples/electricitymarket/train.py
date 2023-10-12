@@ -42,7 +42,7 @@ from stable_baselines3.common.callbacks import (
     BaseCallback, CheckpointCallback, EvalCallback, StopTrainingOnNoModelImprovement)
 
 from sustaingym.envs import ElectricityMarketEnv
-from sustaingym.envs.electricitymarket.wrapped import DiscreteActions
+from sustaingym.envs.electricitymarket.wrappers import DiscreteActions
 from utils import SaveActionsExperienced
 
 

@@ -23,7 +23,7 @@ def run_offline_optimal(seeds: Sequence[int], env: gym.Env
     """
     num_episodes = len(seeds)
     all_results = {
-        k: np.zeros((num_episodes, env.MAX_STEPS_PER_EPISODE))
+        k: np.zeros((num_episodes, env.T))
         for k in ['rewards', 'prices', 'net_prices', 'energy', 'dispatch']
     }
 
@@ -36,7 +36,7 @@ def run_offline_optimal(seeds: Sequence[int], env: gym.Env
         all_results['prices'][i] = ep_prices
 
         print("calculating optimal...")
-        ep_results = env._calculate_price_taking_optimal(
+        ep_results = env.calculate_price_taking_optimal(
             prices=ep_prices, init_charge=half, final_charge=half)
         
         print("total episode reward: ", np.sum(ep_results['rewards']))
@@ -69,9 +69,9 @@ def run_follow_offline_optimal(
     assert opt_dispatches.shape[0] == num_eps
     assert opt_energies.shape[0] == num_eps
 
-    rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
-    energy = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
-    prices = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    rewards = np.zeros((num_eps, env.T))
+    energy = np.zeros((num_eps, env.T))
+    prices = np.zeros((num_eps, env.T))
 
     max_price = env.action_space.high[0]
     charge_action = (max_price, max_price)
@@ -121,9 +121,9 @@ def congested_run_follow_offline_optimal(
     assert opt_dispatches.shape[0] == num_eps
     assert opt_energies.shape[0] == num_eps
 
-    rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
-    energy = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
-    prices = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    rewards = np.zeros((num_eps, env.T))
+    energy = np.zeros((num_eps, env.T))
+    prices = np.zeros((num_eps, env.T))
 
     max_price = env.action_space.high[0][0, 0]
 
@@ -161,7 +161,7 @@ def congested_run_follow_offline_optimal(
     }
 
 def run_mpc(seeds: Sequence[int], env: gym.Env
-                        ) -> dict[str, np.ndarray]:
+            ) -> dict[str, np.ndarray]:
     """Get model predictive control reward for a number of episodes.
 
     Args:
@@ -175,7 +175,7 @@ def run_mpc(seeds: Sequence[int], env: gym.Env
 
     num_episodes = len(seeds)
     all_results = {
-        k: np.zeros((num_episodes, env.MAX_STEPS_PER_EPISODE))
+        k: np.zeros((num_episodes, env.T))
         for k in ['rewards', 'prices', 'net_prices', 'energy', 'dispatch']
     }
 
@@ -183,25 +183,25 @@ def run_mpc(seeds: Sequence[int], env: gym.Env
         print("seed number: ", i)
         env.reset(seed=seed)
         curr_charge = env.battery_charge[-1]
-        ep_rewards = np.zeros(env.MAX_STEPS_PER_EPISODE)
-        ep_prices = np.zeros(env.MAX_STEPS_PER_EPISODE)
-        ep_net_prices = np.zeros(env.MAX_STEPS_PER_EPISODE)
-        ep_energy = np.zeros(env.MAX_STEPS_PER_EPISODE)
-        ep_dispatch = np.zeros(env.MAX_STEPS_PER_EPISODE)
+        ep_rewards = np.zeros(env.T)
+        ep_prices = np.zeros(env.T)
+        ep_net_prices = np.zeros(env.T)
+        ep_energy = np.zeros(env.T)
+        ep_dispatch = np.zeros(env.T)
 
-        for count in tqdm(range(env.MAX_STEPS_PER_EPISODE)):
+        for t in tqdm(range(env.T)):
             # print("calculating baseline no agent prices...")
             lookahead_prices = env._calculate_lookahead_prices_without_agent(count)
             ep_prices[i] = lookahead_prices[0]
 
             # print("calculating MPC optimal...")
             ep_results = env._calculate_price_taking_optimal(
-                prices=lookahead_prices, init_charge=curr_charge, final_charge=0, steps=env.load_forecast_steps+1, count=count)
+                prices=lookahead_prices, init_charge=curr_charge, final_charge=0, steps=env.load_forecast_steps+1, t=t)
             
-            ep_rewards[count] = ep_results['rewards'][0]
-            ep_net_prices[count] = ep_results['net_prices'][0]
-            ep_energy[count] = ep_results['energy'][0]
-            ep_dispatch[count] = ep_results['dispatch'][0]
+            ep_rewards[t] = ep_results['rewards'][0]
+            ep_net_prices[t] = ep_results['net_prices'][0]
+            ep_energy[t] = ep_results['energy'][0]
+            ep_dispatch[t] = ep_results['dispatch'][0]
 
             # update battery charge
             curr_charge = ep_results['energy'][0]
@@ -210,14 +210,14 @@ def run_mpc(seeds: Sequence[int], env: gym.Env
 
 def run_random(seeds: Sequence[int], env: gym.Env, discrete: bool) -> dict[str, np.ndarray]:
     num_eps = len(seeds)
-    rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
-    energy = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
-    prices = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    rewards = np.zeros((num_eps, env.T))
+    energy = np.zeros((num_eps, env.T))
+    prices = np.zeros((num_eps, env.T))
 
     if discrete:
-        actions = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE), dtype=np.int32)
+        actions = np.zeros((num_eps, env.T), dtype=np.int32)
     else:
-        actions = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE, 2))
+        actions = np.zeros((num_eps, env.T, 2))
 
     for ep, seed in tqdm(enumerate(seeds)):
         print("ep: ", ep)
@@ -225,7 +225,7 @@ def run_random(seeds: Sequence[int], env: gym.Env, discrete: bool) -> dict[str, 
         prices[ep, 0] = obs['price previous'][0]
         energy[ep, 0] = obs['energy'][0]
         np.random.seed(seed)
-        for i in range(1, env.MAX_STEPS_PER_EPISODE):
+        for i in range(1, env.T):
             action = np.random.uniform(low=-env.max_cost, high=env.max_cost, size=env.action_space.shape)
             obs, reward, _, _, _ = env.step(action)
             # print("random reward: ", reward)
@@ -267,22 +267,22 @@ def run_model(
             'actions' has shape [episodes, num_steps, 2], type float64
     """
     num_eps = len(seeds)
-    rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
-    energies = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
-    prices = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
-    carbon_rewards = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE))
+    rewards = np.zeros((num_eps, env.T))
+    energies = np.zeros((num_eps, env.T))
+    prices = np.zeros((num_eps, env.T))
+    carbon_rewards = np.zeros((num_eps, env.T))
 
     if discrete:
-        actions = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE), dtype=np.int32)
+        actions = np.zeros((num_eps, env.T), dtype=np.int32)
     else:
-        actions = np.zeros((num_eps, env.MAX_STEPS_PER_EPISODE, 2))
+        actions = np.zeros((num_eps, env.T, 2))
 
     for ep, seed in enumerate(tqdm(seeds)):
         obs = env.reset(seed=seed)
         energies[ep, 0] = env.battery_charge[-1]
         prices[ep, 0] = obs['price previous'][0]
 
-        for step in range(1, env.MAX_STEPS_PER_EPISODE):
+        for step in range(1, env.T):
             action, _ = model.predict(obs)
             if discrete:
                 action = action.item()
