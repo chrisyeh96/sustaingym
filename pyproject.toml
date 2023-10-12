@@ -50,12 +50,6 @@ building = [
     "scikit-learn>=1.1.1",      # semver
     "scipy>=1.0"
 ]
-building = [
-    "cvxpy>=1.3, <2",           # semver
-    "pvlib>=0.10",
-    "scikit-learn>=1.1.1",      # semver
-    "scipy>=1.0"
-]
 
 [project.urls]
 Homepage = "https://chrisyeh96.github.io/sustaingym/"
