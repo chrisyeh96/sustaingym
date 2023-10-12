@@ -38,70 +38,81 @@ from scipy import interpolate
 from sustaingym.data.utils import read_to_stringio
 
 
+class Ufactor(NamedTuple):
+    """Thermal transmittance (in W/m2-K) of different surfaces in a building"""
+    intwall: float      # 0
+    floor: float        # 1
+    outwall: float      # 2
+    roof: float         # 3
+    ceiling: float      # 4
+    groundfloor: float  # 5
+    window: float       # 6
+
+
 BUILDINGS = {
     "ApartmentHighRise": (
         "ASHRAE901_ApartmentHighRise_STD2019_Tucson.table.htm",
-        [6.299, 3.285, 0.384, 0.228, 3.839, 0.287, 2.786],
+        Ufactor(6.299, 3.285, 0.384, 0.228, 3.839, 0.287, 2.786),
     ),
     "ApartmentMidRise": (
         "ASHRAE901_ApartmentMidRise_STD2019_Tucson.table.htm",
-        [6.299, 3.285, 0.384, 0.228, 3.839, 0.287, 2.786],
+        Ufactor(6.299, 3.285, 0.384, 0.228, 3.839, 0.287, 2.786),
     ),
     "Hospital": (
         "ASHRAE901_Hospital_STD2019_Tucson.table.htm",
-        [6.299, 3.839, 0.984, 0.228, 3.839, 3.285, 2.615],
+        Ufactor(6.299, 3.839, 0.984, 0.228, 3.839, 3.285, 2.615),
     ),
     "HotelLarge": (
         "ASHRAE901_HotelLarge_STD2019_Tucson.table.htm",
-        [6.299, 0.228, 0.984, 0.228, 0.228, 2.705, 2.615],
+        Ufactor(6.299, 0.228, 0.984, 0.228, 0.228, 2.705, 2.615),
     ),
     "HotelSmall": (
         "ASHRAE901_HotelSmall_STD2019_Tucson.table.htm",
-        [6.299, 3.839, 0.514, 0.228, 3.839, 0.1573, 2.615],
+        Ufactor(6.299, 3.839, 0.514, 0.228, 3.839, 0.1573, 2.615),
     ),
     "OfficeLarge": (
         "ASHRAE901_OfficeLarge_STD2019_Tucson.table.htm",
-        [6.299, 3.839, 0.984, 0.228, 4.488, 3.839, 2.615],
+        Ufactor(6.299, 3.839, 0.984, 0.228, 4.488, 3.839, 2.615),
     ),
     "OfficeMedium": (
         "ASHRAE901_OfficeMedium_STD2019_Tucson.table.htm",
-        [6.299, 3.839, 0.514, 0.228, 4.488, 0.319, 2.615],
+        Ufactor(6.299, 3.839, 0.514, 0.228, 4.488, 0.319, 2.615),
     ),
     "OfficeSmall": (
         "ASHRAE901_OfficeSmall_STD2019_Tucson.table.htm",
-        [6.299, 3.839, 0.514, 0.228, 4.488, 0.319, 2.615],
+        Ufactor(6.299, 3.839, 0.514, 0.228, 4.488, 0.319, 2.615),
     ),
     "OutPatientHealthCare": (
         "ASHRAE901_OutPatientHealthCare_STD2019_Tucson.table.htm",
-        [6.299, 3.839, 0.514, 0.228, 3.839, 0.5650e-02, 2.615],
+        Ufactor(6.299, 3.839, 0.514, 0.228, 3.839, 0.5650e-02, 2.615),
     ),
     "RestaurantFastFood": (
         "ASHRAE901_RestaurantFastFood_STD2019_Tucson.table.htm",
-        [6.299, 0.158, 0.547, 4.706, 0.158, 0.350, 2.557],
+        Ufactor(6.299, 0.158, 0.547, 4.706, 0.158, 0.350, 2.557),
     ),
     "RestaurantSitDown": (
         "ASHRAE901_RestaurantSitDown_STD2019_Tucson.table.htm",
-        [6.299, 0.158, 0.514, 4.706, 0.158, 0.194, 2.557],
+        Ufactor(6.299, 0.158, 0.514, 4.706, 0.158, 0.194, 2.557),
     ),
     "RetailStandalone": (
         "ASHRAE901_RetailStandalone_STD2019_Tucson.table.htm",
-        [6.299, 0.047, 0.984, 0.228, 0.228, 0.047, 3.695],
+        Ufactor(6.299, 0.047, 0.984, 0.228, 0.228, 0.047, 3.695),
     ),
     "RetailStripmall": (
         "ASHRAE901_RetailStripmall_STD2019_Tucson.table.htm",
-        [6.299, 0.1125, 0.514, 0.228, 0.228, 0.1125, 3.695],
+        Ufactor(6.299, 0.1125, 0.514, 0.228, 0.228, 0.1125, 3.695),
     ),
     "SchoolPrimary": (
         "ASHRAE901_SchoolPrimary_STD2019_Tucson.table.htm",
-        [6.299, 0.144, 0.514, 0.228, 0.228, 0.144, 2.672],
+        Ufactor(6.299, 0.144, 0.514, 0.228, 0.228, 0.144, 2.672),
     ),
     "SchoolSecondary": (
         "ASHRAE901_SchoolSecondary_STD2019_Tucson.table.htm",
-        [6.299, 3.839, 0.514, 0.228, 3.839, 0.144, 2.672],
+        Ufactor(6.299, 3.839, 0.514, 0.228, 3.839, 0.144, 2.672),
     ),
     "Warehouse": (
         "ASHRAE901_Warehouse_STD2019_Tucson.table.htm",
-        [0.774, 0.1926, 1.044, 0.5892, 10.06, 0.1926, 2.557],
+        Ufactor(0.774, 0.1926, 1.044, 0.5892, 10.06, 0.1926, 2.557),
     ),
 }
 
@@ -306,7 +317,7 @@ def checkconnect_layer(z1: Zone, z2: Zone) -> bool:
 def Nfind_neighbor(
     n: int,
     layers: Sequence[Sequence[Zone]],
-    U_Wall: Sequence[float],
+    ufactor: Ufactor,
     SpecificHeat_avg: float,
 ) -> tuple[dict[str, list[int]], np.ndarray, np.ndarray, np.ndarray]:
     """
@@ -315,13 +326,13 @@ def Nfind_neighbor(
     Args:
         n: number of rooms
         layers: sorted layer list
-        U_Wall: list of 7 U-values (thermal transmittance) for different
+        ufactor: list of 7 U-values (thermal transmittance) for different
             surfaces in the building in the order
             [intwall, floor, outwall, roof, ceiling, groundfloor, window].
         SpecificHeat_avg: specific heat of air (in J/kg-K)
 
     Returns:
-        dicRoom: maps zone name to a list of neighboring zone indices
+        neighbors: maps zone name to a list of neighboring zone indices
         Rtable: shape [n, n+1], thermal conductance between rooms (in W/K)
         Ctable: shape [n], heat capacity of each zone (in J/K)
         Windowtable: shape [n], exterior window area of each zone (in m^2)
@@ -331,14 +342,11 @@ def Nfind_neighbor(
     Ctable = np.zeros(n)
     Windowtable = np.zeros(n)
 
-    # Unpack U_Wall values
-    Walltype, Floor, OutWall, OutRoof, Ceiling, _, Window = U_Wall
-
     # Set air density value
     Air = 1.225  # kg/m^3
 
     # Initialize the dictionary for room neighbors
-    dicRoom = defaultdict[str, list[int]](list)
+    neighbors = defaultdict[str, list[int]](list)
     outind = n
 
     # Iterate through each layer in layers
@@ -358,18 +366,16 @@ def Nfind_neighbor(
                         crossarea = x_overlap * y_overlap
 
                         # Calculate heat transfer coefficient (U) for connected zones
-                        # TODO: is this correct?
-                        # - Is this assuming parallel thermal resistance?
-                        # - Is this thermal resistance or thermal conductance?
-                        U = crossarea * (Floor * Ceiling / (Floor + Ceiling))
+                        # - floor and ceiling are in series
+                        U = crossarea * (ufactor.floor * ufactor.ceiling / (ufactor.floor + ufactor.ceiling))
 
                         # Update Rtable for connected zones
                         Rtable[z2.ind, z1.ind] = U
                         Rtable[z1.ind, z2.ind] = U
 
                         # Update the dictionary with connected zones
-                        dicRoom[z1.name].append(z2.ind)
-                        dicRoom[z2.name].append(z1.ind)
+                        neighbors[z1.name].append(z2.ind)
+                        neighbors[z2.name].append(z1.ind)
 
         # Calculate heat capacity (C) and window area for each zone in current layer
         for i, z1 in enumerate(layer):
@@ -388,19 +394,19 @@ def Nfind_neighbor(
             if z1.ExteriorGrossArea > 0 or (i == len(layer) - 1):
                 if i == len(layer) - 1:
                     Rtable[z1.ind, -1] = (
-                        z1.ExteriorGrossArea * OutWall
-                        + xleng * yleng * OutRoof
-                        + z1.ExteriorWindowArea * Window
+                        z1.ExteriorGrossArea * ufactor.outwall
+                        + xleng * yleng * ufactor.roof
+                        + z1.ExteriorWindowArea * ufactor.window
                     )
 
                 else:
                     Rtable[z1.ind, -1] = (
-                        z1.ExteriorGrossArea * OutWall
-                        + z1.ExteriorWindowArea * Window
+                        z1.ExteriorGrossArea * ufactor.outwall
+                        + z1.ExteriorWindowArea * ufactor.window
                     )
 
                 # Update the dictionary
-                dicRoom[z1.name].append(outind)
+                neighbors[z1.name].append(outind)
 
             # Check for neighbors within the same layer
             for j in range(i + 1, FloorRoom_num):
@@ -414,24 +420,24 @@ def Nfind_neighbor(
                     length = np.sqrt(x_overlap**2 + y_overlap**2)
 
                     # Calculate heat transfer coefficient (U) for connected zones
-                    U = height * length * Walltype
+                    U = height * length * ufactor.intwall
 
                     # Update Rtable for connected zones
                     Rtable[z2.ind, z1.ind] = U
                     Rtable[z1.ind, z2.ind] = U
 
                     # Update the dictionary with connected zones
-                    dicRoom[z1.name].append(z2.ind)
-                    dicRoom[z2.name].append(z1.ind)
+                    neighbors[z1.name].append(z2.ind)
+                    neighbors[z2.name].append(z1.ind)
 
-    return dicRoom, Rtable, Ctable, Windowtable
+    return neighbors, Rtable, Ctable, Windowtable
 
 
 def ParameterGenerator(
     building: str,
     weather: str,
     location: str,
-    U_Wall: Sequence[float] = (0,) * 7,
+    U_Wall: Ufactor = (0,) * 7,
     ground_temp: Sequence[float] = (0,) * 12,
     shgc: float = 0.252,
     shgc_weight: float = 0.01,
@@ -464,7 +470,7 @@ def ParameterGenerator(
         shgc_weight: Weight factor for extra loss of solar irradiance (ghi)
         ground_weight: Weight factor for extra loss of heat from ground
         full_occ: max number of people that can occupy each room, either an
-            array of shape (n, 1) specifying maximum for each room, or a scalar
+            array of shape (n,) specifying maximum for each room, or a scalar
             maximum that applies to all rooms
         max_power: max power output of a single HVAC unit (in W)
         ac_map: binary indicator of presence (1) or absence (0) of AC, either a
@@ -557,7 +563,7 @@ def ParameterGenerator(
     SHGC = shgc * shgc_weight * (max(weather_df["ghi"]) / (abs(weather_metadata["TZ"]) / 60))
 
     # Find neighboring rooms, resistance and capacitance tables, and window properties
-    dicRoom, Rtable, Ctable, Windowtable = Nfind_neighbor(
+    neighbors, Rtable, Ctable, Windowtable = Nfind_neighbor(
         n, layers, U_Wall, SpecificHeat_avg
     )
     RCtable = Rtable / np.array([Ctable]).T
@@ -565,38 +571,41 @@ def ParameterGenerator(
     # Initialize binary connectivity matrix
     connectmap = np.zeros((n, n + 1))
     for i, zone in enumerate(all_zones):
-        for number in dicRoom[zone.name]:
-            connectmap[i, number] = 1
+        connectmap[i, neighbors[zone.name]] = 1
 
     # calculate thermal conductance between each zone and the ground (in W/K)
     # the first layer connects to the ground
     ground_connectlist = np.zeros((n, 1))
     for room in layers[0]:
         ground_connectlist[room.ind] = (
-            room.FloorArea * U_Wall[5] * ground_weight
+            room.FloorArea * U_Wall.groundfloor * ground_weight
         )  # for those rooms, assign 1/R table by floor area and u factor
 
     # Calculate occupancy, AC weight, weighted connection map, and non-linear term
-    people_full = np.zeros((n, 1)) + np.array([full_occ]).T
-    ACweight = np.diag(np.zeros(n) + ac_map) * max_power
+    people_full = (np.zeros(n) + full_occ).reshape(n, 1)  # shape [n, 1]
+    ACweight = np.diag(np.zeros(n) + ac_map) * max_power  # shape [n, n]
     weightcmap = (
         np.concatenate(
             (
                 people_full,
                 ground_connectlist,
-                np.zeros((n, 1)),
+                np.zeros((n, 1)),  # this gets filled in in construct_BD_matrix
                 ACweight,
-                np.array([Windowtable * SHGC]).T,
+                (Windowtable * SHGC).reshape(n, 1),
             ),
             axis=-1,
         )
-        / np.array([Ctable]).T
+        / Ctable[:, None]
     )
 
     # Construct A,B,and D matrix
-    OCCU_COEF9 = 7.139322
-    Amatrix = construct_A_matrix(RCtable, weightcmap, connectmap, OCCU_COEF9, n)
-    Bmatrix,Dmatrix = construct_BD_matrix(weightcmap, connectmap, RCtable)
+    # - the occupancy coefficient comes from page 1299 of
+    #   https://energyplus.net/assets/nrel_custom/pdfs/pdfs_v23.1.0/EngineeringReference.pdf.
+    #   This is the only term that is linear (in temperature). It corresponds
+    #   to the coefficient c4 in the BEAR paper (Zhang et al., 2023)
+    OCCU_COEF = 7.139322  # in units (W/C)
+    A = construct_A_matrix(RCtable, weightcmap, connectmap, OCCU_COEF, n)
+    B, D = construct_BD_matrix(weightcmap, connectmap, RCtable)
 
     # Store parameters in a dictionary for the simulation
     parameters: dict[str, Any] = {}
@@ -617,81 +626,81 @@ def ParameterGenerator(
     parameters['temp_range'] = temp_range
     parameters['is_continuous_action'] = is_continuous_action
     parameters['time_resolution'] = time_res
-    parameters["Amatrix"] = Amatrix
-    parameters["Bmatrix"] = Bmatrix
-    parameters["Dmatrix"] = Dmatrix
+    parameters['A'] = A
+    parameters['B'] = B
+    parameters['D'] = D
     return parameters
+
+
 def construct_A_matrix(
-    RCtable: np.ndarray, 
-    weightcmap: np.ndarray, 
-    connectmap: np.ndarray, 
-    OCCU_COEF9: float, 
+    RCtable: np.ndarray,
+    weightcmap: np.ndarray,
+    connectmap: np.ndarray,
+    occu_coef: float,
     n: int
 ) -> np.ndarray:
     """
     Constructs the A matrix for the building environment.
-    
+
     Args:
-        RCtable (np.ndarray): A matrix of shape (n, n+1) representing 1/resistance-capacitance values for each room.
+        RCtable: shape (n, n+1), represents 1/resistance-capacitance values for each room.
             The last column represents the connection to the outside.
-        
-        weightcmap (np.ndarray): A matrix of shape (n, n+4) representing weighted connections for each room.
+        weightcmap: shape (n, n+4), represents weighted connections for each room.
             Columns represent [people, ground, outside, AC, window, solar gain].
-        
-        connectmap (np.ndarray): A matrix of shape (n, n+1) representing connectivity between rooms.
-            A value of 1 indicates a connection, 0 indicates no connection. The last column represents the connection to the outside.
-        
-        OCCU_COEF9 (float): Occupancy linear coefficient. Represents the effect of occupancy on the room's temperature.
-        
+        connectmap: shape (n, n+1), represents connectivity between rooms.
+            A value of 1 indicates a connection, 0 indicates no connection. The last
+            column represents the connection to the outside.
+        occu_coef: Occupancy linear coefficient. Represents the effect of occupancy
+            on the room's temperature.
         n (int): Number of rooms or zones in the building.
-    
+
     Returns:
-        np.ndarray: The constructed A matrix of shape (n, n).
+        A: shape (n, n)
     """
     # Calculate the diagonal values for the A matrix. The ground is also considered as a node.
-    ground=weightcmap.T[1]
-    diagvalue = (-RCtable) @ connectmap.T - np.array([ground]).T
+    ground = weightcmap[:, 1]
+    diagvalue = -np.diag(RCtable @ connectmap.T) - ground
 
     # Copy the 1/RC table excluding the last column, which is the connection map to outside.
-    Amatrix = RCtable[:, :-1].copy()
+    A = RCtable[:, :-1].copy()
 
     # Replace the diagonal of A with the calculated diagonal values
-    np.fill_diagonal(Amatrix, np.diag(diagvalue))
+    np.fill_diagonal(A, diagvalue)
 
     # Adjust the values of A based on numberofpeople/C(the first column in weightcmap) and n
-    Amatrix += weightcmap[:,0] * OCCU_COEF9 / n
-    return Amatrix
+    A += weightcmap[:, 0] * occu_coef / n
+    return A
+
 
 def construct_BD_matrix(
-    weightcmap: np.ndarray, 
-    connectmap: np.ndarray, 
+    weightcmap: np.ndarray,
+    connectmap: np.ndarray,
     RCtable: np.ndarray
-) -> np.ndarray:
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Constructs the B matrix for the building environment.
-    
+
     Args:
-        weightcmap (np.ndarray): A matrix of shape (n, n+4) representing weighted connections for each room.
-            Columns represent [people, ground, outside, AC, window, solar gain].
-        
-        connectmap (np.ndarray): A matrix of shape (n, n+1) representing connectivity between rooms.
-            A value of 1 indicates a connection, 0 indicates no connection. The last column represents the connection to the outside.
-        
-        RCtable (np.ndarray): A matrix of shape (n, n+1) representing resistance-capacitance values for each room.
+        weightcmap: shape (n, n+4), represents weighted connections for each room.
+            Columns represent [people, ground, outside, AC (n cols), solar gain].
+        connectmap: shape (n, n+1), represents connectivity between rooms.
+            A value of 1 indicates a connection, 0 indicates no connection. The last
+            column represents the connection to the outside.
+        RCtable: shape (n, n+1), represents resistance-capacitance values for each room.
             The last column represents the connection to the outside.
-    
+
     Returns:
-        np.ndarray: The constructed B matrix of shape (n, n+3).
-        np.ndarray: The constructed D matrix of shape (n, 1).
+        B: B matrix of shape (n, n+3)
+        D: D vector of shape (n,)
     """
     BD = weightcmap.copy()
 
-    # Fill in the outside column. Address the RC affect with outdoor temperature. 
-    connection_to_out=connectmap[:, -1]
-    RCout=RCtable[:, -1]
+    # Fill in the outside temperature column. Address the RC effect with outdoor temperature.
+    connection_to_out = connectmap[:, -1]
+    RCout = RCtable[:, -1]
     BD[:, 2] = connection_to_out * RCout
-    Bmatrix=BD[:,1:]
 
-    #Construct D matrix with first column of weightcmap, which is numberofpeople/C
-    Dmatrix=BD[:,0]
-    return Bmatrix,Dmatrix
+    # Construct D vector with first column of weightcmap, which is numberofpeople/C
+    B = BD[:, 1:]
+    D = BD[:, 0]
+    return B, D
