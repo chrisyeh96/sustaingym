@@ -4,7 +4,7 @@ Plotting helper functions
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from datetime import datetime, timedelta
@@ -41,14 +41,14 @@ def plot_model_training_reward_curves(
         timesteps, y, err = training_eval_results(paths[0], f"eval{in_dist_year}-05")
         evals_lst.append(y)
         err_lst.append(err)
-    
+
     min_len = len(timesteps)
 
     if "out_dist" in dists:
         timesteps, y, err = training_eval_results(paths[1], f"eval{in_dist_year}-05")
         evals_lst.append(y)
         err_lst.append(err)
-    
+
     if len(timesteps) < min_len:
         min_len = len(timesteps)
 
@@ -229,3 +229,139 @@ def plot_episode(axs: Mapping[str, plt.Axes],
     if bids is not None:
         axs['bids'].plot(times, bids[:,0], '.', markersize=2, label=f'{model_name}: buy price')
         axs['bids'].plot(times, bids[:,1], '.', markersize=2, label=f'{model_name}: sell price')
+
+
+class ElectricityMarketPlot:
+    """Plots data from an ElectricityMarketEnv episode.
+
+    Plots are, in order from top to bottom:
+        demand
+        price & carbon price
+        energy level
+        return (aka. cumulative reward, optional)
+        bids (optional)
+
+    Args:
+        d: desired day
+        soc_init: list of length N_B, initial soc of each battery
+        include_returns: whether to include returns plot
+        include_bids: whether to include a final row of bids
+    """
+    def __init__(self, d: date, soc_init: Sequence[float], include_returns: bool, include_bids: bool):
+        self.d = d
+        self.dt = datetime(d.year, d.month, d.day)
+        self.N_B = len(soc_init)
+
+        nrows = 3 + include_returns + include_bids
+        self.fig, axs = plt.subplots(nrows, 1, figsize=(6, 2 * nrows), sharex=True, tight_layout=True)
+        self.fig.suptitle(f'Episode: {d}')
+        axs[-1].set(xlabel='time')
+
+        self.axs = {
+            'demand': axs[0],
+            'moer': axs[0].twinx(),
+            'price': axs[1],
+            'soc': axs[2]
+        }
+        self.lines = {}
+
+        ax = self.axs['demand']
+        self.lines['demand: actual'], = ax.plot([], [], label='actual')
+        self.lines['demand: forecasted'], = ax.plot([], [], label='forecasted')
+        ax.set(ylabel='demand (MWh)')
+
+        ax = self.axs['moer']
+        self.lines['moer'], = ax.plot([], [], color='grey', label='MOER')
+        ax.set(ylabel='MOER (kg CO$_2$/kWh)')
+
+        lines = [self.lines[k] for k in ['demand: actual', 'demand: forecasted', 'moer']]
+        ax.legend(lines, [l.get_label() for l in lines])
+
+        ax = self.axs['price']
+        for i in range(self.N_B):
+            self.lines[f'price {i}'], = ax.plot([], [], label=f'{i}')
+        ax.set(ylabel='price ($)')
+        ax.legend(title='battery')
+
+        ax = self.axs['soc']
+        for i, _ in enumerate(soc_init):
+            self.lines[f'soc {i}'], = ax.plot([], [], label=f'{i}')
+        ax.set(ylabel='state of charge (MWh)')
+        ax.legend(title='battery')
+
+        if include_returns:
+            ax = axs[3]
+            self.axs['return'] = ax
+            self.lines['return'], = ax.plot([], [], label='return')
+            ax.set(ylabel='return ($)')
+
+            ax = axs[3].twinx()
+            self.axs['reward'] = ax
+            self.lines['reward'], = ax.plot([], [], 'C1', label='reward')
+            ax.set(ylabel='reward ($)')
+
+            lines = [self.lines[k] for k in ['return', 'reward']]
+            ax.legend(lines, [l.get_label() for l in lines])
+
+        if include_bids:
+            ax = axs[4]
+            self.axs['bids'] = ax
+            for i in range(self.N_B):
+                self.lines[f'bids: buy price {i}'], = ax.plot([], [], '.', markersize=2, label=f'buy price {i}')
+                self.lines[f'bids: sell price {i}'], = ax.plot([], [], '.', markersize=2, label=f'sell price {i}')
+            ax.set(ylabel='bid price ($/MWh)')
+            ax.legend()
+
+        fmt = mdates.DateFormatter('%H:%M')
+        loc = plticker.MultipleLocator(base=0.25)  # this locator puts ticks at regular intervals
+        for ax in axs:
+            ax.xaxis.set_major_formatter(fmt)
+            ax.xaxis.set_major_locator(loc)
+
+    def update(self,
+               demand: np.ndarray,
+               demand_forecast: np.ndarray,
+               moer: np.ndarray,
+               prices: np.ndarray,
+               soc: np.ndarray,
+               rewards: np.ndarray,
+               bids: np.ndarray) -> None:
+        """
+        Args
+        - demand: np.array, shape [T]
+        - demand_forecast: np.array, shape [T]
+        - moer: np.array, shape [T]
+        - prices: np.array, shape [T, N_B]
+        - soc: np.array, shape [T, N_B]
+        - rewards: np.array, shape [T-1]
+        - bids: np.array, shape [T-1, 2, N_B]
+        """
+        T = demand.shape[0]
+        assert demand_forecast.shape[0] == T
+        assert moer.shape[0] == T
+        assert prices.shape[0] == T
+        assert soc.shape[0] == T
+        assert rewards.shape[0] == T - 1
+        assert bids.shape[0] == T - 1
+
+        FIVEMIN = timedelta(minutes=5)
+        ts = pd.date_range(self.dt, periods=T, freq=FIVEMIN)
+
+        self.lines['demand: actual'].set_data(ts, demand)
+        self.lines['demand: forecasted'].set_data(ts, demand_forecast)
+        self.lines['moer'].set_data(ts, moer)
+        for i in range(self.N_B):
+            self.lines[f'price {i}'].set_data(ts, prices[:, i])
+            self.lines[f'soc {i}'].set_data(ts, soc[:, i])
+
+            if 'bids' in self.axs:
+                self.lines[f'bids: buy price {i}'].set_data(ts[1:], bids[:, 0, i])
+                self.lines[f'bids: sell price {i}'].set_data(ts[1:], bids[:, 1, i])
+
+        if 'return' in self.axs:
+            self.lines['reward'].set_data(ts[1:], rewards)
+            self.lines['return'].set_data(ts[1:], np.cumsum(rewards))
+
+        for _, ax in self.axs.items():
+            ax.relim()
+            ax.autoscale_view()
