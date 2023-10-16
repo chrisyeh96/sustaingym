@@ -618,7 +618,7 @@ def ParameterGenerator(
         / (1 / 3600 * time_res)
         / (max(weather_df['ghi']) / (1 / 3600 * time_res))
     )
-    parameters['occupancy'] = activity_sch * np.ones(len(outtempdatanew))
+    parameters['metabolism'] = activity_sch * np.ones(len(outtempdatanew))
     parameters['gamma'] = reward_gamma
     parameters['ac_map'] = np.zeros(n) + ac_map
     parameters['max_power'] = max_power

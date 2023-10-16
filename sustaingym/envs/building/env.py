@@ -59,7 +59,7 @@ class BuildingEnv(gym.Env):
             - 'ground_temp' (np.ndarray): shape (T,), ground temperature
             - 'ghi' (np.narray): shape (T,), global horizontal irradiance,
               normalized to [0, 1]
-            - 'occupancy' (np.ndarray): shape (T,), occupancy of the rooms (in W)
+            - 'metabolism' (np.ndarray): shape (T,), total metabolic rate of occupants (in W)
             - 'gamma' (tuple[float, float]): tuple of (energy penalty, temperature
               error penalty), for the reward function
             - 'ac_map' (np.ndarray): boolean array of shape (n,) specifying
@@ -125,7 +125,7 @@ class BuildingEnv(gym.Env):
         self.out_temp = parameters['out_temp']
         self.ground_temp = parameters['ground_temp']
         self.ghi = parameters['ghi']
-        self.occupancy = parameters['occupancy']
+        self.metabolism = parameters['metabolism']
         self.gamma = parameters['gamma']
         self.ac_map = parameters['ac_map']
         self.maxpower = parameters['max_power']
@@ -243,18 +243,18 @@ class BuildingEnv(gym.Env):
         ).T
         Y = np.insert(Y, 0, self.ground_temp[self.epoch]).T
         avg_temp = np.sum(self.state[:self.n]) / self.n
-        Meta = self.occupancy[self.epoch]
+        meta = self.metabolism[self.epoch]
 
         # If the environment is data-driven, add additional features to the Y matrix
         if self.datadriven:
-            Y = np.insert(Y, 0, Meta).T
-            Y = np.insert(Y, 0, Meta**2).T
+            Y = np.insert(Y, 0, meta).T
+            Y = np.insert(Y, 0, meta**2).T
             Y = np.insert(Y, 0, avg_temp).T
             Y = np.insert(Y, 0, avg_temp**2).T
         else:
             # Calculate Occupower based on the given formula
 
-            self.Occupower = self._calc_occupower(avg_temp, Meta)
+            self.Occupower = self._calc_occupower(avg_temp, meta)
 
             # Insert Occupower at the beginning of the Y matrix
             Y = np.insert(Y, 0, self.Occupower).T
@@ -341,10 +341,10 @@ class BuildingEnv(gym.Env):
         avg_temp = np.sum(T_initial) / self.n
 
         # Get the occupancy value for the current epoch
-        Meta = self.occupancy[self.epoch]
+        meta = self.metabolism[self.epoch]
 
         # Calculate the occupower based on occupancy and average temperature
-        self.Occupower = self._calc_occupower(avg_temp, Meta)
+        self.Occupower = self._calc_occupower(avg_temp, meta)
 
         # Construct the initial state by concatenating relevant variables
         self.X_new = T_initial
@@ -387,17 +387,30 @@ class BuildingEnv(gym.Env):
                 "reward_breakdown": self._reward_breakdown,
             }
 
-    def _calc_occupower(self, avg_temp: float, Meta: float) -> float:
-        return (
+    def _calc_occupower(self, temp: float, meta: float) -> float:
+        """Calculates occupancy sensible heat gain.
+
+        See page 1299 of
+        https://energyplus.net/assets/nrel_custom/pdfs/pdfs_v23.1.0/EngineeringReference.pdf
+        
+        Args:
+            temp: air temperature (in °C)
+            meta: metabolic rate (in W)
+
+        Returns:
+            heat: sensible heat gain (in W)
+        """
+        heat = (
             self.OCCU_COEF[0]
-            + self.OCCU_COEF[1] * Meta
-            + self.OCCU_COEF[2] * Meta**2
-            - self.OCCU_COEF[3] * avg_temp * Meta
-            + self.OCCU_COEF[4] * avg_temp * Meta**2
-            - self.OCCU_COEF[5] * avg_temp**2
-            + self.OCCU_COEF[6] * avg_temp**2 * Meta
-            - self.OCCU_COEF[7] * avg_temp**2 * Meta**2
+            + self.OCCU_COEF[1] * meta
+            + self.OCCU_COEF[2] * meta**2
+            - self.OCCU_COEF[3] * temp * meta
+            + self.OCCU_COEF[4] * temp * meta**2
+            - self.OCCU_COEF[5] * temp**2
+            + self.OCCU_COEF[6] * temp**2 * meta
+            - self.OCCU_COEF[7] * temp**2 * meta**2
         )
+        return heat
 
     def train(self, states: np.ndarray, actions: np.ndarray) -> None:
         """Trains the linear regression model using the given states and actions.
@@ -421,14 +434,14 @@ class BuildingEnv(gym.Env):
             ).T
             Y = np.insert(Y, 0, self.ground_temp[i]).T
             avg_temp = np.sum(X) / self.n
-            Meta = self.occupancy[i]
+            meta = self.metabolism[i]
 
             # Calculate the occupower based on occupancy and average temperature
-            self.Occupower = self._calc_occupower(avg_temp, Meta)
+            self.Occupower = self._calc_occupower(avg_temp, meta)
 
             # Add relevant variables to Y
-            Y = np.insert(Y, 0, Meta).T
-            Y = np.insert(Y, 0, Meta**2).T
+            Y = np.insert(Y, 0, meta).T
+            Y = np.insert(Y, 0, meta**2).T
             Y = np.insert(Y, 0, avg_temp).T
             Y = np.insert(Y, 0, avg_temp**2).T
 
