@@ -40,6 +40,27 @@ SustainGym is released under a [Creative Commons Attribution 4.0 International P
 
 Please cite SustainGym as
 
+> C. Yeh, V. Li, R. Datta, J. Arroyo, N. Christianson, C. Zhang, Y. Chen, M. Hosseini, A. Golmohammadi, Y. Shi, Y. Yue, and A. Wierman, "SustainGym: A Benchmark Suite of Reinforcement Learning for Sustainability Applications," in _Thirty-seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track_, New Orleans, LA, USA, Dec. 2023. [Online]. Available: [https://openreview.net/forum?id=vZ9tA3o3hr](https://openreview.net/forum?id=vZ9tA3o3hr).
+
+<details markdown="block">
+<summary>BibTeX</summary>
+
+```tex
+@inproceedings{yeh2023sustaingym,
+    title = {{SustainGym}: Reinforcement Learning Environments for Sustainable Energy Systems},
+    author = {Yeh, Christopher and Li, Victor and Datta, Rajeev and Arroyo, Julio and Zhang, Chi and Chen, Yize and Hosseini, Mehdi and Golmohammadi, Azarang and Shi, Yuanyuan and Yue, Yisong and Wierman, Adam},
+    year = 2023,
+    month = 12,
+    booktitle = {Thirty-seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track},
+    address = {New Orleans, LA, USA},
+    url = {https://openreview.net/forum?id=vZ9tA3o3hr}
+}
+```
+
+</details>
+
+An earlier version of this work was published as a workshop paper:
+
 > C. Yeh, V. Li, R. Datta, Y. Yue, and A. Wierman, "SustainGym: A Benchmark Suite of Reinforcement Learning for Sustainability Applications," in _NeurIPS 2022 Workshop on Tackling Climate Change with Machine Learning_, Dec. 2022. [Online]. Available: [https://www.climatechange.ai/papers/neurips2022/38](https://www.climatechange.ai/papers/neurips2022/38).
 
 <details markdown="block">
@@ -47,12 +68,13 @@ Please cite SustainGym as
 
 ```tex
 @inproceedings{yeh2022sustaingym,
-    title={SustainGym: A Benchmark Suite of Reinforcement Learning for Sustainability Applications},
-    author={Yeh, Christopher and Li, Victor and Datta, Rajeev and Yue, Yisong and Wierman, Adam},
-    booktitle={NeurIPS 2022 Workshop on Tackling Climate Change with Machine Learning},
-    url={https://www.climatechange.ai/papers/neurips2022/38},
-    year={2022},
-    month={12}
+    title = {{SustainGym}: A Benchmark Suite of Reinforcement Learning for Sustainability Applications},
+    author = {Yeh, Christopher and Li, Victor and Datta, Rajeev and Yue, Yisong and Wierman, Adam},
+    year = 2022,
+    month = 12,
+    booktitle = {NeurIPS 2022 Workshop on Tackling Climate Change with Machine Learning},
+    address = {New Orleans, LA, USA},
+    url = {https://www.climatechange.ai/papers/neurips2022/38}
 }
 ```
 
