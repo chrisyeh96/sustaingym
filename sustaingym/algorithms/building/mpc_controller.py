@@ -10,7 +10,8 @@ class MPCAgent:
     """
     Args:
         env: An object representing the environment for the agent.
-        gamma: A list of discount factors for the objective function.
+        beta: temperature error penalty weight for reward function
+        pnorm: p to use for norm in reward function
         safety_margin: A safety margin factor for constraints.
         planning_steps: Number of steps over which to plan.
 
@@ -19,19 +20,21 @@ class MPCAgent:
     def __init__(
         self,
         env: BuildingEnv,
-        gamma: list[float],
+        beta: float,
+        pnorm: float,
         safety_margin: float = 0.9,
         planning_steps: int = 1,
     ):
         self.env = env
-        self.gamma = gamma
+        self.beta = beta
+        self.pnorm = pnorm
         self.safety_margin = safety_margin
         self.planning_steps = planning_steps
 
-        self.num_of_action: int = env.action_space.shape[0]
+        self.action_dim: int = env.action_space.shape[0]
         self.temp: float = env.out_temp[env.epoch]
         self.ground_temp: float = env.ground_temp[env.epoch]
-        self.occupancy: float = env.occupancy[env.epoch]
+        self.metabolism: float = env.metabolism[env.epoch]
         self.ghi: float = env.ghi[env.epoch]
 
     def predict(self) -> tuple[np.ndarray, np.ndarray]:
@@ -50,22 +53,22 @@ class MPCAgent:
         self.temp = env.out_temp[env.epoch]
         self.ground_temp = env.ground_temp[env.epoch]
 
-        self.occupancy = env.occupancy[env.epoch]
+        self.metabolism = env.metabolism[env.epoch]
         self.ghi = env.ghi[env.epoch]
 
-        action = np.zeros((self.num_of_action))
+        action = np.zeros(self.action_dim)
 
         x0 = cp.Parameter(n, name="x0")
-        u_max = cp.Parameter(self.num_of_action, name="u_max")
-        u_min = cp.Parameter(self.num_of_action, name="u_min")
+        u_max = cp.Parameter(self.action_dim, name="u_max")
+        u_min = cp.Parameter(self.action_dim, name="u_min")
 
         x = cp.Variable((n, self.planning_steps + 1), name="x")
-        u = cp.Variable((self.num_of_action, self.planning_steps), name="u")
+        u = cp.Variable((self.action_dim, self.planning_steps), name="u")
 
         x0.value = env.state[:n]
 
-        u_max.value = 1.0 * np.ones((self.num_of_action,))
-        u_min.value = -1.0 * np.ones((self.num_of_action,))
+        u_max.value = 1.0 * np.ones(self.action_dim)
+        u_min.value = -1.0 * np.ones(self.action_dim)
 
         x_desired = env.target
 
@@ -73,7 +76,7 @@ class MPCAgent:
         constr = [x[:, 0] == x0]
 
         avg_temp = np.sum(x0.value) / n
-        Meta = self.occupancy
+        Meta = self.metabolism
 
         self.Occupower = (
             6.461927
@@ -99,9 +102,9 @@ class MPCAgent:
                 u[:, t] >= u_min,
             ]
 
-            obj += self.gamma[1] * cp.norm(
-                cp.multiply(x[:, t], env.ac_map) - x_desired * env.ac_map, 2
-            ) + self.gamma[0] * 24 * cp.norm(u[:, t], 2)
+            obj += self.beta * cp.norm(
+                cp.multiply(x[:, t], env.ac_map) - x_desired * env.ac_map, self.pnorm
+            ) + (1 - self.beta) * 24 * cp.norm(u[:, t], self.pnorm)
 
         prob = cp.Problem(cp.Minimize(obj), constr)
 
@@ -120,7 +123,8 @@ class MPCAgent_DataDriven:
     """
     Args:
         env: An object representing the environment for the agent.
-        gamma: A list of discount factors for the objective function.
+        beta: temperature error penalty weight for reward function
+        pnorm: p to use for norm in reward function
         safety_margin: A safety margin factor for constraints.
         planning_steps: Number of steps over which to plan.
 
@@ -129,19 +133,21 @@ class MPCAgent_DataDriven:
     def __init__(
         self,
         env: BuildingEnv,
-        gamma: list[float],
+        beta: float,
+        pnorm: float,
         safety_margin: float = 0.9,
         planning_steps: int = 1,
     ):
         self.env = env
-        self.gamma = gamma
+        self.beta = beta
+        self.pnorm = pnorm
         self.safety_margin = safety_margin
         self.planning_steps = planning_steps
 
-        self.num_of_action: int = env.action_space.shape[0]
+        self.action_dim: int = env.action_space.shape[0]
         self.temp: float = env.out_temp[env.epoch]
         self.ground_temp: float = env.ground_temp[env.epoch]
-        self.occupancy: float = env.occupancy[env.epoch]
+        self.metabolism: float = env.metabolism[env.epoch]
         self.ghi: float = env.ghi[env.epoch]
 
     def predict(self) -> tuple[np.ndarray, np.ndarray]:
@@ -160,22 +166,22 @@ class MPCAgent_DataDriven:
         self.temp = env.out_temp[env.epoch]
         self.ground_temp = env.ground_temp[env.epoch]
 
-        self.occupancy = env.occupancy[env.epoch]
+        self.metabolism = env.metabolism[env.epoch]
         self.ghi = env.ghi[env.epoch]
 
-        action = np.zeros((self.num_of_action))
+        action = np.zeros(self.action_dim)
 
         x0 = cp.Parameter(n, name="x0")
-        u_max = cp.Parameter(self.num_of_action, name="u_max")
-        u_min = cp.Parameter(self.num_of_action, name="u_max")
+        u_max = cp.Parameter(self.action_dim, name="u_max")
+        u_min = cp.Parameter(self.action_dim, name="u_max")
 
         x = cp.Variable((n, self.planning_steps + 1), name="x")
-        u = cp.Variable((self.num_of_action, self.planning_steps), name="u")
+        u = cp.Variable((self.action_dim, self.planning_steps), name="u")
 
         x0.value = env.state[:n]
 
-        u_max.value = 1.0 * np.ones((self.num_of_action,))
-        u_min.value = -1.0 * np.ones((self.num_of_action,))
+        u_max.value = 1.0 * np.ones(self.action_dim)
+        u_min.value = -1.0 * np.ones(self.action_dim)
 
         x_desired = env.target
 
@@ -183,7 +189,7 @@ class MPCAgent_DataDriven:
         constr = [x[:, 0] == x0]
 
         avg_temp = np.sum(x0.value) / n
-        Meta = self.occupancy
+        Meta = self.metabolism
 
         for t in range(self.planning_steps):
             constr += [
@@ -201,9 +207,9 @@ class MPCAgent_DataDriven:
                 u[:, t] >= u_min,
             ]
 
-            obj += self.gamma[1] * cp.norm(
-                cp.multiply(x[:, t], env.ac_map) - x_desired * env.ac_map, 2
-            ) + self.gamma[0] * 24 * cp.norm(u[:, t], 2)
+            obj += self.beta * cp.norm(
+                cp.multiply(x[:, t], env.ac_map) - x_desired * env.ac_map, self.pnorm
+            ) + (1 - self.beta) * 24 * cp.norm(u[:, t], self.pnorm)
 
         prob = cp.Problem(cp.Minimize(obj), constr)
 

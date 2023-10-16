@@ -39,14 +39,16 @@ class BuildingEnv(gym.Env):
 
     Observations:
 
+    TODO: fix min/max for occupower
+
     .. code:: none
 
         Type: Box(n+4)
                                                          Shape       Min         Max
         Temperature of zones (celsius)                   n           temp_min    temp_max
         Temperature of outdoor (celsius)                 1           temp_min    temp_max
-        Global Horizontal Irradiance (W)                 1           0           heat_max
         Temperature of ground (celsius)                  1           temp_min    temp_max
+        Global Horizontal Irradiance (W)                 1           0           heat_max
         Occupancy power (W)                              1           0           heat_max
 
     Args:
@@ -60,8 +62,8 @@ class BuildingEnv(gym.Env):
             - 'ghi' (np.narray): shape (T,), global horizontal irradiance,
               normalized to [0, 1]
             - 'metabolism' (np.ndarray): shape (T,), total metabolic rate of occupants (in W)
-            - 'gamma' (tuple[float, float]): tuple of (energy penalty, temperature
-              error penalty), for the reward function
+            - 'reward_beta' (float): temperature error penalty, for the reward function
+            - 'reward_pnorm' (float): p to use for norm in reward function
             - 'ac_map' (np.ndarray): boolean array of shape (n,) specifying
               presence (1) or absence (0) of AC in individual rooms
             - 'max_power' (float): max power output of a single HVAC unit (in W)
@@ -126,10 +128,10 @@ class BuildingEnv(gym.Env):
         self.ground_temp = parameters['ground_temp']
         self.ghi = parameters['ghi']
         self.metabolism = parameters['metabolism']
-        self.gamma = parameters['gamma']
         self.ac_map = parameters['ac_map']
         self.maxpower = parameters['max_power']
         self.temp_range = parameters['temp_range']
+        self.reward_pnorm = parameters['reward_pnorm']
         self.is_continuous_action = parameters['is_continuous_action']
         self.timestep = parameters['time_resolution']
         self.Occupower = 0
@@ -167,8 +169,8 @@ class BuildingEnv(gym.Env):
         self.observation_space = gym.spaces.Box(self.low, self.high, dtype=np.float32)
 
         # Set the weight for the power consumption and comfort range
-        self.q_rate = parameters["gamma"][0] * self.SCALING_FACTOR
-        self.error_rate = parameters["gamma"][1]
+        self.q_rate = (1 - parameters["reward_beta"]) * self.SCALING_FACTOR
+        self.error_rate = parameters["reward_beta"]
 
         # Track cumulative components of reward
         self._reward_breakdown = {"comfort_level": 0.0, "power_consumption": 0.0}
@@ -269,10 +271,11 @@ class BuildingEnv(gym.Env):
         error = X_new * self.ac_map - self.target * self.ac_map
 
         # Update the reward based on the action and error
-        reward -= LA.norm(action, 2) * self.q_rate + LA.norm(error, 2) * self.error_rate
+        p = self.reward_pnorm
+        reward -= LA.norm(action, p) * self.q_rate + LA.norm(error, p) * self.error_rate
         self.rewardsum += reward
-        self._reward_breakdown["comfort_level"] -= LA.norm(error, 2) * self.error_rate
-        self._reward_breakdown["power_consumption"] -= LA.norm(action, 2) * self.q_rate
+        self._reward_breakdown["comfort_level"] -= LA.norm(error, p) * self.error_rate
+        self._reward_breakdown["power_consumption"] -= LA.norm(action, p) * self.q_rate
 
         # retrieve environment info
         self.X_new = X_new
@@ -392,7 +395,7 @@ class BuildingEnv(gym.Env):
 
         See page 1299 of
         https://energyplus.net/assets/nrel_custom/pdfs/pdfs_v23.1.0/EngineeringReference.pdf
-        
+
         Args:
             temp: air temperature (in °C)
             meta: metabolic rate (in W)

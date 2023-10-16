@@ -446,7 +446,8 @@ def ParameterGenerator(
     max_power: np.ndarray | int = 8000,
     ac_map: np.ndarray | int = 1,
     time_res: int = 3600,
-    reward_gamma: tuple[float, float] = (0.001, 0.9990),
+    reward_beta: float = 0.999,
+    reward_pnorm: float = 2,
     target: np.ndarray | float = 22,
     activity_sch: np.ndarray | float = 120,
     temp_range: tuple[float, float] = (-40, 40),
@@ -477,7 +478,8 @@ def ParameterGenerator(
             boolean array of shape (n,) to specify AC presence in individual
             rooms, or a scalar indicating AC presence in all rooms
         time_res: length of 1 timestep in seconds. Default is 3600 (1 hour).
-        reward_gamma: tuple of (energy penalty, temperature error penalty)
+        reward_beta: temperature error penalty weight for reward function
+        reward_pnorm: p to use for norm in reward function
         target: target temperature setpoints (in Celsius), either an array
             specifying individual setpoints for each zone, or a scalar
             setpoint for all zones
@@ -560,7 +562,7 @@ def ParameterGenerator(
 
     # Define constants and calculate SHGC
     SpecificHeat_avg = 1000  # specific heat of indoor air, in J/kg-K
-    SHGC = shgc * shgc_weight * (max(weather_df["ghi"]) / (1 / 3600 * time_res))# GHI change from Wh to W
+    SHGC = shgc * shgc_weight * (max(weather_df["ghi"]) / (1 / 3600 * time_res))  # GHI change from Wh to W
     # Find neighboring rooms, resistance and capacitance tables, and window properties
     neighbors, Rtable, Ctable, Windowtable = Nfind_neighbor(
         n, layers, U_Wall, SpecificHeat_avg
@@ -619,7 +621,8 @@ def ParameterGenerator(
         / (max(weather_df['ghi']) / (1 / 3600 * time_res))
     )
     parameters['metabolism'] = activity_sch * np.ones(len(outtempdatanew))
-    parameters['gamma'] = reward_gamma
+    parameters['reward_beta'] = reward_beta
+    parameters['reward_pnorm'] = reward_pnorm
     parameters['ac_map'] = np.zeros(n) + ac_map
     parameters['max_power'] = max_power
     parameters['temp_range'] = temp_range
