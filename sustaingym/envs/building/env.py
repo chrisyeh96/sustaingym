@@ -213,9 +213,9 @@ class BuildingEnv(gym.Env):
             state: array of shape (n+4,), updated state of the environment. Contains:
 
                 - 'X_new': shape [n], new temperatures of the rooms.
-                - 'out_temp': scalar, outdoor temperature at the current timestep.
+                - 'out_temp': scalar, outdoor temperature (°C) the current timestep
+                - 'ground_temp': scalar, ground temperature (°C) at current timestep
                 - 'ghi': scalar, global horizontal irradiance at the current timestep.
-                - 'ground_temp': scalar, ground temperature at the current timestep.
                 - 'Occupower': scalar, occupancy power at the current timestep.
             reward: Reward for the current timestep.
             terminated: Whether the episode is terminated.
@@ -237,7 +237,7 @@ class BuildingEnv(gym.Env):
         done = False
 
         # Prepare the input matrices X and Y
-        X = self.state[: self.n].T
+        X = self.state[:self.n].T
         Y = np.insert(
             np.append(action, self.ghi[self.epoch]), 0, self.out_temp[self.epoch]
         ).T
@@ -281,10 +281,10 @@ class BuildingEnv(gym.Env):
         # self.statelist.append(self.state)
         self.state = np.concatenate([
             X_new,
-            [self.out_temp[self.epoch]],
-            [self.ghi[self.epoch]],
-            [self.ground_temp[self.epoch]],
-            [self.Occupower / 1000]
+            [self.out_temp[self.epoch],
+             self.ground_temp[self.epoch],
+             self.ghi[self.epoch],
+             self.Occupower / 1000],
         ]).astype(np.float32)
 
         # Store the action in the actionlist
@@ -317,8 +317,8 @@ class BuildingEnv(gym.Env):
                 - 'T_initial': np.ndarray, shape [n], initial temperature of each zone
 
         Returns:
-            state: the initial state of the environment.
-            info: information.
+            state: the initial state of the environment. See `step()`
+            info: information dictionary. See `step()`
         """
         super().reset(seed=seed, options=options)
 
@@ -350,10 +350,10 @@ class BuildingEnv(gym.Env):
         self.X_new = T_initial
         self.state = np.concatenate([
             T_initial,
-            [self.out_temp[self.epoch]],
-            [self.ghi[self.epoch]],
-            [self.ground_temp[self.epoch]],
-            [self.Occupower / 1000]
+            [self.out_temp[self.epoch],
+             self.ground_temp[self.epoch],
+             self.ghi[self.epoch],
+             self.Occupower / 1000]
         ]).astype(np.float32)
 
         # Initialize the rewards
