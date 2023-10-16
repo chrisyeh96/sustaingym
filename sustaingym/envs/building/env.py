@@ -39,15 +39,17 @@ class BuildingEnv(gym.Env):
 
     Observations:
 
+    TODO: fix min/max for occupower
+
     .. code:: none
 
-        Type: Box(3n+2)
+        Type: Box(n+4)
                                                          Shape       Min         Max
         Temperature of zones (celsius)                   n           temp_min    temp_max
         Temperature of outdoor (celsius)                 1           temp_min    temp_max
-        Global Horizontal Irradiance (W)                 n           0           heat_max
         Temperature of ground (celsius)                  1           temp_min    temp_max
-        Occupancy power (W)                              n           0           heat_max
+        Global Horizontal Irradiance (W)                 1           0           heat_max
+        Occupancy power (W)                              1           0           heat_max
 
     Args:
         parameters: dict of parameters for the environment
@@ -59,23 +61,19 @@ class BuildingEnv(gym.Env):
             - 'ground_temp' (np.ndarray): shape (T,), ground temperature
             - 'ghi' (np.narray): shape (T,), global horizontal irradiance,
               normalized to [0, 1]
-            - 'occupancy' (np.ndarray): shape (T,), occupancy of the rooms (in W)
-            - 'connectmap' (np.ndarray): shape (n, n+1), binary connectivity map between
-              rooms, last column represents the outside environment
-            - 'RCtable' (np.ndarray): shape (n, n+1), RC table of the rooms
-              TODO: specify units
-            - 'weightcmap' (np.ndarray): shape (n, n), weight of the connection map,
-              TODO: fix shape
-            - 'gamma' (tuple[float, float]): tuple of (energy penalty, temperature
-              error penalty), for the reward function
+            - 'metabolism' (np.ndarray): shape (T,), total metabolic rate of occupants (in W)
+            - 'reward_beta' (float): temperature error penalty, for the reward function
+            - 'reward_pnorm' (float): p to use for norm in reward function
             - 'ac_map' (np.ndarray): boolean array of shape (n,) specifying
               presence (1) or absence (0) of AC in individual rooms
             - 'max_power' (float): max power output of a single HVAC unit (in W)
-            - 'nonlinear' (np.array, shape=(n,)): Nonlinear factor.
             - 'temp_range' (tuple[float, float]): tuple of (min temp, max temp)
               in Celsius, defining the possible temperature in the building
             - 'is_continuous_action' (bool): determines action space (Box vs. MultiDiscrete).
             - 'time_resolution' (int): time resolution of the simulation (in seconds)
+            - 'A' (np.ndarray): A matrix, shape (n, n+1)
+            - 'B' (np.ndarray): B matrix of shape (n, n+3)
+            - 'D' (np.ndarray): D vector of shape (n,)
 
     Attributes:
         parameters (dict): Dictionary containing the parameters for the environment.
@@ -85,17 +83,19 @@ class BuildingEnv(gym.Env):
     """
     # Occupancy nonlinear coefficients, collected from page 1299 of
     # https://energyplus.net/assets/nrel_custom/pdfs/pdfs_v23.1.0/EngineeringReference.pdf
-    OCCU_COEF1 = 6.461927
-    OCCU_COEF2 = 0.946892
-    OCCU_COEF3 = 0.0000255737
-    OCCU_COEF4 = 0.0627909
-    OCCU_COEF5 = 0.0000589172
-    OCCU_COEF6 = 0.19855
-    OCCU_COEF7 = 0.000940018
-    OCCU_COEF8 = 0.00000149532
+    OCCU_COEF = [
+        6.461927,
+        0.946892,
+        0.0000255737,
+        0.0627909,
+        0.0000589172,
+        0.19855,
+        0.000940018,
+        0.00000149532,
+    ]
 
     # Occupancy linear coefficient
-    OCCU_COEF9 = 7.139322
+    OCCU_COEF_LINEAR = 7.139322
 
     # Discrete space length
     DISCRETE_LENGTH = 100
@@ -113,7 +113,7 @@ class BuildingEnv(gym.Env):
             action_space: Action space for the environment (gym.spaces.Box).
             observation_space: Observation space for the environment (gym.spaces.Box).
             A_d: Discrete-time system matrix A (numpy array).
-            B_d: Discrete-time system matrix B (numpy array).
+            BD_d: Discrete-time system matrix B (numpy array).
             rewardsum: Cumulative reward in the environment (float).
             statelist: List of states in the environment (list).
             actionlist: List of actions taken in the environment (list).
@@ -127,18 +127,13 @@ class BuildingEnv(gym.Env):
         self.out_temp = parameters['out_temp']
         self.ground_temp = parameters['ground_temp']
         self.ghi = parameters['ghi']
-        self.occupancy = parameters['occupancy']
-        self.connectmap = parameters['connectmap']
-        self.RCtable = parameters['RCtable']
-        self.weightcmap = parameters['weightcmap']
-        self.gamma = parameters['gamma']
+        self.metabolism = parameters['metabolism']
         self.ac_map = parameters['ac_map']
         self.maxpower = parameters['max_power']
-        self.nonlinear = parameters['nonlinear']
         self.temp_range = parameters['temp_range']
+        self.reward_pnorm = parameters['reward_pnorm']
         self.is_continuous_action = parameters['is_continuous_action']
         self.timestep = parameters['time_resolution']
-
         self.Occupower = 0
         self.datadriven = False
         self.length_of_weather = len(self.out_temp)
@@ -158,38 +153,27 @@ class BuildingEnv(gym.Env):
 
         # Set the observation space bounds based on the minimum and maximum temperature
         min_T, max_T = self.temp_range
-        heat_max = 1000  # TODO: maybe check later
+        heat_max = 1000
         self.low = np.concatenate([
             np.ones(self.n + 1) * min_T,  # temp of zones and outdoor
-            np.zeros(self.n),             # GHI
+            [0],                          # GHI
             [min_T],                      # temp of ground
-            np.zeros(self.n)              # occupancy power
+            [-min_T * self.OCCU_COEF_LINEAR / 1000]  # occupancy power
         ]).astype(np.float32)
         self.high = np.concatenate([
             np.ones(self.n + 1) * max_T,  # temp of zones and outdoor
-            np.ones(self.n) * heat_max,   # GHI
+            [heat_max],                     # GHI
             [max_T],                      # temp of ground
-            np.ones(self.n) * heat_max    # occupancy power
+            [heat_max]                      # occupancy power
         ]).astype(np.float32)
         self.observation_space = gym.spaces.Box(self.low, self.high, dtype=np.float32)
 
         # Set the weight for the power consumption and comfort range
-        self.q_rate = parameters["gamma"][0] * self.SCALING_FACTOR
-        self.error_rate = parameters["gamma"][1]
+        self.q_rate = (1 - parameters["reward_beta"]) * self.SCALING_FACTOR
+        self.error_rate = parameters["reward_beta"]
 
         # Track cumulative components of reward
         self._reward_breakdown = {"comfort_level": 0.0, "power_consumption": 0.0}
-
-        # Define matrices for the state update equations
-        Amatrix = self.RCtable[:, :-1]
-        diagvalue = (-self.RCtable) @ self.connectmap.T - np.array(
-            [self.weightcmap.T[1]]
-        ).T
-        np.fill_diagonal(Amatrix, np.diag(diagvalue))
-        Amatrix += self.nonlinear * self.OCCU_COEF9 / self.n
-        Bmatrix = self.weightcmap.T
-        Bmatrix[2] = self.connectmap[:, -1] * (self.RCtable[:, -1])
-        Bmatrix = Bmatrix.T
 
         # Initialize reward sum, state list, action list, and epoch counter
         self.rewardsum = 0
@@ -200,9 +184,15 @@ class BuildingEnv(gym.Env):
         # Initialize zonal temperature
         self.X_new = self.target
 
+        # Stack B and D matrix together for easy calculation
+        A = parameters['A']
+        B = parameters['B']
+        D = parameters['D']
+        BD = np.hstack((D[:, np.newaxis], B))
+
         # Compute the discrete-time system matrices
-        self.A_d = expm(Amatrix * self.timestep)
-        self.B_d = LA.inv(Amatrix) @ (self.A_d - np.eye(self.A_d.shape[0])) @ Bmatrix
+        self.A_d = expm(A * self.timestep)
+        self.BD_d = LA.inv(A) @ (self.A_d - np.eye(self.A_d.shape[0])) @ BD
 
         # Define environment spec
         self.spec = EnvSpec(
@@ -222,13 +212,13 @@ class BuildingEnv(gym.Env):
             action: Action to be taken in the environment.
 
         Returns:
-            state: array of shape (3n+2,), updated state of the environment. TODO: check shapes. Contains:
+            state: array of shape (n+4,), updated state of the environment. Contains:
 
                 - 'X_new': shape [n], new temperatures of the rooms.
-                - 'out_temp': shape [1], outdoor temperature at the current timestep.
-                - 'ghi': shape [n], global horizontal irradiance at the current timestep.
-                - 'ground_temp': shape [1], ground temperature at the current timestep.
-                - 'Occupower': shape [n], occupancy power at the current timestep.
+                - 'out_temp': scalar, outdoor temperature (°C) the current timestep
+                - 'ground_temp': scalar, ground temperature (°C) at current timestep
+                - 'ghi': scalar, global horizontal irradiance at the current timestep.
+                - 'Occupower': scalar, occupancy power at the current timestep.
             reward: Reward for the current timestep.
             terminated: Whether the episode is terminated.
             truncated: Whether the episode has reached a time limit.
@@ -249,39 +239,30 @@ class BuildingEnv(gym.Env):
         done = False
 
         # Prepare the input matrices X and Y
-        X = self.state[: self.n].T
+        X = self.state[:self.n].T
         Y = np.insert(
             np.append(action, self.ghi[self.epoch]), 0, self.out_temp[self.epoch]
         ).T
         Y = np.insert(Y, 0, self.ground_temp[self.epoch]).T
         avg_temp = np.sum(self.state[:self.n]) / self.n
-        Meta = self.occupancy[self.epoch]
+        meta = self.metabolism[self.epoch]
 
         # If the environment is data-driven, add additional features to the Y matrix
         if self.datadriven:
-            Y = np.insert(Y, 0, Meta).T
-            Y = np.insert(Y, 0, Meta**2).T
+            Y = np.insert(Y, 0, meta).T
+            Y = np.insert(Y, 0, meta**2).T
             Y = np.insert(Y, 0, avg_temp).T
             Y = np.insert(Y, 0, avg_temp**2).T
         else:
             # Calculate Occupower based on the given formula
-            # TODO: can Occupower ever be negative?
-            self.Occupower = (
-                self.OCCU_COEF1
-                + self.OCCU_COEF2 * Meta
-                + self.OCCU_COEF3 * Meta**2
-                - self.OCCU_COEF4 * avg_temp * Meta
-                + self.OCCU_COEF5 * avg_temp * Meta**2
-                - self.OCCU_COEF6 * avg_temp**2
-                + self.OCCU_COEF7 * avg_temp**2 * Meta
-                - self.OCCU_COEF8 * avg_temp**2 * Meta**2
-            )
+
+            self.Occupower = self._calc_occupower(avg_temp, meta)
 
             # Insert Occupower at the beginning of the Y matrix
             Y = np.insert(Y, 0, self.Occupower).T
 
         # Update the state using the A_d and B_d matrices
-        X_new = self.A_d @ X + self.B_d @ Y
+        X_new = self.A_d @ X + self.BD_d @ Y
 
         # Initialize the reward as 0
         reward = 0
@@ -290,26 +271,23 @@ class BuildingEnv(gym.Env):
         error = X_new * self.ac_map - self.target * self.ac_map
 
         # Update the reward based on the action and error
-        reward -= LA.norm(action, 2) * self.q_rate + LA.norm(error, 2) * self.error_rate
+        p = self.reward_pnorm
+        reward -= LA.norm(action, p) * self.q_rate + LA.norm(error, p) * self.error_rate
         self.rewardsum += reward
-        self._reward_breakdown["comfort_level"] -= LA.norm(error, 2) * self.error_rate
-        self._reward_breakdown["power_consumption"] -= LA.norm(action, 2) * self.q_rate
+        self._reward_breakdown["comfort_level"] -= LA.norm(error, p) * self.error_rate
+        self._reward_breakdown["power_consumption"] -= LA.norm(action, p) * self.q_rate
 
         # retrieve environment info
         self.X_new = X_new
         info = self._get_info()
 
-        # Update the state
-        ghi_repeated = np.full(X_new.shape, self.ghi[self.epoch])
-        occ_repeated = np.full(X_new.shape, self.Occupower / 1000)
-
         # self.statelist.append(self.state)
         self.state = np.concatenate([
             X_new,
-            [self.out_temp[self.epoch]],
-            ghi_repeated,
-            [self.ground_temp[self.epoch]],
-            occ_repeated
+            [self.out_temp[self.epoch],
+             self.ground_temp[self.epoch],
+             self.ghi[self.epoch],
+             self.Occupower / 1000],
         ]).astype(np.float32)
 
         # Store the action in the actionlist
@@ -342,8 +320,8 @@ class BuildingEnv(gym.Env):
                 - 'T_initial': np.ndarray, shape [n], initial temperature of each zone
 
         Returns:
-            state: the initial state of the environment.
-            info: information.
+            state: the initial state of the environment. See `step()`
+            info: information dictionary. See `step()`
         """
         super().reset(seed=seed, options=options)
 
@@ -366,31 +344,19 @@ class BuildingEnv(gym.Env):
         avg_temp = np.sum(T_initial) / self.n
 
         # Get the occupancy value for the current epoch
-        Meta = self.occupancy[self.epoch]
+        meta = self.metabolism[self.epoch]
 
         # Calculate the occupower based on occupancy and average temperature
-        self.Occupower = (
-            self.OCCU_COEF1
-            + self.OCCU_COEF2 * Meta
-            + self.OCCU_COEF3 * Meta**2
-            - self.OCCU_COEF4 * avg_temp * Meta
-            + self.OCCU_COEF5 * avg_temp * Meta**2
-            - self.OCCU_COEF6 * avg_temp**2
-            + self.OCCU_COEF7 * avg_temp**2 * Meta
-            - self.OCCU_COEF8 * avg_temp**2 * Meta**2
-        )
+        self.Occupower = self._calc_occupower(avg_temp, meta)
 
         # Construct the initial state by concatenating relevant variables
-        # TODO: why repeat the GHI and occupancy values?
         self.X_new = T_initial
-        ghi_repeated = np.full(T_initial.shape, self.ghi[self.epoch])
-        occ_repeated = np.full(T_initial.shape, self.Occupower / 1000)
         self.state = np.concatenate([
             T_initial,
-            [self.out_temp[self.epoch]],
-            ghi_repeated,
-            [self.ground_temp[self.epoch]],
-            occ_repeated
+            [self.out_temp[self.epoch],
+             self.ground_temp[self.epoch],
+             self.ghi[self.epoch],
+             self.Occupower / 1000]
         ]).astype(np.float32)
 
         # Initialize the rewards
@@ -399,7 +365,6 @@ class BuildingEnv(gym.Env):
         for re in self._reward_breakdown:
             self._reward_breakdown[re] = 0.0
 
-        # Return the initial state and an empty dictionary(for gymnasium grammar)
         return self.state, self._get_info()
 
     def _get_info(self, all: bool = False) -> dict[str, Any]:
@@ -425,6 +390,31 @@ class BuildingEnv(gym.Env):
                 "reward_breakdown": self._reward_breakdown,
             }
 
+    def _calc_occupower(self, temp: float, meta: float) -> float:
+        """Calculates occupancy sensible heat gain.
+
+        See page 1299 of
+        https://energyplus.net/assets/nrel_custom/pdfs/pdfs_v23.1.0/EngineeringReference.pdf
+
+        Args:
+            temp: air temperature (in °C)
+            meta: metabolic rate (in W)
+
+        Returns:
+            heat: sensible heat gain (in W)
+        """
+        heat = (
+            self.OCCU_COEF[0]
+            + self.OCCU_COEF[1] * meta
+            + self.OCCU_COEF[2] * meta**2
+            - self.OCCU_COEF[3] * temp * meta
+            + self.OCCU_COEF[4] * temp * meta**2
+            - self.OCCU_COEF[5] * temp**2
+            + self.OCCU_COEF[6] * temp**2 * meta
+            - self.OCCU_COEF[7] * temp**2 * meta**2
+        )
+        return heat
+
     def train(self, states: np.ndarray, actions: np.ndarray) -> None:
         """Trains the linear regression model using the given states and actions.
 
@@ -447,23 +437,14 @@ class BuildingEnv(gym.Env):
             ).T
             Y = np.insert(Y, 0, self.ground_temp[i]).T
             avg_temp = np.sum(X) / self.n
-            Meta = self.occupancy[i]
+            meta = self.metabolism[i]
 
             # Calculate the occupower based on occupancy and average temperature
-            self.Occupower = (
-                self.OCCU_COEF1
-                + self.OCCU_COEF2 * Meta
-                + self.OCCU_COEF3 * Meta**2
-                - self.OCCU_COEF4 * avg_temp * Meta
-                + self.OCCU_COEF5 * avg_temp * Meta**2
-                - self.OCCU_COEF6 * avg_temp**2
-                + self.OCCU_COEF7 * avg_temp**2 * Meta
-                - self.OCCU_COEF8 * avg_temp**2 * Meta**2
-            )
+            self.Occupower = self._calc_occupower(avg_temp, meta)
 
             # Add relevant variables to Y
-            Y = np.insert(Y, 0, Meta).T
-            Y = np.insert(Y, 0, Meta**2).T
+            Y = np.insert(Y, 0, meta).T
+            Y = np.insert(Y, 0, meta**2).T
             Y = np.insert(Y, 0, avg_temp).T
             Y = np.insert(Y, 0, avg_temp**2).T
 
@@ -485,7 +466,7 @@ class BuildingEnv(gym.Env):
 
         # Update the A_d and B_d matrices with the coefficients from the fitted model
         self.A_d = beta[:, : self.n]
-        self.B_d = beta[:, self.n:]
+        self.BD_d = beta[:, self.n:]
 
         # Set the data-driven flag to True
         self.datadriven = True
