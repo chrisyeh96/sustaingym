@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sustaingym"
-version = "0.1.2a"
+version = "0.1.2b"
 authors = [
   { name="Christopher Yeh", email="cyeh@caltech.edu" },
 ]
@@ -57,4 +57,4 @@ Repository = "https://github.com/chrisyeh96/sustaingym"
 "Bug Tracker" = "https://github.com/chrisyeh96/sustaingym/issues"
 
 [tool.setuptools.package-data]
-"*" = ["*.csv", "*.csv.gz", "*.xlsx", "*.pkl", "*.onnx", "*.json"]
+"*" = ["*.csv", "*.csv.gz", "*.epw", "*.htm", "*.json", "*.onnx", "*.pkl", "*.xlsx"]
