@@ -141,20 +141,20 @@ class EVChargingEnv(Env):
         self._timestep_obs = np.zeros(1, dtype=np.float32)  # timestep normalized to [0, 1]
 
         self.observation_space = spaces.Dict({
+            'timestep':        spaces.Box(0, 1, shape=(1,), dtype=np.float32),
             'est_departures':  spaces.Box(-288, 288, shape=(self.num_stations,), dtype=np.float32),
             'demands':         spaces.Box(0, self.data_generator.requested_energy_cap,
                                           shape=(self.num_stations,), dtype=np.float32),
             'prev_moer':       spaces.Box(0, 1, shape=(1,), dtype=np.float32),
             'forecasted_moer': spaces.Box(0, 1, shape=(self.moer_forecast_steps,), dtype=np.float32),
-            'timestep':        spaces.Box(0, 1, shape=(1,), dtype=np.float32),
         })
 
         self._obs = {
+            'timestep': self._timestep_obs,
             'est_departures': self._est_departures,
             'demands': self._demands,
             'prev_moer': self._prev_moer,
             'forecasted_moer': self._forecasted_moer,
-            'timestep': self._timestep_obs,
         }
 
         # Track cumulative components of reward signal
