@@ -2,7 +2,7 @@
 
 The lack of standardized benchmarks for reinforcement learning (RL) in sustainability applications has made it difficult to both track progress on specific domains and identify bottlenecks for researchers to focus their efforts on. We present SustainGym, a suite of environments designed to test the performance of RL algorithms on realistic sustainability tasks. These environments highlight challenges in introducing RL to real-world sustainability tasks, including physical constraints and distribution shift.
 
-[**Paper**](https://s3.us-east-1.amazonaws.com/climate-change-ai/papers/neurips2022/38/paper.pdf)
+[**Paper**](https://drive.google.com/file/d/1wrLGu2FCVOT_BvtDoudsz05zFG89r7dI/view?usp=drive_link)
 | [**Website**](https://chrisyeh96.github.io/sustaingym/)
 
 SustainGym contains both single-agent and multi-agent RL environments.

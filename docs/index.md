@@ -26,8 +26,8 @@ Please cite SustainGym as
 
 ```tex
 @inproceedings{yeh2023sustaingym,
-    title = {{SustainGym}: Reinforcement Learning Environments for Sustainable Energy Systems},
-    author = {Yeh, Christopher and Li, Victor and Datta, Rajeev and Arroyo, Julio and Zhang, Chi and Chen, Yize and Hosseini, Mehdi and Golmohammadi, Azarang and Shi, Yuanyuan and Yue, Yisong and Wierman, Adam},
+    title = {{SustainGym}: {Reinforcement} Learning Environments for Sustainable Energy Systems},
+    author = {Yeh, Christopher and Li, Victor and Datta, Rajeev and Arroyo, Julio and Christianson, Nicolas and Zhang, Chi and Chen, Yize and Hosseini, Mehdi and Golmohammadi, Azarang and Shi, Yuanyuan and Yue, Yisong and Wierman, Adam},
     year = 2023,
     month = 12,
     booktitle = {Thirty-seventh Conference on Neural Information Processing Systems Datasets and Benchmarks Track},
