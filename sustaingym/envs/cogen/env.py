@@ -65,12 +65,12 @@ class CogenEnv(gym.Env):
         Natural gas price ($/MMBtu)   0                   7
 
     Args:
-        renewables_magnitude (float): wind generation capacity
-        ramp_penalty (float): magnitude of penalty for generator ramping
-        supply_imbalance_penalty (float): magnitude of penalty for energy/steam supply-demand imbalance
-        constraint_violation_penalty (float): magnitude of penalty for other constraint violations
-        forecast_horizon (int): number of forecast steps to include in observation
-        forecast_noise_std (float): standard deviation of noise on future forecast steps
+        renewables_magnitude: wind generation capacity
+        ramp_penalty: magnitude of penalty for generator ramping
+        supply_imbalance_penalty: magnitude of penalty for energy/steam supply-demand imbalance
+        constraint_violation_penalty: magnitude of penalty for other constraint violations
+        forecast_horizon: number of forecast steps to include in observation
+        forecast_noise_std: standard deviation of noise on future forecast steps
     """
     def __init__(self,
                  renewables_magnitude: float = 0.,
@@ -162,7 +162,7 @@ class CogenEnv(gym.Env):
                 'Target Process Steam', 'Energy Price', 'Gas Price']
         forecast = slice_df[cols].astype(np.float32)
         # add iid gaussian noise to future observations
-        forecast.iloc[1:] += self.forecast_noise_std*np.random.randn(self.forecast_horizon, 7)
+        forecast.iloc[1:] += self.forecast_noise_std*self.np_random.normal(size=(self.forecast_horizon, 7))
         return forecast
 
     def _get_obs(self) -> dict[str, Any]:
