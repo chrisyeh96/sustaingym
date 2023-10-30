@@ -65,12 +65,12 @@ class CogenEnv(gym.Env):
         Natural gas price ($/MMBtu)   0                   7
 
     Args:
-        renewables_magnitude: TODO
-        ramp_penalty: TODO
-        supply_imbalance_penalty: TODO
-        constraint_violation_penalty: TODO
-        forecast_horizon: TODO
-        forecast_noise_std: TODO
+        renewables_magnitude (float): wind generation capacity
+        ramp_penalty (float): magnitude of penalty for generator ramping
+        supply_imbalance_penalty (float): magnitude of penalty for energy/steam supply-demand imbalance
+        constraint_violation_penalty (float): magnitude of penalty for other constraint violations
+        forecast_horizon (int): number of forecast steps to include in observation
+        forecast_noise_std (float): standard deviation of noise on future forecast steps
     """
     def __init__(self,
                  renewables_magnitude: float = 0.,
@@ -78,12 +78,13 @@ class CogenEnv(gym.Env):
                  supply_imbalance_penalty: float = 1000,
                  constraint_violation_penalty: float = 1000,
                  forecast_horizon: int = 3,
-                 forecast_noise_std: float = 0.1,
+                 forecast_noise_std: float = 0.0,
                  ):
         self.ramp_penalty = ramp_penalty
         self.supply_imbalance_penalty = supply_imbalance_penalty
         self.constraint_violation_penalty = constraint_violation_penalty
         self.forecast_horizon = forecast_horizon
+        self.forecast_noise_std = forecast_noise_std
         # load the ambient conditions dataframes
         self.ambients_dfs = load_ambients.construct_df(renewables_magnitude=renewables_magnitude)
         self.n_days = len(self.ambients_dfs)
@@ -154,13 +155,15 @@ class CogenEnv(gym.Env):
         for the following self.forecast_horizon + 1 time steps."""
         slice_df = self.ambients_dfs[day].iloc[time_step:min(time_step+self.forecast_horizon+1, self.timesteps_per_day)]
         # fix so that if the slice_df is not long enough, it will take the first values of the next day
-        # TODO: figure out what to do if we're on the last day and there is no next day
         if len(slice_df) < self.forecast_horizon + 1:
             slice_df = pd.concat([slice_df, self.ambients_dfs[day+1].iloc[:self.forecast_horizon + 1 - len(slice_df)]])
         cols = ['Ambient Temperature', 'Ambient Pressure',
                 'Ambient rel. Humidity', 'Target Net Power',
                 'Target Process Steam', 'Energy Price', 'Gas Price']
-        return slice_df[cols].astype(np.float32)
+        forecast = slice_df[cols].astype(np.float32)
+        # add iid gaussian noise to future observations
+        forecast.iloc[1:] += self.forecast_noise_std*np.random.randn(self.forecast_horizon, 7)
+        return forecast
 
     def _get_obs(self) -> dict[str, Any]:
         """Get the current observation.
