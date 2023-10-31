@@ -162,7 +162,7 @@ class CogenEnv(gym.Env):
                 'Target Process Steam', 'Energy Price', 'Gas Price']
         forecast = slice_df[cols].astype(np.float32)
         # add iid gaussian noise to future observations
-        forecast.iloc[1:] += self.forecast_noise_std*self.np_random.normal(size=(self.forecast_horizon, 7))
+        forecast.iloc[1:] += self.forecast_noise_std*self.np_random.normal(size=(self.forecast_horizon, 7)).astype(np.float32)
         return forecast
 
     def _get_obs(self) -> dict[str, Any]:
