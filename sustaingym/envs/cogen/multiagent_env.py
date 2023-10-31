@@ -18,7 +18,7 @@ class MultiAgentCogenEnv(ParallelEnv):
     """
 
     # PettingZoo API
-    metadata = {}
+    metadata: dict[str, Any] = {}
 
     def __init__(self,
                  renewables_magnitude: float = 0.,
@@ -26,8 +26,7 @@ class MultiAgentCogenEnv(ParallelEnv):
                  supply_imbalance_penalty: float = 1000,
                  constraint_violation_penalty: float = 1000,
                  forecast_horizon: int = 12,
-                 forecast_noise_std: float = 0.1,
-                 ):
+                 forecast_noise_std: float = 0.1):
         super().__init__()
 
         self.single_env = CogenEnv(
@@ -44,6 +43,7 @@ class MultiAgentCogenEnv(ParallelEnv):
 
         # every agent gets the same flattened observation space
         flat_observation_space = spaces.flatten_space(self.single_env.observation_space)
+        assert isinstance(flat_observation_space, spaces.Box)
         self.observation_spaces = {
             agent: flat_observation_space for agent in self.agents
         }
@@ -69,7 +69,7 @@ class MultiAgentCogenEnv(ParallelEnv):
                 dict[str, float],
                 dict[str, bool],
                 dict[str, bool],
-                dict[str, dict[str, Any]]]:
+                dict[str, dict]]:
         """Run one timestep of the Cogen environment's dynamics.
 
         Args:
@@ -82,13 +82,14 @@ class MultiAgentCogenEnv(ParallelEnv):
             truncateds: dict mapping agent_id to truncated
             infos: dict mapping agent_id to info
         """
-        action = {}
+        action: dict[str, np.ndarray] = {}
         for agent in self.agents:
             action |= actions[agent]
 
         # Use internal single-agent environment
         obs, _, terminated, truncated, info = self.single_env.step(action)
         flat_obs = spaces.flatten(self.single_env.observation_space, obs)
+        assert isinstance(flat_obs, np.ndarray)
 
         obss, rewards, terminateds, truncateds, infos = {}, {}, {}, {}, {}
         for agent in self.agents:
@@ -110,13 +111,12 @@ class MultiAgentCogenEnv(ParallelEnv):
 
         return obss, rewards, terminateds, truncateds, infos
 
-    # TODO: once we update to a newer version of PettingZoo (>=1.23), the
-    # reset() function definition may need to change
     def reset(self, seed: int | None = None, options: dict | None = None
               ) -> tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
         """Resets the environment."""
         obs, info = self.single_env.reset(seed=seed, options=options)
         flat_obs = spaces.flatten(self.single_env.observation_space, obs)
+        assert isinstance(flat_obs, np.ndarray)
 
         self.agents = self.possible_agents[:]
         obss = {agent: flat_obs for agent in self.agents}
@@ -131,16 +131,20 @@ class MultiAgentCogenEnv(ParallelEnv):
         """Close the environment."""
         self.single_env.close()
 
-    def observation_space(self, agent: str) -> spaces.Space:
+    def observation_space(self, agent: str) -> spaces.Box:
         return self.observation_spaces[agent]
 
-    def action_space(self, agent: str) -> spaces.Box | spaces.Discrete:
+    def action_space(self, agent: str) -> spaces.Dict:
         return self.action_spaces[agent]
 
 
 class MultiAgentRLLibCogenEnv(MultiAgentCogenEnv, MultiAgentEnv):
     """MultiAgentRLLibCogenEnv extends MultiAgentCogenEnv to support the RLLib
-    MultiAgentEnv API (RLLib v2.6.3).
+    MultiAgentEnv API (RLLib v2.6.3, v2.7).
+
+    This class should be removed once
+    https://github.com/ray-project/ray/pull/39459
+    is included in a Ray RLLib release (likely v2.8).
     """
     def __init__(self,
                  renewables_magnitude: float = 0.,
