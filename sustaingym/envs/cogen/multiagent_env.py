@@ -142,7 +142,7 @@ class MultiAgentRLLibCogenEnv(MultiAgentCogenEnv, MultiAgentEnv):
     """MultiAgentRLLibCogenEnv extends MultiAgentCogenEnv to support the RLLib
     MultiAgentEnv API (RLLib v2.6.3, v2.7).
 
-    This class should be removed once
+    TODO: This class should be removed once
     https://github.com/ray-project/ray/pull/39459
     is included in a Ray RLLib release (likely v2.8).
     """

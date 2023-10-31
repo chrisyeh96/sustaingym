@@ -40,6 +40,10 @@ class TestMultiAgentEnv(unittest.TestCase):
 
 
 class TestMultiAgentRLLibEnv(unittest.TestCase):
+    """TODO: remove this test (and the MultiAgentRLLibCogenEnv() class) once
+    https://github.com/ray-project/ray/pull/39459
+    is included in a Ray RLLib release (likely v2.8).
+    """
     def setUp(self) -> None:
         self.env = MultiAgentRLLibCogenEnv()
 
