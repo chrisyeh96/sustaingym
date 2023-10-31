@@ -151,8 +151,12 @@ class CogenEnv(gym.Env):
         })
 
     def _forecast_from_time(self, day: int, time_step: int) -> pd.DataFrame:
-        """Returns the forecast values starting at the given day and time step
-        for the following self.forecast_horizon + 1 time steps."""
+        """Gets forecast values starting at the given day and time step for
+        the following self.forecast_horizon + 1 time steps.
+
+        Returns:
+            forecast: DataFrame with 7 columns, type float32
+        """
         slice_df = self.ambients_dfs[day].iloc[time_step:min(time_step+self.forecast_horizon+1, self.timesteps_per_day)]
         # fix so that if the slice_df is not long enough, it will take the first values of the next day
         if len(slice_df) < self.forecast_horizon + 1:
@@ -160,10 +164,10 @@ class CogenEnv(gym.Env):
         cols = ['Ambient Temperature', 'Ambient Pressure',
                 'Ambient rel. Humidity', 'Target Net Power',
                 'Target Process Steam', 'Energy Price', 'Gas Price']
-        forecast = slice_df[cols].astype(np.float32)
+        forecast = slice_df[cols]
         # add iid gaussian noise to future observations
-        forecast.iloc[1:] += self.forecast_noise_std*self.np_random.normal(size=(self.forecast_horizon, 7)).astype(np.float32)
-        return forecast
+        forecast.iloc[1:] += self.forecast_noise_std * self.np_random.normal(size=(self.forecast_horizon, 7))
+        return forecast.astype(np.float32)
 
     def _get_obs(self) -> dict[str, Any]:
         """Get the current observation.
