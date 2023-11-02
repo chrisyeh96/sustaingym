@@ -19,11 +19,13 @@ The reward function is a sum of three components: $r(t) = p(t) - c_V(t) - c_C(t)
 
 ### Installation
 
-SustainGym is hosted on [PyPI](https://pypi.org/project/sustaingym/) and can be installed with `pip`:
+SustainGym is designed for Linux machines. SustainGym is hosted on [PyPI](https://pypi.org/project/sustaingym/) and can be installed with `pip`:
 
 ```bash
 pip install sustaingym[ev]
 ```
+
+Specifically for `EVChargingEnv`, you also need to have a MOSEK license. You may either request a free [personal academic license](https://www.mosek.com/products/academic-licenses/), or a free 30-day [commercial trial license](https://www.mosek.com/products/trial/). The license file should be placed inside a folder called "mosek" under your home directory. Typically, that will be `~/mosek/mosek.lic`.
 
 ### Custom RL Loop
 
@@ -48,7 +50,7 @@ while not terminated:
 ### Using our training script
 
 1. Install [miniconda3](https://docs.conda.io/en/latest/miniconda-other-installer-links.html).
-2. (Optional) Set the conda solver to libmamba for faster dependency solving.
+2. (Optional, but recommended) Set the conda solver to libmamba for faster dependency solving.
     ```bash
     conda config --set solver libmamba
     ```

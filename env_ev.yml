@@ -5,13 +5,21 @@
 # conda remove --name sustaingym_ev --all
 #
 # Notes
-# - the 2 main bottlenecks are acnportal and ray
-#   1) acnportal v0.3.2 only supports up to Pandas 1.1,
+# - ACNPortal
+#   - latest official release v0.3.2 only supports up to Pandas 1.1,
 #      and Pandas 1.1 only supports up to Python 3.9
-#   2) ray[rllib]==2.7.0 only supports gymnasium 0.28.1, pettingzoo 0.24.*
-# - technically, ray(2.7.0) needs Pandas >= 1.3, but we can bypass this requirement by installing
-#   it through pip instead of conda
-# - last updated: September 27, 2023
+#   - we install from the ACNPortal dev branch, which includes a fix that supports Pandas 2
+#
+# - TensorFlow 2.14:
+#   - the GPU version only works with Python <=3.10 (see https://github.com/tensorflow/tensorflow/issues/61986)
+#   - TensorFlow 2.15 should fix this issue
+# - Ray 2.7.1:
+#   - officially only supports up to Python 3.10 (see https://docs.ray.io/en/latest/ray-overview/installation.html)
+#   - only supports gymnasium 0.28.1 (see https://github.com/ray-project/ray/blob/ray-2.7.1/python/requirements.txt)
+#   - officially seems to only supports pettingzoo 1.23.1 (see https://github.com/ray-project/ray/blob/ray-2.7.1/python/requirements/ml/rllib-test-requirements.txt),
+#     but empirically seems to work with pettingzoo 1.24.*
+#
+# last updated: November 2, 2023
 name: sustaingym_ev
 channels:
 - pytorch           # for pytorch
@@ -19,31 +27,37 @@ channels:
 - mosek             # for mosek
 - conda-forge
 dependencies:
-- python=3.9.16
-- cudatoolkit=11.8.0      # for TensorFlow 2.12
-- cvxpy=1.3.1
-- flake8=6.0.0
+- python=3.10.*
+- cvxpy=1.4.*
+- flake8=6.1.*
 - ipympl=0.9.3            # for Jupyter / VSCode notebooks
 - ipykernel               # for Jupyter / VSCode notebooks
-- matplotlib=3.7.1
-- mosek=10.0.44
+- matplotlib=3.8.*
+- mosek=10.1.*
 - mypy=1.3.0
-- numpy=1.24.3
-- pandas=1.1.5            # acnportal 0.3.2 only works with Pandas 1.1
+- numpy=1.26.*
+- pandas=2.1.*
 - pip
-- pytorch=2.0.1
-- pytorch-cuda=11.8       # for PyTorch 2.0
+- pytorch=2.1.*
 - pytz=2023.3
 - requests=2.31.0
-- scikit-learn=1.1.1
-- scipy=1.10.1
-- seaborn=0.12.2
-- tqdm=4.65.0
+- scikit-learn=1.1.*
+- scipy=1.11.*
+- seaborn=0.13.0
+- tqdm=4.66.*
+
+# for GPU. comment out for CPU-only.
+- pytorch-cuda=11.8       # for PyTorch 2
 
 - pip:
-  - acnportal==0.3.2
+  - git+https://github.com/zach401/acnportal@0127a055cf
   - gymnasium==0.28.1
   - pettingzoo==1.24.1
-  - "ray[rllib]==2.7.0"
-  - tensorflow==2.12.0
-  - nvidia-cudnn-cu11==8.6.0.163  # for TensorFlow 2.12
+  - ray[rllib]==2.7.1
+  - stable_baselines3>=2.0
+
+  # uncomment for CPU-only
+  # - tensorflow==2.14.*
+
+  # for GPU. comment out for CPU-only.
+  - tensorflow[and-cuda]==2.14.*
