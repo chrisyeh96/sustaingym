@@ -28,6 +28,8 @@ class EVChargingEnv(Env):
     model (GMM) fitted on the data (see train_gmm_model.py). The
     gym supports the Caltech and JPL sites.
 
+    This environment's API is known to be compatible with Gymnasium v0.28, v0.29.
+
     In what follows:
 
     - ``n`` = number of stations in the EV charging network
@@ -139,20 +141,20 @@ class EVChargingEnv(Env):
         self._timestep_obs = np.zeros(1, dtype=np.float32)  # timestep normalized to [0, 1]
 
         self.observation_space = spaces.Dict({
+            'timestep':        spaces.Box(0, 1, shape=(1,), dtype=np.float32),
             'est_departures':  spaces.Box(-288, 288, shape=(self.num_stations,), dtype=np.float32),
             'demands':         spaces.Box(0, self.data_generator.requested_energy_cap,
                                           shape=(self.num_stations,), dtype=np.float32),
             'prev_moer':       spaces.Box(0, 1, shape=(1,), dtype=np.float32),
             'forecasted_moer': spaces.Box(0, 1, shape=(self.moer_forecast_steps,), dtype=np.float32),
-            'timestep':        spaces.Box(0, 1, shape=(1,), dtype=np.float32),
         })
 
         self._obs = {
+            'timestep': self._timestep_obs,
             'est_departures': self._est_departures,
             'demands': self._demands,
             'prev_moer': self._prev_moer,
             'forecasted_moer': self._forecasted_moer,
-            'timestep': self._timestep_obs,
         }
 
         # Track cumulative components of reward signal
@@ -262,9 +264,7 @@ class EVChargingEnv(Env):
 
             reward: scheduler's performance metric per timestep
             terminated: whether episode is terminated
-            truncated: whether episode has reached a time limit. Here, truncated
-                is always the same as terminated because the episode is always
-                across the entire day.
+            truncated: always ``False``, since there is no intermediate stopping condition
             info: auxiliary useful information
 
                 - 'num_evs': int, number of charging sessions in episode.
@@ -298,11 +298,10 @@ class EVChargingEnv(Env):
         reward = self._get_reward(schedule)
         info = self._get_info()
 
-        # terminated, truncated at end of day
-        return observation, reward, done, done, info
+        return observation, reward, done, False, info
 
-    def reset(self, *, seed: int | None = None, options: dict | None = None
-              ) -> tuple[dict[str, Any], dict[str, Any]]:
+    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None
+              ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         """Resets the environment.
 
         Prepares for the next episode by re-creating the charging network,
@@ -388,7 +387,7 @@ class EVChargingEnv(Env):
                 pilot_signals[station_id] = [np.round(action[i] / 8) * 8]  # TODO: smarter rounding?
         return pilot_signals
 
-    def _get_observation(self) -> dict[str, Any]:
+    def _get_observation(self) -> dict[str, np.ndarray]:
         """Returns observations for the current state of simulation."""
         self._est_departures.fill(0)
         self._demands.fill(0)

@@ -1,0 +1,33 @@
+# Install or update environment
+# conda env update --file env_building.yml --prune
+#
+# Remove environment
+# conda remove --name sustaingym_building --all
+#
+# Notes
+# - last updated: September 27, 2023
+name: sustaingym_building
+channels:
+- conda-forge
+dependencies:
+- python=3.11
+- cvxpy       # for MPC controller
+- flake8      # Optional, for code linting
+- ipympl      # Optional, for Jupyter / VSCode notebooks
+- ipykernel   # Optional, for Jupyter / VSCode notebooks
+- matplotlib
+- mypy        # Optional, for type checking
+- numpy
+- pandas
+- pip
+- pvlib
+- scikit-learn
+- scipy
+- seaborn
+- tqdm        # Optional, for progress bars
+
+- pip:
+  - gymnasium==0.28.1
+  - pettingzoo==1.24.1
+  - ray[rllib]==2.7.0
+  - stable_baselines3>=2.0.0

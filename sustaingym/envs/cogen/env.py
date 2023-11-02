@@ -17,6 +17,8 @@ from sustaingym.data.utils import read_bytes, read_to_bytesio
 
 class CogenEnv(gym.Env):
     """
+    This environment's API is known to be compatible with Gymnasium v0.28, v0.29.
+
     Actions:
 
     .. code:: none
@@ -63,12 +65,12 @@ class CogenEnv(gym.Env):
         Natural gas price ($/MMBtu)   0                   7
 
     Args:
-        renewables_magnitude: TODO
-        ramp_penalty: TODO
-        supply_imbalance_penalty: TODO
-        constraint_violation_penalty: TODO
-        forecast_horizon: TODO
-        forecast_noise_std: TODO
+        renewables_magnitude: wind generation capacity
+        ramp_penalty: magnitude of penalty for generator ramping
+        supply_imbalance_penalty: magnitude of penalty for energy/steam supply-demand imbalance
+        constraint_violation_penalty: magnitude of penalty for other constraint violations
+        forecast_horizon: number of forecast steps to include in observation
+        forecast_noise_std: standard deviation of noise on future forecast steps
     """
     def __init__(self,
                  renewables_magnitude: float = 0.,
@@ -76,12 +78,13 @@ class CogenEnv(gym.Env):
                  supply_imbalance_penalty: float = 1000,
                  constraint_violation_penalty: float = 1000,
                  forecast_horizon: int = 3,
-                 forecast_noise_std: float = 0.1,
+                 forecast_noise_std: float = 0.0,
                  ):
         self.ramp_penalty = ramp_penalty
         self.supply_imbalance_penalty = supply_imbalance_penalty
         self.constraint_violation_penalty = constraint_violation_penalty
         self.forecast_horizon = forecast_horizon
+        self.forecast_noise_std = forecast_noise_std
         # load the ambient conditions dataframes
         self.ambients_dfs = load_ambients.construct_df(renewables_magnitude=renewables_magnitude)
         self.n_days = len(self.ambients_dfs)
@@ -148,29 +151,35 @@ class CogenEnv(gym.Env):
         })
 
     def _forecast_from_time(self, day: int, time_step: int) -> pd.DataFrame:
-        """Returns the forecast values starting at the given day and time step
-        for the following self.forecast_horizon + 1 time steps."""
+        """Gets forecast values starting at the given day and time step for
+        the following self.forecast_horizon + 1 time steps.
+
+        Returns:
+            forecast: DataFrame with 7 columns, type float32
+        """
         slice_df = self.ambients_dfs[day].iloc[time_step:min(time_step+self.forecast_horizon+1, self.timesteps_per_day)]
         # fix so that if the slice_df is not long enough, it will take the first values of the next day
-        # TODO: figure out what to do if we're on the last day and there is no next day
         if len(slice_df) < self.forecast_horizon + 1:
             slice_df = pd.concat([slice_df, self.ambients_dfs[day+1].iloc[:self.forecast_horizon + 1 - len(slice_df)]])
         cols = ['Ambient Temperature', 'Ambient Pressure',
                 'Ambient rel. Humidity', 'Target Net Power',
                 'Target Process Steam', 'Energy Price', 'Gas Price']
-        return slice_df[cols].astype(np.float32)
+        forecast = slice_df[cols]
+        # add iid gaussian noise to future observations
+        forecast.iloc[1:] += self.forecast_noise_std * self.np_random.normal(size=(self.forecast_horizon, 7))
+        return forecast.astype(np.float32)
 
     def _get_obs(self) -> dict[str, Any]:
         """Get the current observation.
 
-        The following values must be updated before calling self._get_obs():
-        - self.current_timestep
+        The following values must be updated before calling `self._get_obs()`:
+        - self.t
         - self.current_day
         - self.current_action
         """
-        forecast_df = self._forecast_from_time(self.current_day, self.current_timestep)
+        forecast_df = self._forecast_from_time(self.current_day, self.t)
         obs = {
-            'Time': np.array([self.current_timestep / self.timesteps_per_day], dtype=np.float32),
+            'Time': np.array([self.t / self.timesteps_per_day], dtype=np.float32),
             'Prev_Action': self.current_action,
             'TAMB': forecast_df['Ambient Temperature'].values,
             'PAMB': forecast_df['Ambient Pressure'].values,
@@ -182,7 +191,7 @@ class CogenEnv(gym.Env):
         }
         return obs
 
-    def reset(self, seed: int | None = None, options: dict | None = None
+    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None
               ) -> tuple[dict[str, Any], dict[str, Any]]:
         """Initialize or restart an episode.
 
@@ -204,7 +213,8 @@ class CogenEnv(gym.Env):
         # cannot be forked across RLLib worker processes.
         if self._model is None:
             b = read_bytes('data/cogen/onnx_model/model.onnx')
-            self._model = rt.InferenceSession(b)
+            self._model = rt.InferenceSession(
+                b, providers=['CUDAExecutionProvider', 'CPUExecutionProvider'])
 
         # randomly pick a day for the episode
         # subtract 1 as temporary fix to make sure we don't go over the number of days with lookahead window
@@ -213,8 +223,7 @@ class CogenEnv(gym.Env):
         else:
             self.current_day = seed % self.n_days
 
-        self.current_timestep = 0  # keeps track of which timestep we are on
-        self.current_terminated = False
+        self.t = 0  # keeps track of which timestep we are on
 
         # initial action is drawn randomly from the action space
         # not sure if this is reasonable, TODO: check this
@@ -351,15 +360,8 @@ class CogenEnv(gym.Env):
         }
         return total_reward, reward_breakdown
 
-    def _terminated(self) -> bool:
-        """Determines if the episode is terminated or not.
-
-        Returns:
-            terminated: True if the episode is terminated, False otherwise
-        """
-        return self.current_timestep > self.timesteps_per_day - 1
-
-    def step(self, action: dict[str, Any]) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
+    def step(self, action: dict[str, Any]
+             ) -> tuple[dict[str, Any], float, bool, bool, dict[str, Any]]:
         """Run one timestep of the Cogen environment's dynamics.
 
         Args:
@@ -369,7 +371,7 @@ class CogenEnv(gym.Env):
             obs: new state
             reward: reward
             terminated: termination flag
-            truncated: always ``False``
+            truncated: always ``False``, since there is no intermediate stopping condition
             info: info dict
         """
         # compute the loss of taking the action
@@ -379,18 +381,15 @@ class CogenEnv(gym.Env):
         self.current_action = action
 
         # update the current timestep
-        self.current_timestep += 1
+        self.t += 1
 
         # update the current observation
         self.obs = self._get_obs()
 
         # update the current done
-        self.current_terminated = self._terminated()
+        terminated = (self.t >= self.timesteps_per_day)
 
         # always False due to no intermediate stopping conditions
         truncated = False
 
-        return self.obs, self.current_reward, self.current_terminated, truncated, self.current_info
-
-    def close(self):
-        return
+        return self.obs, self.current_reward, terminated, truncated, self.current_info

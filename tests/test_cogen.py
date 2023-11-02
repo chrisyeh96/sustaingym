@@ -4,7 +4,7 @@ import unittest
 
 import gymnasium.utils.env_checker
 from pettingzoo.test import parallel_api_test
-# from pettingzoo.test.seed_test import parallel_seed_test
+from pettingzoo.test.seed_test import parallel_seed_test
 import ray.rllib.utils
 
 from sustaingym.envs.cogen import (
@@ -35,14 +35,15 @@ class TestMultiAgentEnv(unittest.TestCase):
     def test_pettingzoo_parallel_api(self) -> None:
         parallel_api_test(self.env, num_cycles=1000)
 
-    # this test fails in PettingZoo v1.22.3 due to a PettingZoo bug
-    # https://github.com/Farama-Foundation/PettingZoo/issues/939
-    # TODO: uncomment once we upgrade to PettingZoo >= 1.23
-    # def test_pettingzoo_parallel_seed(self) -> None:
-    #     parallel_seed_test(MultiAgentCogenEnv)
+    def test_pettingzoo_parallel_seed(self) -> None:
+        parallel_seed_test(MultiAgentCogenEnv)
 
 
 class TestMultiAgentRLLibEnv(unittest.TestCase):
+    """TODO: remove this test (and the MultiAgentRLLibCogenEnv() class) once
+    https://github.com/ray-project/ray/pull/39459
+    is included in a Ray RLLib release (likely v2.8).
+    """
     def setUp(self) -> None:
         self.env = MultiAgentRLLibCogenEnv()
 

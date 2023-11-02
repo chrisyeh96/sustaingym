@@ -37,7 +37,6 @@ def load_wind_data(n_mw: float) -> np.ndarray:
 def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
     """
     Constructs the dataframe of all ambient conditions
-    Adding renewables (scaled by magnitude input) is currently not implemented TODO?
     """
     renewables_magnitude = float(renewables_magnitude)
 
@@ -114,15 +113,6 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
         # get the wind power data
         wind_data = load_wind_data(renewables_magnitude)[:len(df)]
         df['Target Net Power'] = np.maximum(df['Target Net Power'] - wind_data, 0)
-        # for l in range(len(dfs)):
-        #     try:
-
-        #         dfs[l]['Target Net Power'] = np.maximum(dfs[l]['Target Net Power'] - wind_data[l],
-        #                                                 np.zeros_like(wind_data[l]))
-        #     except:
-        #         # if the wind data is not the same length as the ambient data,
-        #         # then we're just going to throw away this day anyway
-        #         pass
 
         try:
             path = os.path.join(DATA_DIR, f'ambients_wind={renewables_magnitude}.pkl')
@@ -136,9 +126,7 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
     dates = df['Timestamp'].dt.date.unique()
     # drop the first and last days so each day has 96 datapoints
     dfs = [df[df['Timestamp'].dt.date == val] for val in dates][1:-1]
-    # exclude any day that has more or fewer than 96 intervals
-    # since this means the row is corrupted
-    # TODO: fix this later. Culprit is daylight savings.
+    # exclude any day that has more or fewer than 96 intervals due to daylight savings
     dfs = [df for df in dfs if len(df) == 96]
 
     return dfs
