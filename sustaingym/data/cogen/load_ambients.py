@@ -82,7 +82,7 @@ def construct_df(renewables_magnitude: float = 0.) -> list[pd.DataFrame]:
         gas_df['Day'] = pd.to_datetime(gas_df['Day'])
         gas_df.set_index('Day', inplace=True)
         gas_df = gas_df.reindex(pd.date_range(start=gas_df.index.min(), end=gas_df.index.max(), freq='D'))
-        gas_df = gas_df.fillna(method='ffill')
+        gas_df.ffill(inplace=True)
 
         # subsample gas_df every 15 minutes
         gas_df_15min = gas_df.resample('15min').ffill()
