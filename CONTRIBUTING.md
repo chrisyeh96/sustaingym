@@ -32,7 +32,7 @@
 
 ## Unit tests
 
-First, set your terminal directory to this repo's root directory. Next, make sure you have activated the appropriate conda environment for the SustainGym environment you want to test (e.g., `conda activate sustaingym_ev`). Finally, run the unit tests for the desired SustainGym environment:
+First, set your terminal directory to this repo's root directory. Next, make sure you have activated the appropriate conda environment for the SustainGym environment you want to test (_e.g._, `conda activate sustaingym_ev`). Finally, run the unit tests for the desired SustainGym environment:
 
 ```bash
 python -m unittest -v tests/test_evcharging.py
