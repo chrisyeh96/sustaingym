@@ -5,10 +5,10 @@ import unittest
 import gymnasium.utils.env_checker
 from pettingzoo.test import parallel_api_test
 from pettingzoo.test.seed_test import parallel_seed_test
+from ray.rllib.env.wrappers.pettingzoo_env import ParallelPettingZooEnv
 import ray.rllib.utils
 
-from sustaingym.envs.cogen import (
-    CogenEnv, MultiAgentCogenEnv, MultiAgentRLLibCogenEnv)
+from sustaingym.envs.cogen import CogenEnv, MultiAgentCogenEnv
 
 
 class TestSingleAgentEnv(unittest.TestCase):
@@ -18,7 +18,7 @@ class TestSingleAgentEnv(unittest.TestCase):
     def tearDown(self) -> None:
         self.env.close()
 
-    def test_check_env(self):
+    def test_check_env(self) -> None:
         gymnasium.utils.env_checker.check_env(self.env)
 
     def test_rllib_check_env(self) -> None:
@@ -38,20 +38,9 @@ class TestMultiAgentEnv(unittest.TestCase):
     def test_pettingzoo_parallel_seed(self) -> None:
         parallel_seed_test(MultiAgentCogenEnv)
 
-
-class TestMultiAgentRLLibEnv(unittest.TestCase):
-    """TODO: remove this test (and the MultiAgentRLLibCogenEnv() class) once
-    https://github.com/ray-project/ray/pull/39459
-    is included in a Ray RLLib release (likely v2.8).
-    """
-    def setUp(self) -> None:
-        self.env = MultiAgentRLLibCogenEnv()
-
-    def tearDown(self) -> None:
-        self.env.close()
-
     def test_rllib_check_env(self) -> None:
-        ray.rllib.utils.check_env(self.env)
+        rllib_env = ParallelPettingZooEnv(self.env)
+        ray.rllib.utils.check_env(rllib_env)
 
 
 if __name__ == '__main__':
