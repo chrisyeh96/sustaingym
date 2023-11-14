@@ -5,29 +5,41 @@
 # conda remove --name sustaingym_building --all
 #
 # Notes
-# - last updated: September 27, 2023
+# - Ray 2.8:
+#   - officially only supports up to Python 3.10 (see https://docs.ray.io/en/latest/ray-overview/installation.html)
+#   - only supports gymnasium 0.28.1 (see https://github.com/ray-project/ray/blob/ray-2.8.0/python/setup.py#L305)
+#   - officially seems to only supports pettingzoo 1.23.1 (see https://github.com/ray-project/ray/blob/ray-2.7.1/python/requirements/ml/rllib-test-requirements.txt),
+#     but empirically seems to work with pettingzoo 1.24.*
+#
+# last updated: November 13, 2023
 name: sustaingym_building
 channels:
+- pytorch
+- nvidia
 - conda-forge
 dependencies:
-- python=3.11
-- cvxpy       # for MPC controller
-- flake8      # Optional, for code linting
-- ipympl      # Optional, for Jupyter / VSCode notebooks
-- ipykernel   # Optional, for Jupyter / VSCode notebooks
+- python=3.10.*
+- cvxpy=1.4.*         # for MPC controller
+- flake8              # Optional, for code linting
+- ipympl              # Optional, for Jupyter / VSCode notebooks
+- ipykernel           # Optional, for Jupyter / VSCode notebooks
 - matplotlib
-- mypy        # Optional, for type checking
+- mypy                # Optional, for type checking
 - numpy
 - pandas
 - pip
 - pvlib
+- pytorch=2.1.*
 - scikit-learn
 - scipy
 - seaborn
-- tqdm        # Optional, for progress bars
+- tqdm                # Optional, for progress bars
+
+# for GPU. comment out for CPU-only.
+- pytorch-cuda=11.8   # for PyTorch 2
 
 - pip:
   - gymnasium==0.28.1
   - pettingzoo==1.24.1
-  - ray[rllib]==2.7.0
-  - stable_baselines3>=2.0.0
+  - ray[rllib]==2.8.*
+  - stable_baselines3>=2

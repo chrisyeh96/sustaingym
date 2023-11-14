@@ -162,9 +162,9 @@ class BuildingEnv(gym.Env):
         ]).astype(np.float32)
         self.high = np.concatenate([
             np.ones(self.n + 1) * max_T,  # temp of zones and outdoor
-            [heat_max],                     # GHI
+            [heat_max],                   # GHI
             [max_T],                      # temp of ground
-            [heat_max]                      # occupancy power
+            [heat_max]                    # occupancy power
         ]).astype(np.float32)
         self.observation_space = gym.spaces.Box(self.low, self.high, dtype=np.float32)
 
@@ -255,7 +255,6 @@ class BuildingEnv(gym.Env):
             Y = np.insert(Y, 0, avg_temp**2).T
         else:
             # Calculate Occupower based on the given formula
-
             self.Occupower = self._calc_occupower(avg_temp, meta)
 
             # Insert Occupower at the beginning of the Y matrix
@@ -336,9 +335,6 @@ class BuildingEnv(gym.Env):
         T_initial = (
             self.target if options is None else options.get("T_initial", self.target)
         )
-
-        # T_initial =np.array([18.24489859, 18.58710076, 18.47719682, 19.11476084, 19.59438163,15.39221207])
-        # T_initial = np.random.uniform(21,23, self.n+4)
 
         # Calculate the average initial temperature
         avg_temp = np.sum(T_initial) / self.n
