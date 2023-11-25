@@ -13,11 +13,8 @@
 #   - only supports gymnasium 0.28.1 (see https://github.com/ray-project/ray/blob/ray-2.8.0/python/setup.py#L305)
 #   - officially seems to only supports pettingzoo 1.23.1 (see https://github.com/ray-project/ray/blob/ray-2.8.0/python/requirements/ml/rllib-test-requirements.txt),
 #     but empirically seems to work with pettingzoo 1.24.*
-# - Onnxruntime 1.16:
-#   - pre-built pip package only supports up to CUDA 11.8 (see https://onnxruntime.ai/docs/execution-providers/CUDA-ExecutionProvider.html)
-#   - PyTorch 2.1 supports both CUDA 11.8 and 12.1
 #
-# last updated: November 13, 2023
+# last updated: November 16, 2023
 name: sustaingym_cogen
 channels:
 - pytorch           # for pytorch
@@ -47,11 +44,10 @@ dependencies:
   - gymnasium==0.28.1
   - pettingzoo==1.24.1
   - ray[rllib]==2.8.*
+  - onnxruntime==1.16.*    # the ONNX model for CogenEnv is small and runs sufficiently fast on CPU
 
   # uncomment for CPU-only
-  # - onnxruntime==1.16.*
   # - tensorflow==2.14.*
 
   # for GPU. comment out for CPU-only.
-  - onnxruntime-gpu==1.16.*
   - tensorflow[and-cuda]==2.14.*

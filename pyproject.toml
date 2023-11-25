@@ -24,26 +24,40 @@ dependencies = [
 
 [project.optional-dependencies]
 # Update dependencies in `all` if any are added or removed
-evcharging = [
-    "acnportal==0.3.2",
+all = [
+    "acnportal>=0.3.3",
     "cvxpy>=1.3, <2",           # semver
     "mosek>=10.0.44, <11",      # semver
-    "pandas==1.1.*",            # semver
-    "pytz",
-    "requests>=2.31.0",         # semver
-    "scikit-learn>=1.1.1",      # semver
-]
-cogen = [
     "openpyxl>=3.1",
     "onnxruntime>=1.15, <2",    # semver
     "pandas>=1.1, <3",          # semver
-    "xlrd>=2"
+    "pvlib>=0.10",
+    "pytz",
+    "requests>=2.31.0",         # semver
+    "scikit-learn>=1.1.1",      # semver
+    "scipy>=1.0",
+    "xlrd>=2",
 ]
 building = [
     "cvxpy>=1.3, <2",           # semver
     "pvlib>=0.10",
     "scikit-learn>=1.1.1",      # semver
-    "scipy>=1.0"
+    "scipy>=1.0",
+]
+cogen = [
+    "onnxruntime>=1.15, <2",    # semver
+    "openpyxl>=3.1",
+    "pandas>=1.1, <3",          # semver
+    "xlrd>=2",
+]
+evcharging = [
+    "acnportal>=0.3.3",
+    "cvxpy>=1.3, <2",           # semver
+    "mosek>=10.0.44, <11",      # semver
+    "pandas>=1.1, <3",          # semver
+    "pytz",
+    "requests>=2.31.0",         # semver
+    "scikit-learn>=1.1.1",      # semver
 ]
 
 [project.urls]
