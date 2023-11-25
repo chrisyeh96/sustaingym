@@ -36,6 +36,9 @@ import pvlib
 from scipy import interpolate
 
 from sustaingym.data.utils import read_to_stringio
+from sustaingym.envs.building import BuildingEnv
+
+from stochastic_uncontrollable_generator import StochasticUncontrollableGenerator
 
 
 class Ufactor(NamedTuple):
@@ -432,6 +435,26 @@ def Nfind_neighbor(
 
     return neighbors, Rtable, Ctable, Windowtable
 
+def generate_stochastic_ambient_features(building_env_params: dict, 
+                                         season: str, 
+                                         num_rows: int,
+                                         episodes: int = 1,
+                                         block_size: int = 100):
+    """
+    Generates stochastic ambient/environment features for the BuildingEnv.
+
+    Args:
+        building_env_params: parameter dictionary to generate the BuildingEnv instance
+        season: the season over which to generate the stochastic features from
+        num_rows: the number of observations of the ambient features to generate
+        episodes: the number of episodes over which to infer a data-generating
+            create new instances of observations
+    """
+    env = BuildingEnv(building_env_params)
+    generator = StochasticUncontrollableGenerator(env, num_episodes=episodes)
+    generator.collect_data_and_fit(block_size_on_split=block_size)
+    samples = generator.draw_samples_from_dist(num_samples=num_rows, season=season)
+    return samples
 
 def ParameterGenerator(
     building: str,
@@ -452,7 +475,8 @@ def ParameterGenerator(
     activity_sch: np.ndarray | float = 120,
     temp_range: tuple[float, float] = (-40, 40),
     is_continuous_action: bool = True,
-    root: str = ''
+    root: str = '',
+    stochastic_seasonal_ambient_features=None,
 ) -> dict[str, Any]:
     """Generates parameters from the selected building and temperature file for the env.
 
@@ -493,6 +517,10 @@ def ParameterGenerator(
         root: root directory for building and weather data files, only used when
             ``building`` and ``weather`` do not correspond to keys in `BUILDINGS`
             and `WEATHER`
+        stochastic_seasonal_ambient_features: Whether or not to generate stochastic
+            ambient features (heat gain from irradiance, ground/outdoor temperature);
+            `None` to use raw data; `summer` to generate stochastic ambient features
+            for the summer season; `winter` to do so for the winter season
 
     Returns:
         parameters: Contains all parameters needed for environment initialization.
@@ -631,6 +659,27 @@ def ParameterGenerator(
     parameters['A'] = A
     parameters['B'] = B
     parameters['D'] = D
+
+    if stochastic_seasonal_ambient_features == "summer":
+        samples = generate_stochastic_ambient_features(parameters, 
+                                                       "summer", 
+                                                       len(parameters["out_temp"]), 
+                                                       episodes=1)
+        parameters["out_temp"] = samples[:, 0]
+        parameters["ground_temp"] = samples[:, 1]
+        parameters["ghi"] = samples[:, 2]
+    elif stochastic_seasonal_ambient_features == "winter":
+        samples = generate_stochastic_ambient_features(parameters, 
+                                                       "winter", 
+                                                       len(parameters["out_temp"]), 
+                                                       episodes=1)
+        parameters["out_temp"] = samples[:, 0]
+        parameters["ground_temp"] = samples[:, 1]
+        parameters["ghi"] = samples[:, 2]
+    elif stochastic_seasonal_ambient_features is not None:
+        raise ValueError("stochastic_seasonal_ambient_features must be either \
+                         'None', 'summer', or 'winter'")
+
     return parameters
 
 
