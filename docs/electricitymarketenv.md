@@ -34,7 +34,7 @@ ElectricityMarketEnv considers temporal distribution shifts, specifically in the
 ### Installation
 
 1. Install [miniconda3](https://docs.conda.io/en/latest/miniconda-other-installer-links.html).
-2. (Optional) Set the conda solver to libmamba for faster dependency solving.
+2. (Optional, but recommended) If you are using a conda version `<=23.9.0`, set the conda solver to libmamba for faster dependency solving. Starting from conda version [`23.10.0`](https://github.com/conda/conda/releases/tag/23.10.0), libmamba is the default solver.
     ```bash
     conda config --set solver libmamba
     ```

@@ -1,37 +1,38 @@
 # Contributing code
 
 1. Install [miniconda3](https://docs.conda.io/en/latest/miniconda.html).
-2. Create conda environment. Replace `XX` below with the name of the SustainGym environment you want to work on.
+2. (Optional, but recommended) If you are using a conda version `<=23.9.0`, set the conda solver to libmamba for faster dependency solving. Starting from conda version [`23.10.0`](https://github.com/conda/conda/releases/tag/23.10.0), libmamba is the default solver.
+    ```bash
+    conda config --set solver libmamba
+    ```
+3. Clone the SustainGym repo, and enter the `sustaingym` directory.
+    ```bash
+    git clone https://github.com/chrisyeh96/sustaingym.git
+    cd sustaingym
+    ```
+4. Create conda environment. Replace `XX` below with the name of the SustainGym environment you want to work on. By default, the `env_XX.yml` environment files assume that you have a NVIDIA GPU. If you do not have a NVIDIA GPU, you may need to modify the `env_XX.yml` file.
     ```bash
     conda env update --file env_XX.yml --prune
     ```
-
-   If you are using RLLib with a GPU, you will also need to [configure TensorFlow for GPU](https://www.tensorflow.org/install/pip#4_gpu_setup):
-    ```bash
-    mkdir -p $CONDA_PREFIX/etc/conda/activate.d
-    echo 'CUDNN_PATH=$(dirname $(python -c "import nvidia.cudnn;print(nvidia.cudnn.__file__)"))' >> $CONDA_PREFIX/etc/conda/activate.d/env_vars.sh
-    echo 'export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:$CONDA_PREFIX/lib/:$CUDNN_PATH/lib' >> $CONDA_PREFIX/etc/conda/activate.d/env_vars.sh
-    ```
-
-3. Make code modifications in a separate git branch
+5. Make code modifications in a separate git branch
     ```bash
     git checkout -b new_feature
     ```
-4. From repo root folder, run mypy type checker and fix any errors.
+6. From repo root folder, run mypy type checker and fix any errors.
     ```bash
     mypy sustaingym
     ```
-5. From repo root folder, run code linter and fix any linting errors.
+7. From repo root folder, run code linter and fix any linting errors.
     ```bash
     flake8 sustaingym
     ```
-6. Commit changes in git and push.
-7. Submit pull request on GitHub.
+8. Commit changes in git and push.
+9. Submit pull request on GitHub.
 
 
 ## Unit tests
 
-First, set your terminal directory to this repo's root directory. Next, make sure you have activated the appropriate conda environment for the SustainGym environment you want to test (e.g., `conda activate sustaingym_ev`). Finally, run the unit tests for the desired SustainGym environment:
+First, set your terminal directory to this repo's root directory. Next, make sure you have activated the appropriate conda environment for the SustainGym environment you want to test (_e.g._, `conda activate sustaingym_ev`). Finally, run the unit tests for the desired SustainGym environment:
 
 ```bash
 python -m unittest -v tests/test_evcharging.py

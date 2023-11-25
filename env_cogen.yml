@@ -5,44 +5,49 @@
 # conda remove --name sustaingym_cogen --all
 #
 # Notes
-# - ray[rllib]==2.7 only supports gymnasium 0.28.1, pettingzoo 0.24.*
-# - last updated: October 30, 2023
+# - TensorFlow 2.14:
+#   - the GPU version only works with Python <=3.10 (see https://github.com/tensorflow/tensorflow/issues/61986)
+#   - TensorFlow 2.15 should fix this issue
+# - Ray 2.8:
+#   - officially only supports up to Python 3.10 (see https://docs.ray.io/en/latest/ray-overview/installation.html)
+#   - only supports gymnasium 0.28.1 (see https://github.com/ray-project/ray/blob/ray-2.8.0/python/setup.py#L305)
+#   - officially seems to only supports pettingzoo 1.23.1 (see https://github.com/ray-project/ray/blob/ray-2.8.0/python/requirements/ml/rllib-test-requirements.txt),
+#     but empirically seems to work with pettingzoo 1.24.*
+#
+# last updated: November 16, 2023
 name: sustaingym_cogen
 channels:
 - pytorch           # for pytorch
 - nvidia            # for pytorch-cuda
 - conda-forge
 dependencies:
-- python=3.11
+- python=3.10.*
 - flake8
 - ipympl              # for Jupyter / VSCode notebooks
 - ipykernel           # for Jupyter / VSCode notebooks
 - matplotlib
 - mypy
-- numpy
+- numpy=1.26.*
 - openpyxl            # for reading Excel files
 - pandas
 - pip
-- pytorch=2.0.1
+- pytorch=2.1.*
 - pytz=2023.3
 - seaborn
 - tqdm
 - xlrd                # for reading Excel files
 
-# for GPU
-- cudatoolkit=11.8.0  # for TensorFlow 2.12
-- pytorch-cuda=11.8   # for PyTorch 2.0
-
+# for GPU. comment out for CPU-only.
+- pytorch-cuda=11.8   # for PyTorch 2
 
 - pip:
   - gymnasium==0.28.1
   - pettingzoo==1.24.1
-  - "ray[rllib]==2.7.1"
-  - tensorflow==2.14.*
+  - ray[rllib]==2.8.*
+  - onnxruntime==1.16.*    # the ONNX model for CogenEnv is small and runs sufficiently fast on CPU
 
   # uncomment for CPU-only
-  # - onnxruntime
+  # - tensorflow==2.14.*
 
-  # for GPU
-  - nvidia-cudnn-cu11==8.6.0.163  # for TensorFlow 2.12
-  - onnxruntime-gpu
+  # for GPU. comment out for CPU-only.
+  - tensorflow[and-cuda]==2.14.*

@@ -224,7 +224,7 @@ def save_monthly_moer(year: int, month: int, ba: str, save_dir: str) -> None:
     df = get_historical_and_forecasts(starttime, endtime, ba)
 
     # when data has NaNs, propagate values forward in time
-    df.fillna(method='ffill', inplace=True)
+    df.ffill(inplace=True)
     df.to_csv(save_path, compression=COMPRESSION, index=True)  # keep datetime index
 
 

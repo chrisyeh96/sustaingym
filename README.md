@@ -1,8 +1,8 @@
-# SustainGym: Reinforcement learning environments for sustainability applications
+# SustainGym: Reinforcement Learning Environments for Sustainable Energy Systems
 
 The lack of standardized benchmarks for reinforcement learning (RL) in sustainability applications has made it difficult to both track progress on specific domains and identify bottlenecks for researchers to focus their efforts on. We present SustainGym, a suite of environments designed to test the performance of RL algorithms on realistic sustainability tasks. These environments highlight challenges in introducing RL to real-world sustainability tasks, including physical constraints and distribution shift.
 
-[**Paper**](https://drive.google.com/file/d/1wrLGu2FCVOT_BvtDoudsz05zFG89r7dI/view?usp=drive_link)
+[**Paper**](https://openreview.net/forum?id=vZ9tA3o3hr)
 | [**Website**](https://chrisyeh96.github.io/sustaingym/)
 
 SustainGym contains both single-agent and multi-agent RL environments.

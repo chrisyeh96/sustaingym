@@ -114,8 +114,6 @@ class CogenEnv(gym.Env):
         inputs_table.drop(columns=['index'], inplace=True)
         inputs_table.set_index('id', inplace=True)
 
-        # output_labels = [json_data['outputs'][i]['id'] for i in range(len(json_data['outputs']))]
-
         # action space is power output, evaporative cooler switch, power augmentation switch, and equivalent
         # process steam flow for generators 1, 2, and 3, as well as steam turbine power output, steam flow
         # through condenser, and number of cooling bays employed

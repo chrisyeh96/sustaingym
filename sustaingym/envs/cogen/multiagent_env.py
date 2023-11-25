@@ -8,7 +8,6 @@ from typing import Any
 from gymnasium import spaces
 import numpy as np
 from pettingzoo.utils.env import ParallelEnv
-from ray.rllib.env import MultiAgentEnv
 
 from .env import CogenEnv
 
@@ -136,59 +135,3 @@ class MultiAgentCogenEnv(ParallelEnv):
 
     def action_space(self, agent: str) -> spaces.Dict:
         return self.action_spaces[agent]
-
-
-class MultiAgentRLLibCogenEnv(MultiAgentCogenEnv, MultiAgentEnv):
-    """MultiAgentRLLibCogenEnv extends MultiAgentCogenEnv to support the RLLib
-    MultiAgentEnv API (RLLib v2.6.3, v2.7).
-
-    TODO: This class should be removed once
-    https://github.com/ray-project/ray/pull/39459
-    is included in a Ray RLLib release (likely v2.8).
-    """
-    def __init__(self,
-                 renewables_magnitude: float = 0.,
-                 ramp_penalty: float = 2.,
-                 supply_imbalance_penalty: float = 1000,
-                 constraint_violation_penalty: float = 1000,
-                 forecast_horizon: int = 12,
-                 forecast_noise_std: float = 0.1,
-                 ):
-        super().__init__(
-            renewables_magnitude=renewables_magnitude,
-            ramp_penalty=ramp_penalty,
-            supply_imbalance_penalty=supply_imbalance_penalty,
-            constraint_violation_penalty=constraint_violation_penalty,
-            forecast_horizon=forecast_horizon,
-            forecast_noise_std=forecast_noise_std)
-
-        self._agent_ids = set(self.agents)
-        self.action_space = spaces.Dict(self.action_spaces)
-        self.observation_space = spaces.Dict(self.observation_spaces)
-
-    def reset(self, *,
-              seed: int | None = None,
-              options: dict | None = None
-              ) -> dict[str, np.ndarray] | tuple[dict[str, np.ndarray], dict[str, dict[str, Any]]]:
-        """Resets the environment."""
-        return super().reset(seed=seed, options=options)
-
-    def step(self, action_dict: dict[str, dict[str, np.ndarray]]) -> tuple[
-            dict[str, np.ndarray], dict[str, float], dict[str, bool],
-            dict[str, bool], dict[str, dict[str, Any]]]:
-        """Run one timestep of the Cogen environment's dynamics.
-
-        Args:
-            action_dict: maps agent ID to dict representing agent's action
-
-        Returns:
-            obss: dict mapping agent_id to observation
-            rewards: dict mapping agent_id to reward
-            terminateds: dict mapping agent_id to terminated
-            truncateds: dict mapping agent_id to truncated
-            infos: dict mapping agent_id to info
-        """
-        obss, rewards, terminateds, truncateds, infos = super().step(action_dict)
-        terminateds['__all__'] = any(terminateds.values())
-        truncateds['__all__'] = any(truncateds.values())
-        return obss, rewards, terminateds, truncateds, infos
