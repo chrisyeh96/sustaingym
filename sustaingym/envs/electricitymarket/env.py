@@ -230,8 +230,8 @@ class ElectricityMarketEnv(Env):
 
         # Define environment spec
         self.spec = EnvSpec(
-            id='sustaingym/CongestedElectricityMarket-v0',
-            entry_point='sustaingym.envs:CongestedElectricityMarketEnv',
+            id='sustaingym/ElectricityMarket-v0',
+            entry_point='sustaingym.envs:ElectricityMarketEnv',
             nondeterministic=False,
             max_episode_steps=self.T)
 
