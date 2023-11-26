@@ -7,6 +7,10 @@ class StochasticUncontrollableGenerator():
                  num_episodes: int = None):
         """
         Initializes a generator class for the uncontrollable features in BuildingEnv.
+
+        :param building_env: The instance of the BuildingEnv environment.
+        :param num_episodes: The number of episodes over which to collect observations
+            from the environment.
         """
         self.env = building_env
         self.episodes = num_episodes
@@ -24,6 +28,10 @@ class StochasticUncontrollableGenerator():
     def collect_data_and_fit(self, block_size_on_split: int = 100):
         """
         Collects random observations and fits distribution to it.
+
+        :param block_size_on_split: Desired size of blocks for each time period over which
+            samples will be generated. May be resized to perfectly divide length of
+            observations.
         """
         assert self.episodes is not None
 
@@ -37,6 +45,9 @@ class StochasticUncontrollableGenerator():
                                                     block_size_on_split=block_size_on_split)
 
     def get_observations(self):
+        """
+        Returns collected observations.
+        """
         if len(self.observations[0]) == 0:
             print("Observations are empty. Call collect_random_observations to \
                   generate them.")
@@ -67,14 +78,20 @@ class StochasticUncontrollableGenerator():
         self.observations = self.observations[:-1]
         self.observations = np.array(self.observations)
 
-        # only last 3 features are solely functions of the environment
-        self.observations = self.observations[-3:]
+        # only these 3 features are entirely functions of the environment
+        self.observations = self.observations[:, :, -4:-1]
 
         return self.observations
 
     def split_observations_into_seasons(self, observation_data: np.array = None):
         """
         Splits observation data into summer and winter seasons.
+
+        :param observation_data: The collected observation data. Can be `None` if 
+            collect_random_observations has been called.
+        
+        :return summer_observations: Summer ambient features.
+        :return winter_observations: Winter ambient features.
         """
         if observation_data is None:
             if len(self.observations[0]) == 0:
@@ -112,7 +129,13 @@ class StochasticUncontrollableGenerator():
 
     def get_nearest_block_size(self, obs_length, block_size):
         """
-        Finds nearest block size to split observation data into.
+        Finds nearest block size to perfectly divide the length of the observation data.
+
+        :param obs_length: The number of observation vectors in the data.
+        :param block_size: The desired block size.
+
+        :return (one of) low, high: The nearest block size to perfectly divide the length
+            of the data.
         """
         low = block_size
         high = block_size
@@ -129,6 +152,18 @@ class StochasticUncontrollableGenerator():
                            this_season_observations: np.array = None, 
                            block_size_on_split: int = 100):
         """
+        Fits a multivariate normal distribution to each ambient feature.
+
+        :param season: The desired season. Can be `None` if this_season_observations is
+            not None. Otherwise, can be `summer` or `winter` if data has been generated
+            and split into seasons through split_observations_into_seasons.
+        :param this_season_observations: The observation data for this season. Can be
+            `None` if user has generated and split data.
+        :param block_size_on_split: Desired block size for each ambient feature vector.
+            May be altered to perfectly divide the length of the observation data.
+
+        :return empirical_dists: The empirical distributions for each of the ambient
+            features.
         """
         if season is None and this_season_observations is None:
             raise ValueError("Either season or this_season_observations must be specified.")
@@ -169,6 +204,13 @@ class StochasticUncontrollableGenerator():
     def draw_samples_from_dist(self, num_samples, season=None, dists=None):
         """
         Draw vector samples from fitted multivariate Gaussian.
+
+        :param num_samples: The number of desired samples.
+        :param season: The desired season. Can be `None`, `summer`, or `winter`.
+        :param dists: The empirical distributions. Can be `None` if instance has
+            generated empirical distributions through get_empirical_dist.
+
+        :return samples: The samples generated from the fitted distributions.
         """
         if season is None and dists is None:
             raise ValueError("Either season or dist must be supplied.")

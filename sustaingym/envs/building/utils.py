@@ -449,6 +449,9 @@ def generate_stochastic_ambient_features(building_env_params: dict,
         num_rows: the number of observations of the ambient features to generate
         episodes: the number of episodes over which to infer a data-generating
             create new instances of observations
+    
+    Returns:
+        samples: The sampled ambient features in the desired season.
     """
     env = BuildingEnv(building_env_params)
     generator = StochasticUncontrollableGenerator(env, num_episodes=episodes)
@@ -477,6 +480,7 @@ def ParameterGenerator(
     is_continuous_action: bool = True,
     root: str = '',
     stochastic_seasonal_ambient_features=None,
+    stochasic_generator_block_size=None,
 ) -> dict[str, Any]:
     """Generates parameters from the selected building and temperature file for the env.
 
@@ -521,6 +525,8 @@ def ParameterGenerator(
             ambient features (heat gain from irradiance, ground/outdoor temperature);
             `None` to use raw data; `summer` to generate stochastic ambient features
             for the summer season; `winter` to do so for the winter season
+        stochastic_generator_block_size: Desired block size for use in generating
+            stochastic seasonal ambient features.
 
     Returns:
         parameters: Contains all parameters needed for environment initialization.
@@ -661,18 +667,28 @@ def ParameterGenerator(
     parameters['D'] = D
 
     if stochastic_seasonal_ambient_features == "summer":
+        if stochasic_generator_block_size:
+            block_size = stochasic_generator_block_size
+        else:
+            block_size = 100
         samples = generate_stochastic_ambient_features(parameters, 
                                                        "summer", 
                                                        len(parameters["out_temp"]), 
-                                                       episodes=1)
+                                                       episodes=1,
+                                                       block_size=block_size)
         parameters["out_temp"] = samples[:, 0]
         parameters["ground_temp"] = samples[:, 1]
         parameters["ghi"] = samples[:, 2]
     elif stochastic_seasonal_ambient_features == "winter":
+        if stochasic_generator_block_size:
+            block_size = stochasic_generator_block_size
+        else:
+            block_size = 100
         samples = generate_stochastic_ambient_features(parameters, 
                                                        "winter", 
                                                        len(parameters["out_temp"]), 
-                                                       episodes=1)
+                                                       episodes=1,
+                                                       block_size=block_size)
         parameters["out_temp"] = samples[:, 0]
         parameters["ground_temp"] = samples[:, 1]
         parameters["ghi"] = samples[:, 2]
