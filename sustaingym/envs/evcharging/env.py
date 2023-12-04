@@ -10,7 +10,6 @@ import warnings
 import acnportal.acnsim as acns
 import cvxpy as cp
 from gymnasium import Env, spaces
-from gymnasium.envs.registration import EnvSpec
 import numpy as np
 
 from .event_generation import AbstractTraceGenerator
@@ -75,7 +74,7 @@ class EVChargingEnv(Env):
         action_space: spaces.Box, structure of actions expected by env
         observation_space: spaces.Dict, structure of observations
         reward_range: tuple[float, float], min and max rewards
-        spec: EnvSpec, info used to initialize env from gymnasium.make()
+        spec: EnvSpec, info about env if initialized from gymnasium.make()
         metadata: dict[str, Any], unused
         np_random: np.random.Generator, random number generator for the env
 
@@ -174,13 +173,6 @@ class EVChargingEnv(Env):
 
         # Define reward range
         self.reward_range = (-np.inf, self.PROFIT_FACTOR * 32 * self.num_stations)
-
-        # Define environment spec
-        self.spec = EnvSpec(
-            id='sustaingym/EVCharging-v0',
-            entry_point='sustaingym.envs:EVChargingEnv',
-            nondeterministic=False,
-            max_episode_steps=288)
 
         # Set up action projection
         if self.project_action_in_env:

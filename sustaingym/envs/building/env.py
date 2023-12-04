@@ -6,7 +6,6 @@ from __future__ import annotations
 from typing import Any
 
 import gymnasium as gym
-from gymnasium.envs.registration import EnvSpec
 import numpy as np
 from numpy import linalg as LA
 from scipy.linalg import expm
@@ -193,13 +192,6 @@ class BuildingEnv(gym.Env):
         # Compute the discrete-time system matrices
         self.A_d = expm(A * self.timestep)
         self.BD_d = LA.inv(A) @ (self.A_d - np.eye(self.A_d.shape[0])) @ BD
-
-        # Define environment spec
-        self.spec = EnvSpec(
-            id='sustaingym/BuildingEnv-v0',
-            entry_point='sustaingym.envs:BuildingEnv',
-            nondeterministic=False,
-            max_episode_steps=288)
 
     def step(self, action: np.ndarray
              ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
