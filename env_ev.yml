@@ -14,7 +14,7 @@
 #   - officially seems to only supports pettingzoo 1.23.1 (see https://github.com/ray-project/ray/blob/ray-2.8.0/python/requirements/ml/rllib-test-requirements.txt),
 #     but empirically seems to work with pettingzoo 1.24.*
 #
-# last updated: November 25, 2023
+# last updated: December 7, 2023
 name: sustaingym_ev
 channels:
 - pytorch           # for pytorch
@@ -47,7 +47,7 @@ dependencies:
 - pip:
   - acnportal>=0.3.3
   - gymnasium==0.28.1
-  - pettingzoo==1.24.1
+  - pettingzoo==1.24.*
   - ray[rllib]==2.8.*
   - stable_baselines3>=2
 
