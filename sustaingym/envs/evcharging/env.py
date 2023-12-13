@@ -46,13 +46,13 @@ class EVChargingEnv(Env):
 
     .. code:: none
 
-        Type: Dict(Box(n), Box(n), Box(1), Box(k), Box(1))
+        Type: Dict(Box(1), Box(n), Box(n), Box(1), Box(k))
                                             Shape   Min     Max
+        Timestep (fraction of day)          1       0       1
         Estimated departures (timesteps)    n       -288    288
         Demands (kWh)                       n       0       Max Allowed Energy Request
         Previous MOER value                 1       0       1
         Forecasted MOER (kg CO2 / kWh)      k       0       1
-        Timestep (fraction of day)          1       0       1
 
     Args:
         data_generator: generator for sampling EV charging events and MOER
