@@ -59,6 +59,10 @@ python -m build
 # upload built files to PyPI
 twine upload --repository testpypi dist/*  # for testpypi
 twine upload dist/*
+
+# create a new tag
+git tag vX.Y.Z
+git push origin --tags
 ```
 
 

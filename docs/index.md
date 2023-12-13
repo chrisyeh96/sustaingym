@@ -11,7 +11,7 @@ A suite of environments designed to test the performance of RL algorithms on rea
 The lack of standardized benchmarks for reinforcement learning (RL) in sustainability applications has made it difficult to both track progress on specific domains and identify bottlenecks for researchers to focus their efforts on. We present **SustainGym**, a suite of environments designed to test the performance of RL algorithms on realistic sustainability tasks. These environments highlight challenges in introducing RL to real-world sustainability tasks, including physical constraints and distribution shift.
 
 <p>
-    <a href="https://openreview.net/forum?id=vZ9tA3o3hr" class="btn btn-blue fs-5 mb-4 mb-md-0 mr-2">Read the Paper</a>
+    <a href="https://github.com/chrisyeh96/sustaingym/releases/download/v0.1.5/SustainGym.pdf" class="btn btn-blue fs-5 mb-4 mb-md-0 mr-2">Read the Paper</a>
     <a href="https://github.com/chrisyeh96/sustaingym/" class="btn fs-5 mb-4 mb-md-0">View it on GitHub</a>
 </p>
 
