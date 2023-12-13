@@ -445,7 +445,7 @@ def ParameterGenerator(
     full_occ: np.ndarray | float = 0,
     max_power: np.ndarray | int = 8000,
     ac_map: np.ndarray | int = 1,
-    time_res: int = 3600,
+    time_res: int = 300,
     reward_beta: float = 0.999,
     reward_pnorm: float = 2,
     target: np.ndarray | float = 22,
@@ -477,7 +477,7 @@ def ParameterGenerator(
         ac_map: binary indicator of presence (1) or absence (0) of AC, either a
             boolean array of shape (n,) to specify AC presence in individual
             rooms, or a scalar indicating AC presence in all rooms
-        time_res: length of 1 timestep in seconds. Default is 3600 (1 hour).
+        time_res: length of 1 timestep in seconds. Default is 300 (5 min).
         reward_beta: temperature error penalty weight for reward function
         reward_pnorm: p to use for norm in reward function
         target: target temperature setpoints (in Celsius), either an array
