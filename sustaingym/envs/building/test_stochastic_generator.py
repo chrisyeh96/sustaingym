@@ -5,52 +5,66 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-block_size = 288
+from tqdm import tqdm
+
+block_size = 120 # always in hours
+num_periods = 365 # number of episodes in one year of data
+time_res = 300 # always in seconds
 summer_params = ParameterGenerator(building="OfficeSmall", 
                                    weather="Hot_Dry",
                                    location="Tucson",
                                    stochastic_seasonal_ambient_features="summer",
-                                   stochasic_generator_block_size=block_size)
+                                   stochasic_generator_block_size=block_size,
+                                   num_periods=num_periods,
+                                   time_res=time_res)
 winter_params = ParameterGenerator(building="OfficeSmall", 
                                    weather="Hot_Dry",
                                    location="Tucson",
                                    stochastic_seasonal_ambient_features="winter",
-                                   stochasic_generator_block_size=block_size)
+                                   stochasic_generator_block_size=block_size,
+                                   num_periods=num_periods,
+                                   time_res=time_res)
 neutral_params = ParameterGenerator(building="OfficeSmall", 
                                    weather="Hot_Dry",
-                                   location="Tucson")
+                                   location="Tucson",
+                                   num_periods=num_periods,
+                                   time_res=time_res)
 
 summer_env = BuildingEnv(summer_params)
 winter_env = BuildingEnv(winter_params)
 neutral_env = BuildingEnv(neutral_params)
 
-this_summer_obs, _ = summer_env.reset()
-this_winter_obs, _ = winter_env.reset()
-this_neutral_obs, _ = neutral_env.reset()
+summer_obs = []
+winter_obs = []
+neutral_obs = []
 
-summer_obs = [this_summer_obs]
-winter_obs = [this_winter_obs]
-neutral_obs = [this_neutral_obs]
+num_running_periods = 1 # num_periods
+seed_start = 180
 
-terminated = False
-while not terminated:
-    action = summer_env.action_space.sample()
-    this_obs, _, terminated, _, _ = summer_env.step(action)
-    summer_obs = np.vstack((summer_obs, this_obs))
+print("Collecting weather data...")
+for i in tqdm(range(num_running_periods)):
+    done = False
+    this_summer_obs, _ = summer_env.reset(seed=seed_start)
+    this_winter_obs, _ = winter_env.reset(seed=seed_start)
+    this_neutral_obs, _ = neutral_env.reset(seed=seed_start)
+    if i == 0:
+        summer_obs = this_summer_obs.copy()
+        winter_obs = this_winter_obs.copy()
+        neutral_obs = this_neutral_obs.copy()
+    while not done:
+        this_summer_action = summer_env.action_space.sample()
+        this_winter_action = winter_env.action_space.sample()
+        this_neutral_action = neutral_env.action_space.sample()
 
-terminated = False
-while not terminated:
-    action = winter_env.action_space.sample()
-    this_obs, _, terminated, _, _ = winter_env.step(action)
-    winter_obs = np.vstack((winter_obs, this_obs))
+        this_summer_obs, _, done, _, _ = summer_env.step(this_summer_action)
+        this_winter_obs, _, done, _, _ = winter_env.step(this_winter_action)
+        this_neutral_obs, _, done, _, _ = neutral_env.step(this_neutral_action)
 
-terminated = False
-while not terminated:
-    action = neutral_env.action_space.sample()
-    this_obs, _, terminated, _, _ = neutral_env.step(action)
-    neutral_obs = np.vstack((neutral_obs, this_obs))
+        summer_obs = np.vstack((summer_obs, this_summer_obs))
+        winter_obs = np.vstack((winter_obs, this_winter_obs))
+        neutral_obs = np.vstack((neutral_obs, this_neutral_obs))
 
-ewm_periods = 100
+ewm_periods = num_periods
 feature_mappings = {-2: "heat gain from irradiance",
                     -3: "ground temperature",
                     -4: "outdoor temperature"}
@@ -61,15 +75,15 @@ for ft_idx in ambient_feature_indices:
     winter_series = pd.Series(winter_obs[:, ft_idx])
     neutral_series = pd.Series(neutral_obs[:, ft_idx])
 
-    summer_ewma = summer_series.ewm(ewm_periods).mean()
-    winter_ewma = winter_series.ewm(ewm_periods).mean()
-    neutral_ewma = neutral_series.ewm(ewm_periods).mean()
+    summer_ewma = summer_series.ewm(ewm_periods).mean()[10:]
+    winter_ewma = winter_series.ewm(ewm_periods).mean()[10:]
+    neutral_ewma = neutral_series.ewm(ewm_periods).mean()[10:]
 
     plt.figure()
     plt.title(f"Summer vs. winter for {feature_mappings[ft_idx]}")
-    plt.plot(summer_ewma, label=f"Summer EWMA", color="red", linewidth=0.75)
-    plt.plot(winter_ewma, label=f"Winter EWMA", color="blue", linewidth=0.75)
-    plt.plot(neutral_ewma, label=f"Normal-year EWMA", color="gray", linewidth=0.75)
+    plt.plot(summer_ewma, label=f"Summer EWMA({ewm_periods})", color="red", linewidth=0.75)
+    plt.plot(winter_ewma, label=f"Winter EWMA({ewm_periods})", color="blue", linewidth=0.75)
+    plt.plot(neutral_ewma, label=f"Normal-year EWMA({ewm_periods})", color="gray", linewidth=0.75)
     plt.xlabel("Time")
     plt.ylabel("Feature value")
     plt.legend()

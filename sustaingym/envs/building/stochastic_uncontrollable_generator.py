@@ -1,9 +1,10 @@
 import numpy as np
+import pandas as pd
 import scipy
 
 class StochasticUncontrollableGenerator():
     def __init__(self, 
-                 building_env, 
+                 building_env = None, 
                  num_episodes: int = None):
         """
         Initializes a generator class for the uncontrollable features in BuildingEnv.
@@ -24,8 +25,36 @@ class StochasticUncontrollableGenerator():
         self.winter_dists = None
         
         self.block_size = 0
+
+    def fit_and_generate_observations(self, 
+                                      num_rows: int, 
+                                      season: str,
+                                      weather_data: pd.DataFrame, 
+                                      block_size_on_split: int = 100):
+        """
+        """
+        num_observations = len(weather_data)
+        winter_observations = pd.concat([weather_data.iloc[:num_observations//4, :],
+                                         weather_data.iloc[3*num_observations//4:, :]],
+                                         axis=0).to_numpy()
+        summer_observations = weather_data.iloc[num_observations//4:3*num_observations//4, :].to_numpy()
+
+        summer_dist = self.get_empirical_dist("summer", summer_observations, block_size_on_split)
+        winter_dist = self.get_empirical_dist("winter", winter_observations, block_size_on_split)
+
+        if season == "summer":
+            samples = self.draw_samples_from_dist(num_rows, "summer")
+            return samples
+        elif season == "winter":
+            samples = self.draw_samples_from_dist(num_rows, "winter")
+            return samples
+        else:
+            raise ValueError("Season must be either `summer` or `winter`")
     
-    def collect_data_and_fit(self, block_size_on_split: int = 100):
+    def collect_data_and_fit(self, 
+                             season: str, 
+                             num_rows: int,
+                             block_size_on_split: int = 100):
         """
         Collects random observations and fits distribution to it.
 
@@ -103,23 +132,26 @@ class StochasticUncontrollableGenerator():
         self.summer_observations = []
         self.winter_observations = []
 
-        episodes = observation_data.shape[0]
+        if self.episodes is not None:
+            for i in range(self.episodes):
+                this_observation_block = observation_data[i]
+                this_n = len(this_observation_block)
 
-        for i in range(episodes):
-            this_observation_block = observation_data[i]
-            this_n = len(this_observation_block)
+                this_first_season = this_observation_block[:this_n//4]
+                this_summer = this_observation_block[this_n//4:3*this_n//4]
+                this_last_season = this_observation_block[3*this_n//4:]
+                this_winter = np.vstack((this_first_season, this_last_season))
 
-            this_first_season = this_observation_block[:this_n//4]
-            this_summer = this_observation_block[this_n//4:3*this_n//4]
-            this_last_season = this_observation_block[3*this_n//4:]
-            this_winter = np.vstack((this_first_season, this_last_season))
-
-            if i == 0:
-                self.summer_observations = this_summer
-                self.winter_observations = this_winter
-            else:
-                self.summer_observations = np.vstack((self.summer_observations, this_summer))
-                self.winter_observations = np.vstack((self.winter_observations, this_winter))
+                if i == 0:
+                    self.summer_observations = this_summer
+                    self.winter_observations = this_winter
+                else:
+                    self.summer_observations = np.vstack((self.summer_observations, this_summer))
+                    self.winter_observations = np.vstack((self.winter_observations, this_winter))
+        else:
+            num_observations = observation_data.shape[0]
+            self.summer_observations = observation_data[num_observations//4:3*num_observations//4, :]
+            self.winter_observations = np.vstack((observation_data[:num_observations//4, :], observation_data[3*num_observations//4:, :]))
 
         # (len_of_season x num_episodes, dim_of_obs_vector)
         self.summer_observations = np.array(self.summer_observations)
@@ -175,6 +207,7 @@ class StochasticUncontrollableGenerator():
             else:
                 raise ValueError("Season must be either summer or winter.")
         
+        this_season_observations = np.array(this_season_observations)
         num_obs, num_features = this_season_observations.shape
         block_size = self.get_nearest_block_size(num_obs, block_size_on_split)
         self.block_size = block_size
@@ -201,7 +234,7 @@ class StochasticUncontrollableGenerator():
 
         return empirical_dists
 
-    def draw_samples_from_dist(self, num_samples, season=None, dists=None):
+    def draw_samples_from_dist(self, num_samples, season=None, dists=None, block_size=None):
         """
         Draw vector samples from fitted multivariate Gaussian.
 
@@ -226,8 +259,11 @@ class StochasticUncontrollableGenerator():
             else:
                 raise ValueError("Season must be either summer or winter")
         
+        if block_size is None:
+            block_size = self.block_size
+        
         num_dists = len(dists)
-        num_blocks = num_samples // self.block_size
+        num_blocks = num_samples // block_size
 
         samples = []
         for i in range(num_dists):

@@ -138,6 +138,14 @@ class BuildingEnv(gym.Env):
         self.datadriven = False
         self.length_of_weather = len(self.out_temp)
 
+        # Store time period-related info
+        if "num_periods" in parameters.keys():
+            self.num_periods = parameters["num_periods"]
+        else:
+            self.num_periods = 365 # daily episodes by default
+        
+        self.length_of_period = self.length_of_weather // self.num_periods
+
         # Define action space bounds based on room number and air conditioning map
         self.Qlow = -self.ac_map.astype(np.float32)  # shape [n]
         self.Qhigh = self.ac_map.astype(np.float32)
@@ -296,6 +304,8 @@ class BuildingEnv(gym.Env):
         self.epoch += 1
 
         # Check if the environment has reached the end of the weather data
+        if self.epoch%self.length_of_period == 0 and self.epoch != 0:
+            done = True
         if self.epoch >= self.length_of_weather - 1:
             done = True
             self.epoch = 0
@@ -325,7 +335,9 @@ class BuildingEnv(gym.Env):
         super().reset(seed=seed, options=options)
 
         # Initialize the episode counter
-        self.epoch = 0
+        # self.epoch = 0 # ethan - commented out to facilitate weekly episodes
+        if seed is not None and seed >= 1 and seed <= self.num_periods:
+            self.epoch = (seed - 1) * self.length_of_period
 
         # Initialize state and action lists
         self.statelist = []
