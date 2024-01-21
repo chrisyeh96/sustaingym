@@ -91,12 +91,6 @@ class CogenEnv(gym.Env):
         self.timesteps_per_day = len(self.ambients_dfs[0])
         assert (0 <= self.forecast_horizon < self.timesteps_per_day - 1), 'forecast_horizon must be in [0, timesteps_per_day - 1)'
 
-        self.spec = gym.envs.registration.EnvSpec(
-            id='sustaingym/CogenEnv-v0',
-            entry_point='sustaingym.envs:CogenEnv',
-            nondeterministic=False,
-            max_episode_steps=self.timesteps_per_day)
-
         # actual ONNX model is loaded in reset()
         self._model: rt.InferenceSession | None = None
 
