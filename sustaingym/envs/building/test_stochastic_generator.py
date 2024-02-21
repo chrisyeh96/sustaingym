@@ -7,9 +7,9 @@ import pandas as pd
 
 from tqdm import tqdm
 
-block_size = 120 # always in hours
+block_size = 24 # always in hours
 num_periods = 365 # number of episodes in one year of data
-time_res = 300 # always in seconds
+time_res = 3600 # always in seconds
 summer_params = ParameterGenerator(building="OfficeSmall", 
                                    weather="Hot_Dry",
                                    location="Tucson",
@@ -38,8 +38,8 @@ summer_obs = []
 winter_obs = []
 neutral_obs = []
 
-num_running_periods = 1 # num_periods
-seed_start = 180
+num_running_periods = num_periods
+seed_start = None
 
 print("Collecting weather data...")
 for i in tqdm(range(num_running_periods)):
@@ -64,7 +64,7 @@ for i in tqdm(range(num_running_periods)):
         winter_obs = np.vstack((winter_obs, this_winter_obs))
         neutral_obs = np.vstack((neutral_obs, this_neutral_obs))
 
-ewm_periods = num_periods
+ewm_periods = 30 # num_periods
 feature_mappings = {-2: "heat gain from irradiance",
                     -3: "ground temperature",
                     -4: "outdoor temperature"}
@@ -75,9 +75,9 @@ for ft_idx in ambient_feature_indices:
     winter_series = pd.Series(winter_obs[:, ft_idx])
     neutral_series = pd.Series(neutral_obs[:, ft_idx])
 
-    summer_ewma = summer_series.ewm(ewm_periods).mean()[10:]
-    winter_ewma = winter_series.ewm(ewm_periods).mean()[10:]
-    neutral_ewma = neutral_series.ewm(ewm_periods).mean()[10:]
+    summer_ewma = summer_series.ewm(ewm_periods).mean() # [30:]
+    winter_ewma = winter_series.ewm(ewm_periods).mean() # [30:]
+    neutral_ewma = neutral_series.ewm(ewm_periods).mean() # [30:]
 
     plt.figure()
     plt.title(f"Summer vs. winter for {feature_mappings[ft_idx]}")
