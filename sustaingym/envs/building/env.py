@@ -133,6 +133,7 @@ class BuildingEnv(gym.Env):
         self.reward_pnorm = parameters['reward_pnorm']
         self.is_continuous_action = parameters['is_continuous_action']
         self.timestep = parameters['time_resolution']
+        self.episode_len = parameters['episode_len']
         self.Occupower = 0
         self.datadriven = False
         self.length_of_weather = len(self.out_temp)
@@ -288,6 +289,8 @@ class BuildingEnv(gym.Env):
         self.epoch += 1
 
         # Check if the environment has reached the end of the weather data
+        if self.epoch % (self.length_of_weather // self.episode_len) == 0 and self.epoch != 0:
+            done = True
         if self.epoch >= self.length_of_weather - 1:
             done = True
             self.epoch = 0
@@ -304,8 +307,10 @@ class BuildingEnv(gym.Env):
         is constructed by concatenating these variables.
 
         Args:
-            seed: seed for resetting the environment. An episode is entirely
-                reproducible no matter the generator used.
+            seed: seed for resetting the environment. The seed determines which episode
+                to start at. Increment the seed sequentially to experience episodes
+                in chronological order. Set seed to None for a random episode.
+                An episode is entirely reproducible no matter the generator used.
             options: optional resetting options
 
                 - 'T_initial': np.ndarray, shape [n], initial temperature of each zone
@@ -317,7 +322,12 @@ class BuildingEnv(gym.Env):
         super().reset(seed=seed, options=options)
 
         # Initialize the episode counter
-        self.epoch = 0
+        num_episodes = self.length_of_weather // self.episode_len
+        if seed is None:
+            episode = self.np_random.integers(low=0, high=num_episodes)
+        else:
+            episode = seed % num_episodes
+        self.epoch = episode * self.episode_len
 
         # Initialize state and action lists
         self.statelist = []
