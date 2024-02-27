@@ -134,17 +134,10 @@ class BuildingEnv(gym.Env):
         self.reward_pnorm = parameters['reward_pnorm']
         self.is_continuous_action = parameters['is_continuous_action']
         self.timestep = parameters['time_resolution']
+        self.episode_len = parameters['episode_len']
         self.Occupower = 0
         self.datadriven = False
         self.length_of_weather = len(self.out_temp)
-
-        # Store time period-related info
-        if "num_periods" in parameters.keys():
-            self.num_periods = parameters["num_periods"]
-        else:
-            self.num_periods = 365 # daily episodes by default
-        
-        self.length_of_period = self.length_of_weather // self.num_periods
 
         # Define action space bounds based on room number and air conditioning map
         self.Qlow = -self.ac_map.astype(np.float32)  # shape [n]
@@ -304,7 +297,7 @@ class BuildingEnv(gym.Env):
         self.epoch += 1
 
         # Check if the environment has reached the end of the weather data
-        if self.epoch%self.length_of_period == 0 and self.epoch != 0:
+        if self.epoch % (self.length_of_weather // self.episode_len) == 0 and self.epoch != 0:
             done = True
         if self.epoch >= self.length_of_weather - 1:
             done = True
@@ -322,8 +315,10 @@ class BuildingEnv(gym.Env):
         is constructed by concatenating these variables.
 
         Args:
-            seed: seed for resetting the environment. An episode is entirely
-                reproducible no matter the generator used.
+            seed: seed for resetting the environment. The seed determines which episode
+                to start at. Increment the seed sequentially to experience episodes
+                in chronological order. Set seed to None for a random episode.
+                An episode is entirely reproducible no matter the generator used.
             options: optional resetting options
 
                 - 'T_initial': np.ndarray, shape [n], initial temperature of each zone
@@ -335,9 +330,12 @@ class BuildingEnv(gym.Env):
         super().reset(seed=seed, options=options)
 
         # Initialize the episode counter
-        # self.epoch = 0 # ethan - commented out to facilitate weekly episodes
-        if seed is not None and seed >= 1 and seed <= self.num_periods:
-            self.epoch = (seed - 1) * self.length_of_period
+        num_episodes = self.length_of_weather // self.episode_len
+        if seed is None:
+            episode = self.np_random.integers(low=0, high=num_episodes)
+        else:
+            episode = seed % num_episodes
+        self.epoch = episode * self.episode_len
 
         # Initialize state and action lists
         self.statelist = []

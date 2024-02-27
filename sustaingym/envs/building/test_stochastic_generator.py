@@ -8,26 +8,26 @@ import pandas as pd
 from tqdm import tqdm
 
 block_size = 24 # always in hours
-num_periods = 365 # number of episodes in one year of data
+episode_len = 365 # number of episodes in one year of data
 time_res = 3600 # always in seconds
 summer_params = ParameterGenerator(building="OfficeSmall", 
                                    weather="Hot_Dry",
                                    location="Tucson",
                                    stochastic_seasonal_ambient_features="summer",
                                    stochasic_generator_block_size=block_size,
-                                   num_periods=num_periods,
+                                   episode_len=episode_len,
                                    time_res=time_res)
 winter_params = ParameterGenerator(building="OfficeSmall", 
                                    weather="Hot_Dry",
                                    location="Tucson",
                                    stochastic_seasonal_ambient_features="winter",
                                    stochasic_generator_block_size=block_size,
-                                   num_periods=num_periods,
+                                   episode_len=episode_len,
                                    time_res=time_res)
 neutral_params = ParameterGenerator(building="OfficeSmall", 
                                    weather="Hot_Dry",
                                    location="Tucson",
-                                   num_periods=num_periods,
+                                   episode_len=episode_len,
                                    time_res=time_res)
 
 summer_env = BuildingEnv(summer_params)
@@ -38,7 +38,7 @@ summer_obs = []
 winter_obs = []
 neutral_obs = []
 
-num_running_periods = num_periods
+num_running_periods = episode_len
 seed_start = None
 
 print("Collecting weather data...")

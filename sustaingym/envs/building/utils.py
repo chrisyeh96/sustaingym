@@ -436,11 +436,12 @@ def Nfind_neighbor(
 
     return neighbors, Rtable, Ctable, Windowtable
 
+
 def generate_stochastic_ambient_features(building_env_params: dict, 
                                          season: str, 
                                          num_rows: int,
                                          data: pd.DataFrame,
-                                         block_size: int = 100):
+                                         block_size: int = 100) -> np.ndarray:
     """
     Generates stochastic ambient/environment features for the BuildingEnv.
 
@@ -448,11 +449,14 @@ def generate_stochastic_ambient_features(building_env_params: dict,
         building_env_params: parameter dictionary to generate the BuildingEnv instance
         season: the season over which to generate the stochastic features from
         num_rows: the number of observations of the ambient features to generate
+        data: the processed data containing the year's worth of feature observations
+            to be fed into the stochastic generator
         episodes: the number of episodes over which to infer a data-generating
             create new instances of observations
     
     Returns:
-        samples: The sampled ambient features in the desired season.
+        samples (block_size x num_rows, num_obs_features): 
+            The sampled ambient features in the desired season.
     """
     generator = StochasticUncontrollableGenerator()
     data = np.array(data)
@@ -460,6 +464,7 @@ def generate_stochastic_ambient_features(building_env_params: dict,
     generator.get_empirical_dist(season=season, block_size_on_split=block_size)
     samples = generator.draw_samples_from_dist(num_samples=num_rows, season=season)
     return samples
+
 
 def ParameterGenerator(
     building: str,
@@ -473,7 +478,7 @@ def ParameterGenerator(
     full_occ: np.ndarray | float = 0,
     max_power: np.ndarray | int = 8000,
     ac_map: np.ndarray | int = 1,
-    time_res: int = 3600,
+    time_res: int = 300,
     reward_beta: float = 0.999,
     reward_pnorm: float = 2,
     target: np.ndarray | float = 22,
@@ -483,7 +488,7 @@ def ParameterGenerator(
     root: str = '',
     stochastic_seasonal_ambient_features: str = None,
     stochasic_generator_block_size: int = None,
-    num_periods: int = 365
+    episode_len: int = 288
 ) -> dict[str, Any]:
     """Generates parameters from the selected building and temperature file for the env.
 
@@ -508,7 +513,7 @@ def ParameterGenerator(
         ac_map: binary indicator of presence (1) or absence (0) of AC, either a
             boolean array of shape (n,) to specify AC presence in individual
             rooms, or a scalar indicating AC presence in all rooms
-        time_res: length of 1 timestep in seconds. Default is 3600 (1 hour).
+        time_res: length of 1 timestep in seconds. Default is 300 (5 min).
         reward_beta: temperature error penalty weight for reward function
         reward_pnorm: p to use for norm in reward function
         target: target temperature setpoints (in Celsius), either an array
@@ -529,9 +534,9 @@ def ParameterGenerator(
             `None` to use raw data; `summer` to generate stochastic ambient features
             for the summer season; `winter` to do so for the winter season
         stochastic_generator_block_size: Desired block size for use in generating
-            stochastic seasonal ambient features.
-        num_periods: The number of periods to divide the data into for each episode.
-            Set to 52 (for weekly periods) by default.
+            stochastic seasonal ambient features in number of hours.
+        episode_len: number of time steps in each episode (default: 288 steps at 5-min
+            time_res is 1 day)
 
     Returns:
         parameters: Contains all parameters needed for environment initialization.
@@ -542,18 +547,18 @@ def ParameterGenerator(
 
     # Calculate ground temperature for each month
     all_ground_temp = np.concatenate([
-        np.ones(31 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[0],
-        np.ones(28 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[1],
-        np.ones(31 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[2],
-        np.ones(30 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[3],
-        np.ones(31 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[4],
-        np.ones(30 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[5],
-        np.ones(31 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[6],
-        np.ones(31 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[7],
-        np.ones(30 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[8],
-        np.ones(31 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[9],
-        np.ones(30 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[10],
-        np.ones(31 * 24 * 3600 // ground_temp_time_res) * monthly_ground_temp[11],
+        np.ones(31 * 24) * monthly_ground_temp[0],
+        np.ones(28 * 24) * monthly_ground_temp[1],
+        np.ones(31 * 24) * monthly_ground_temp[2],
+        np.ones(30 * 24) * monthly_ground_temp[3],
+        np.ones(31 * 24) * monthly_ground_temp[4],
+        np.ones(30 * 24) * monthly_ground_temp[5],
+        np.ones(31 * 24) * monthly_ground_temp[6],
+        np.ones(31 * 24) * monthly_ground_temp[7],
+        np.ones(30 * 24) * monthly_ground_temp[8],
+        np.ones(31 * 24) * monthly_ground_temp[9],
+        np.ones(30 * 24) * monthly_ground_temp[10],
+        np.ones(31 * 24) * monthly_ground_temp[11],
     ])
 
     # Check if building is in BUILDINGS, otherwise use building as building_file
@@ -581,44 +586,28 @@ def ParameterGenerator(
         weather_path = os.path.join(root, weather)
         weather_df, weather_metadata = pvlib.iotools.read_epw(weather_path)
 
-    # Read the air temp data
+    # Read the hourly air temp data
     oneyear = weather_df["temp_air"].to_numpy()
 
-    # Read the GHI data
+    # Read the hourly GHI data
     oneyearrad = weather_df["ghi"].to_numpy()  # in Wh/m^2
 
-    all_data = np.vstack((oneyear, oneyearrad, all_ground_temp))
-    all_data = all_data.T
+    all_data = np.stack((oneyear, oneyearrad, all_ground_temp), axis=1)  # shape [num_hours, 3]
 
-    if stochastic_seasonal_ambient_features == "summer":
-        if stochasic_generator_block_size:
+    if stochastic_seasonal_ambient_features in ("summer", "winter"):
+        if stochasic_generator_block_size is not None:
             block_size = stochasic_generator_block_size
         else:
             block_size = 100
-        samples = generate_stochastic_ambient_features(None, 
-                                                       "summer", 
-                                                       len(all_data), 
-                                                       all_data, 
-                                                       block_size=block_size)
-        oneyear = samples[:, 0].squeeze()
-        oneyearrad = samples[:, 1].squeeze()
-        all_ground_temp = samples[:, 2].squeeze()
-    elif stochastic_seasonal_ambient_features == "winter":
-        if stochasic_generator_block_size:
-            block_size = stochasic_generator_block_size
-        else:
-            block_size = 100
-        samples = generate_stochastic_ambient_features(None, 
-                                                       "winter", 
-                                                       len(all_data), 
-                                                       all_data, 
-                                                       block_size=block_size)
+        samples = generate_stochastic_ambient_features(
+            None, stochastic_seasonal_ambient_features, 
+            len(all_data), all_data,    block_size=block_size)
         oneyear = samples[:, 0].squeeze()
         oneyearrad = samples[:, 1].squeeze()
         all_ground_temp = samples[:, 2].squeeze()
     elif stochastic_seasonal_ambient_features is not None:
-        raise ValueError("stochastic_seasonal_ambient_features must be either \
-                         'None', 'summer', or 'winter'")
+        raise ValueError("stochastic_seasonal_ambient_features must be either "
+                         "'None', 'summer', or 'winter'")
     
     # Interpolate ground temp values
     num_ground_temp_points = len(all_ground_temp)
@@ -717,7 +706,7 @@ def ParameterGenerator(
     parameters['A'] = A
     parameters['B'] = B
     parameters['D'] = D
-    parameters['num_periods'] = num_periods
+    parameters['episode_len'] = episode_len
 
     return parameters
 

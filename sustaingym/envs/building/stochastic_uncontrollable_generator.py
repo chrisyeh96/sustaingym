@@ -1,22 +1,23 @@
-from typing import Optional, Iterable
+from __future__ import annotations
+
+from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
 import scipy
 
+
 class StochasticUncontrollableGenerator():
-    def __init__(self, 
-                 building_env = None, 
-                 num_episodes: int = None):
+    def __init__(self, num_episodes: int | None = None):
         """
         Initializes a generator class for the uncontrollable features in BuildingEnv.
 
         Args:
-            building_env: The instance of the BuildingEnv environment.
-            num_episodes: The number of episodes over which to collect observations
-                from the environment.
+            num_episodes: The number of episodes in the provided observation data. If
+                given, instance will treat each row in the observation data as a separate
+                raw dataset to split into seasons and fit distributions to. If None,
+                will use the provided raw data as a single episode.
         """
-        self.env = building_env
         self.episodes = num_episodes
 
         self.observations = [[]]
@@ -29,28 +30,28 @@ class StochasticUncontrollableGenerator():
         
         self.block_size = 0
 
-    def split_observations_into_seasons(self, observation_data: Optional[np.array] = None):
+    def split_observations_into_seasons(
+        self, observation_data: np.ndarray
+    ) -> (np.ndarray, np.ndarray):
         """
         Splits observation data into summer and winter seasons.
 
         Args:
-        observation_data: The collected observation data. Can be `None` if 
-            collect_random_observations has been called.
+            observation_data (num_episodes x len_of_episode, num_features): 
+                The collected observation data.
         
         Returns:
-            summer_observations: Summer ambient features.
-            winter_observations: Winter ambient features.
+            summer_observations (len_of_season x num_episodes, num_features): 
+                Summer ambient features.
+            winter_observations (len_of_season x num_episodes, num_features): 
+                Winter ambient features.
 
         Raises:
             ValueError if no observation_data is given and the class instance
                 has no observations stored.
         """
-        if observation_data is None:
-            if len(self.observations[0]) == 0:
-                raise ValueError("User must either generate observation data using \
-                                  collect_random_observations or provide data.")
-            else:
-                observation_data = self.observations
+        if observation_data is None and len(self.observations) == 0:
+            raise ValueError("`observation_data` cannot be None")
         
         self.summer_observations = []
         self.winter_observations = []
@@ -107,7 +108,7 @@ class StochasticUncontrollableGenerator():
     def get_empirical_dist(self, 
                            season: Optional[str] = None, 
                            this_season_observations: Optional[np.array] = None, 
-                           block_size_on_split: int = 100):
+                           block_size_on_split: int = 100) -> scipy.stats.rv_continuous:
         """
         Fits a multivariate normal distribution to each ambient feature.
 
@@ -171,7 +172,7 @@ class StochasticUncontrollableGenerator():
         season: Optional[str] = None, 
         dists: Optional[scipy.stats.rv_continuous] = None, 
         block_size: Optional[int] = None
-    ):
+    ) -> np.ndarray:
         """
         Draw vector samples from fitted multivariate Gaussian.
 
@@ -182,7 +183,8 @@ class StochasticUncontrollableGenerator():
                 generated empirical distributions through get_empirical_dist.
 
         Returns:
-            samples: The samples generated from the fitted distributions.
+            samples (num_samples x block_size, num_obs_features): 
+                The samples generated from the fitted distributions.
         
         Raises:
             ValueError if season and dists is not given or if a season is given
@@ -214,9 +216,7 @@ class StochasticUncontrollableGenerator():
             this_samples = this_dist.rvs(size=num_blocks)
 
             this_samples = this_samples.reshape(-1, 1)
-            if i == 0:
-                samples = this_samples
-            else:
-                samples = np.hstack((samples, this_samples))
-        
+            samples.append(this_samples)
+
+        samples = np.stack(samples, axis=1)
         return samples
