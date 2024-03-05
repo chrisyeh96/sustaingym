@@ -1,6 +1,7 @@
 """
 The module implements the BuildingEnv class.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -81,6 +82,7 @@ class BuildingEnv(gym.Env):
         timestep: current timestep in episode, from 0 to 288
         action_space: structure of actions expected by environment
     """
+
     # Occupancy nonlinear coefficients, collected from page 1299 of
     # https://energyplus.net/assets/nrel_custom/pdfs/pdfs_v23.1.0/EngineeringReference.pdf
     OCCU_COEF = [
@@ -121,20 +123,20 @@ class BuildingEnv(gym.Env):
         """
         self.parameters = parameters
 
-        self.n = parameters['n']
-        self.zones = parameters['zones']
-        self.target = parameters['target']
-        self.out_temp = parameters['out_temp']
-        self.ground_temp = parameters['ground_temp']
-        self.ghi = parameters['ghi']
-        self.metabolism = parameters['metabolism']
-        self.ac_map = parameters['ac_map']
-        self.maxpower = parameters['max_power']
-        self.temp_range = parameters['temp_range']
-        self.reward_pnorm = parameters['reward_pnorm']
-        self.is_continuous_action = parameters['is_continuous_action']
-        self.timestep = parameters['time_resolution']
-        self.episode_len = parameters['episode_len']
+        self.n = parameters["n"]
+        self.zones = parameters["zones"]
+        self.target = parameters["target"]
+        self.out_temp = parameters["out_temp"]
+        self.ground_temp = parameters["ground_temp"]
+        self.ghi = parameters["ghi"]
+        self.metabolism = parameters["metabolism"]
+        self.ac_map = parameters["ac_map"]
+        self.maxpower = parameters["max_power"]
+        self.temp_range = parameters["temp_range"]
+        self.reward_pnorm = parameters["reward_pnorm"]
+        self.is_continuous_action = parameters["is_continuous_action"]
+        self.timestep = parameters["time_resolution"]
+        self.episode_len = parameters["episode_len"]
         self.Occupower = 0
         self.datadriven = False
         self.length_of_weather = len(self.out_temp)
@@ -148,25 +150,30 @@ class BuildingEnv(gym.Env):
             self.action_space = gym.spaces.Box(self.Qlow, self.Qhigh, dtype=np.float32)
         else:
             self.action_space = gym.spaces.MultiDiscrete(
-                (self.Qhigh * self.DISCRETE_LENGTH
-                 - self.Qlow * self.DISCRETE_LENGTH).astype(np.int64)
+                (
+                    self.Qhigh * self.DISCRETE_LENGTH - self.Qlow * self.DISCRETE_LENGTH
+                ).astype(np.int64)
             )
 
         # Set the observation space bounds based on the minimum and maximum temperature
         min_T, max_T = self.temp_range
         heat_max = 1000
-        self.low = np.concatenate([
-            np.ones(self.n + 1) * min_T,  # temp of zones and outdoor
-            [0],                          # GHI
-            [min_T],                      # temp of ground
-            [-min_T * self.OCCU_COEF_LINEAR / 1000]  # occupancy power
-        ]).astype(np.float32)
-        self.high = np.concatenate([
-            np.ones(self.n + 1) * max_T,  # temp of zones and outdoor
-            [heat_max],                   # GHI
-            [max_T],                      # temp of ground
-            [heat_max]                    # occupancy power
-        ]).astype(np.float32)
+        self.low = np.concatenate(
+            [
+                np.ones(self.n + 1) * min_T,  # temp of zones and outdoor
+                [0],  # GHI
+                [min_T],  # temp of ground
+                [-min_T * self.OCCU_COEF_LINEAR / 1000],  # occupancy power
+            ]
+        ).astype(np.float32)
+        self.high = np.concatenate(
+            [
+                np.ones(self.n + 1) * max_T,  # temp of zones and outdoor
+                [heat_max],  # GHI
+                [max_T],  # temp of ground
+                [heat_max],  # occupancy power
+            ]
+        ).astype(np.float32)
         self.observation_space = gym.spaces.Box(self.low, self.high, dtype=np.float32)
 
         # Set the weight for the power consumption and comfort range
@@ -186,9 +193,9 @@ class BuildingEnv(gym.Env):
         self.X_new = self.target
 
         # Stack B and D matrix together for easy calculation
-        A = parameters['A']
-        B = parameters['B']
-        D = parameters['D']
+        A = parameters["A"]
+        B = parameters["B"]
+        D = parameters["D"]
         BD = np.hstack((D[:, np.newaxis], B))
 
         # Compute the discrete-time system matrices
@@ -197,13 +204,15 @@ class BuildingEnv(gym.Env):
 
         # Define environment spec
         self.spec = EnvSpec(
-            id='sustaingym/BuildingEnv-v0',
-            entry_point='sustaingym.envs:BuildingEnv',
+            id="sustaingym/BuildingEnv-v0",
+            entry_point="sustaingym.envs:BuildingEnv",
             nondeterministic=False,
-            max_episode_steps=288)
+            max_episode_steps=288,
+        )
 
-    def step(self, action: np.ndarray
-             ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def step(
+        self, action: np.ndarray
+    ) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         """Steps the environment.
 
         Updates the state of the environment based on the given action and calculates the
@@ -240,12 +249,12 @@ class BuildingEnv(gym.Env):
         done = False
 
         # Prepare the input matrices X and Y
-        X = self.state[:self.n].T
+        X = self.state[: self.n].T
         Y = np.insert(
             np.append(action, self.ghi[self.epoch]), 0, self.out_temp[self.epoch]
         ).T
         Y = np.insert(Y, 0, self.ground_temp[self.epoch]).T
-        avg_temp = np.sum(self.state[:self.n]) / self.n
+        avg_temp = np.sum(self.state[: self.n]) / self.n
         meta = self.metabolism[self.epoch]
 
         # If the environment is data-driven, add additional features to the Y matrix
@@ -282,13 +291,17 @@ class BuildingEnv(gym.Env):
         info = self._get_info()
 
         # self.statelist.append(self.state)
-        self.state = np.concatenate([
-            X_new,
-            [self.out_temp[self.epoch],
-             self.ground_temp[self.epoch],
-             self.ghi[self.epoch],
-             self.Occupower / 1000],
-        ]).astype(np.float32)
+        self.state = np.concatenate(
+            [
+                X_new,
+                [
+                    self.out_temp[self.epoch],
+                    self.ground_temp[self.epoch],
+                    self.ghi[self.epoch],
+                    self.Occupower / 1000,
+                ],
+            ]
+        ).astype(np.float32)
 
         # Store the action in the actionlist
         self.actionlist.append(action * self.maxpower)
@@ -297,7 +310,10 @@ class BuildingEnv(gym.Env):
         self.epoch += 1
 
         # Check if the environment has reached the end of the weather data
-        if self.epoch % (self.length_of_weather // self.episode_len) == 0 and self.epoch != 0:
+        if (
+            self.epoch % (self.length_of_weather // self.episode_len) == 0
+            and self.epoch != 0
+        ):
             done = True
         if self.epoch >= self.length_of_weather - 1:
             done = True
@@ -306,8 +322,9 @@ class BuildingEnv(gym.Env):
         # Return the new state, reward, done flag, and info
         return self.state, reward, done, done, info
 
-    def reset(self, *, seed: int | None = None, options: dict | None = None
-              ) -> tuple[np.ndarray, dict[str, Any]]:
+    def reset(
+        self, *, seed: int | None = None, options: dict | None = None
+    ) -> tuple[np.ndarray, dict[str, Any]]:
         """Resets the environment.
 
         Prepares the environment for the next episode by setting the initial
@@ -357,13 +374,17 @@ class BuildingEnv(gym.Env):
 
         # Construct the initial state by concatenating relevant variables
         self.X_new = T_initial
-        self.state = np.concatenate([
-            T_initial,
-            [self.out_temp[self.epoch],
-             self.ground_temp[self.epoch],
-             self.ghi[self.epoch],
-             self.Occupower / 1000]
-        ]).astype(np.float32)
+        self.state = np.concatenate(
+            [
+                T_initial,
+                [
+                    self.out_temp[self.epoch],
+                    self.ground_temp[self.epoch],
+                    self.ghi[self.epoch],
+                    self.Occupower / 1000,
+                ],
+            ]
+        ).astype(np.float32)
 
         # Initialize the rewards
         self.flag = 1
@@ -472,7 +493,7 @@ class BuildingEnv(gym.Env):
 
         # Update the A_d and B_d matrices with the coefficients from the fitted model
         self.A_d = beta[:, : self.n]
-        self.BD_d = beta[:, self.n:]
+        self.BD_d = beta[:, self.n :]
 
         # Set the data-driven flag to True
         self.datadriven = True

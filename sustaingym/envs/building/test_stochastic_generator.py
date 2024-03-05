@@ -7,28 +7,34 @@ import pandas as pd
 
 from tqdm import tqdm
 
-block_size = 24 # always in hours
-episode_len = 365 # number of episodes in one year of data
-time_res = 3600 # always in seconds
-summer_params = ParameterGenerator(building="OfficeSmall", 
-                                   weather="Hot_Dry",
-                                   location="Tucson",
-                                   stochastic_seasonal_ambient_features="summer",
-                                   stochasic_generator_block_size=block_size,
-                                   episode_len=episode_len,
-                                   time_res=time_res)
-winter_params = ParameterGenerator(building="OfficeSmall", 
-                                   weather="Hot_Dry",
-                                   location="Tucson",
-                                   stochastic_seasonal_ambient_features="winter",
-                                   stochasic_generator_block_size=block_size,
-                                   episode_len=episode_len,
-                                   time_res=time_res)
-neutral_params = ParameterGenerator(building="OfficeSmall", 
-                                   weather="Hot_Dry",
-                                   location="Tucson",
-                                   episode_len=episode_len,
-                                   time_res=time_res)
+block_size = 24  # always in hours
+episode_len = 365  # number of episodes in one year of data
+time_res = 3600  # always in seconds
+summer_params = ParameterGenerator(
+    building="OfficeSmall",
+    weather="Hot_Dry",
+    location="Tucson",
+    stochastic_seasonal_ambient_features="summer",
+    stochasic_generator_block_size=block_size,
+    episode_len=episode_len,
+    time_res=time_res,
+)
+winter_params = ParameterGenerator(
+    building="OfficeSmall",
+    weather="Hot_Dry",
+    location="Tucson",
+    stochastic_seasonal_ambient_features="winter",
+    stochasic_generator_block_size=block_size,
+    episode_len=episode_len,
+    time_res=time_res,
+)
+neutral_params = ParameterGenerator(
+    building="OfficeSmall",
+    weather="Hot_Dry",
+    location="Tucson",
+    episode_len=episode_len,
+    time_res=time_res,
+)
 
 summer_env = BuildingEnv(summer_params)
 winter_env = BuildingEnv(winter_params)
@@ -64,10 +70,12 @@ for i in tqdm(range(num_running_periods)):
         winter_obs = np.vstack((winter_obs, this_winter_obs))
         neutral_obs = np.vstack((neutral_obs, this_neutral_obs))
 
-ewm_periods = 30 # num_periods
-feature_mappings = {-2: "heat gain from irradiance",
-                    -3: "ground temperature",
-                    -4: "outdoor temperature"}
+ewm_periods = 30  # num_periods
+feature_mappings = {
+    -2: "heat gain from irradiance",
+    -3: "ground temperature",
+    -4: "outdoor temperature",
+}
 ambient_feature_indices = feature_mappings.keys()
 
 for ft_idx in ambient_feature_indices:
@@ -75,15 +83,24 @@ for ft_idx in ambient_feature_indices:
     winter_series = pd.Series(winter_obs[:, ft_idx])
     neutral_series = pd.Series(neutral_obs[:, ft_idx])
 
-    summer_ewma = summer_series.ewm(ewm_periods).mean() # [30:]
-    winter_ewma = winter_series.ewm(ewm_periods).mean() # [30:]
-    neutral_ewma = neutral_series.ewm(ewm_periods).mean() # [30:]
+    summer_ewma = summer_series.ewm(ewm_periods).mean()  # [30:]
+    winter_ewma = winter_series.ewm(ewm_periods).mean()  # [30:]
+    neutral_ewma = neutral_series.ewm(ewm_periods).mean()  # [30:]
 
     plt.figure()
     plt.title(f"Summer vs. winter for {feature_mappings[ft_idx]}")
-    plt.plot(summer_ewma, label=f"Summer EWMA({ewm_periods})", color="red", linewidth=0.75)
-    plt.plot(winter_ewma, label=f"Winter EWMA({ewm_periods})", color="blue", linewidth=0.75)
-    plt.plot(neutral_ewma, label=f"Normal-year EWMA({ewm_periods})", color="gray", linewidth=0.75)
+    plt.plot(
+        summer_ewma, label=f"Summer EWMA({ewm_periods})", color="red", linewidth=0.75
+    )
+    plt.plot(
+        winter_ewma, label=f"Winter EWMA({ewm_periods})", color="blue", linewidth=0.75
+    )
+    plt.plot(
+        neutral_ewma,
+        label=f"Normal-year EWMA({ewm_periods})",
+        color="gray",
+        linewidth=0.75,
+    )
     plt.xlabel("Time")
     plt.ylabel("Feature value")
     plt.legend()
