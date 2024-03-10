@@ -498,7 +498,7 @@ def Nfind_neighbor(
 
 def generate_stochastic_ambient_features(
     building_env_params: dict,
-    season: str,
+    stochastic_summer_percentage: float,
     num_rows: int,
     data: pd.DataFrame,
     block_size: int = 100,
@@ -508,7 +508,8 @@ def generate_stochastic_ambient_features(
 
     Args:
         building_env_params: parameter dictionary to generate the BuildingEnv instance
-        season: the season over which to generate the stochastic features from
+        stochastic_summer_percentage: the weight (between 0 and 1) of the generated
+            observations to be given to those generated from the summer distribution.
         num_rows: the number of observations of the ambient features to generate
         data: the processed data containing the year's worth of feature observations
             to be fed into the stochastic generator
@@ -522,8 +523,12 @@ def generate_stochastic_ambient_features(
     generator = StochasticUncontrollableGenerator()
     data = np.array(data)
     generator.split_observations_into_seasons(observation_data=data)
-    generator.get_empirical_dist(season=season, block_size_on_split=block_size)
-    samples = generator.draw_samples_from_dist(num_samples=num_rows, season=season)
+    generator.get_empirical_dist(season="summer", block_size=block_size)
+    generator.get_empirical_dist(season="winter", block_size=block_size)
+    print(stochastic_summer_percentage)
+    samples = generator.draw_samples_from_dist(
+        num_samples=num_rows, summer_percentage=stochastic_summer_percentage
+    )
     return samples
 
 
@@ -547,7 +552,7 @@ def ParameterGenerator(
     temp_range: tuple[float, float] = (-40, 40),
     is_continuous_action: bool = True,
     root: str = "",
-    stochastic_seasonal_ambient_features: str = None,
+    stochastic_summer_percentage: None | float = None,
     stochasic_generator_block_size: int = None,
     episode_len: int = 288,
 ) -> dict[str, Any]:
@@ -590,10 +595,9 @@ def ParameterGenerator(
         root: root directory for building and weather data files, only used when
             ``building`` and ``weather`` do not correspond to keys in `BUILDINGS`
             and `WEATHER`
-        stochastic_seasonal_ambient_features: Whether or not to generate stochastic
-            ambient features (heat gain from irradiance, ground/outdoor temperature);
-            `None` to use raw data; `summer` to generate stochastic ambient features
-            for the summer season; `winter` to do so for the winter season
+        stochastic_summer_percentage: The fraction (between 0 and 1) of the generated
+            observations that should be weighted toward those from the summer
+            distribution. None if not using stochastic features.
         stochastic_generator_block_size: Desired block size for use in generating
             stochastic seasonal ambient features in number of hours.
         episode_len: number of time steps in each episode (default: 288 steps at 5-min
@@ -659,14 +663,14 @@ def ParameterGenerator(
         (oneyear, oneyearrad, all_ground_temp), axis=1
     )  # shape [num_hours, 3]
 
-    if stochastic_seasonal_ambient_features in ("summer", "winter"):
+    if stochastic_summer_percentage is not None:
         if stochasic_generator_block_size is not None:
             block_size = stochasic_generator_block_size
         else:
             block_size = 100
         samples = generate_stochastic_ambient_features(
             None,
-            stochastic_seasonal_ambient_features,
+            stochastic_summer_percentage,
             len(all_data),
             all_data,
             block_size=block_size,
@@ -674,11 +678,6 @@ def ParameterGenerator(
         oneyear = samples[:, 0].squeeze()
         oneyearrad = samples[:, 1].squeeze()
         all_ground_temp = samples[:, 2].squeeze()
-    elif stochastic_seasonal_ambient_features is not None:
-        raise ValueError(
-            "stochastic_seasonal_ambient_features must be either "
-            "'None', 'summer', or 'winter'"
-        )
 
     # Interpolate ground temp values
     num_ground_temp_points = len(all_ground_temp)

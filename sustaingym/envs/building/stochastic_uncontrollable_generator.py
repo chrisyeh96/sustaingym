@@ -63,10 +63,12 @@ class StochasticUncontrollableGenerator:
                 this_observation_block = observation_data[i]
                 this_n = len(this_observation_block)
 
-                this_first_season = this_observation_block[: this_n // 4]
-                this_summer = this_observation_block[this_n // 4 : 3 * this_n // 4]
-                this_last_season = this_observation_block[3 * this_n // 4 :]
-                this_winter = np.vstack((this_first_season, this_last_season))
+                # January only for winter distribution
+                this_winter = this_observation_block[: this_n // 12]
+                # July only for summer distribution
+                this_summer = this_observation_block[
+                    this_n * 2 // 12 : this_n * 3 // 12
+                ]
 
                 if i == 0:
                     self.summer_observations = this_summer
@@ -100,7 +102,7 @@ class StochasticUncontrollableGenerator:
         self,
         season: str | None = None,
         this_season_observations: np.ndarray | None = None,
-        block_size_on_split: int = 100,
+        block_size: int = 100,
     ) -> list[scipy.stats.rv_continuous]:
         """
         Fits a multivariate normal distribution to each ambient feature.
@@ -111,7 +113,7 @@ class StochasticUncontrollableGenerator:
                 and split into seasons through split_observations_into_seasons.
             this_season_observations: The observation data for this season. Can be
                 `None` if user has generated and split data.
-            block_size_on_split: Desired block size for each ambient feature vector.
+            block_size: Desired block size for each ambient feature vector.
                 In hours.
 
         Returns:
@@ -136,8 +138,7 @@ class StochasticUncontrollableGenerator:
 
         this_season_observations = np.array(this_season_observations)
         num_obs, num_features = this_season_observations.shape
-        block_size = block_size_on_split
-        self.block_size = block_size_on_split
+        self.block_size = block_size
 
         mu_vectors = []
         cov_matrices = []
@@ -171,8 +172,8 @@ class StochasticUncontrollableGenerator:
     def draw_samples_from_dist(
         self,
         num_samples: int,
-        season: str | None = None,
-        dists: scipy.stats.rv_continuous | None = None,
+        summer_percentage: float,
+        dists: Iterable[scipy.stats.rv_continuous] | None = None,
         block_size: int | None = None,
     ) -> np.ndarray:
         """
@@ -180,51 +181,63 @@ class StochasticUncontrollableGenerator:
 
         Args:
             num_samples: The number of desired samples.
-            season: The desired season. Can be `None`, `summer`, or `winter`.
-            dists: The empirical distributions. Can be `None` if instance has
-                generated empirical distributions through get_empirical_dist.
+            summer_percentage: The weight of the generated observations to
+                be given to those generated from the summer distribution.
+            dists: Iterable of the empirical distributions. Can be `None` if
+                instance has generated empirical distributions through
+                get_empirical_dist.
 
         Returns:
             samples: The samples generated from the fitted distributions.
                 Shape is (num_samples x block_size, num_obs_features).
 
         Raises:
-            ValueError if season and dists is not given or if a season is given
-                and is valid but there is no distribution for that season
+            ValueError if `summer_percentage` is not between 0 and 1 or if
+                either the summer or winter distributions aren't available to
+                draw samples from.
         """
-        if season is None and dists is None:
-            raise ValueError("Either season or dist must be supplied.")
+        if summer_percentage > 1 or summer_percentage < 0:
+            raise ValueError("`summer_percentage` must be between 0 and 1")
         if dists is None:
-            if season == "summer":
-                if self.summer_dists is None:
-                    raise ValueError(
-                        "No summer dist available; call get_empirical_dist"
-                    )
-                dists = self.summer_dists
-            elif season == "winter":
-                if self.winter_dists is None:
-                    raise ValueError(
-                        "No winter dist available; call get_empirical_dist"
-                    )
-                dists = self.winter_dists
+            if self.summer_dists is None or self.winter_dists is None:
+                raise ValueError("No dists available; call `get_empicial_dist` first")
             else:
-                raise ValueError("Season must be either summer or winter")
+                dists = [self.summer_dists, self.winter_dists]
 
         if block_size is None:
             block_size = self.block_size
 
-        num_dists = len(dists)
+        num_dists = len(dists[0])
         num_blocks = num_samples // block_size + 1
 
+        season_obs = np.zeros((num_samples, num_dists))
+
+        # summer obs
         samples = []
+        this_season_dists = dists[0]
         for i in range(num_dists):
-            this_dist = dists[i]
+            this_dist = this_season_dists[i]
             this_samples = this_dist.rvs(size=num_blocks)
 
             this_samples = this_samples.reshape(-1, 1)
             samples.append(this_samples)
-
         samples = np.stack(samples, axis=1)
-        samples = samples[:num_samples, :]
+        samples = samples[:num_samples, :].squeeze()
 
-        return samples
+        season_obs += samples * summer_percentage
+
+        # winter obs
+        samples = []
+        this_season_dists = dists[1]
+        for i in range(num_dists):
+            this_dist = this_season_dists[i]
+            this_samples = this_dist.rvs(size=num_blocks)
+
+            this_samples = this_samples.reshape(-1, 1)
+            samples.append(this_samples)
+        samples = np.stack(samples, axis=1)
+        samples = samples[:num_samples, :].squeeze()
+
+        season_obs += samples * (1 - summer_percentage)
+
+        return season_obs
