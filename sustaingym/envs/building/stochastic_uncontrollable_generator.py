@@ -212,11 +212,28 @@ class StochasticUncontrollableGenerator:
 
         season_obs = np.zeros((num_samples, num_dists))
 
-        # summer obs
+        # blending dists for summer and winter
+        blended_dists = []
+        for dist_idx in range(num_dists):
+            summer_dist = dists[0][dist_idx]
+            winter_dist = dists[1][dist_idx]
+
+            blended_mean = (
+                summer_dist.mean * summer_percentage
+                + (1 - summer_percentage) * winter_dist.mean
+            )
+            blended_cov = (
+                summer_dist.cov * summer_percentage
+                + (1 - summer_percentage) * winter_dist.cov
+            )
+            blended_dist = scipy.stats.multivariate_normal(
+                mean=blended_mean, cov=blended_cov, allow_singular=True
+            )
+            blended_dists.append(blended_dist)
+
         samples = []
-        this_season_dists = dists[0]
         for i in range(num_dists):
-            this_dist = this_season_dists[i]
+            this_dist = blended_dists[i]
             this_samples = this_dist.rvs(size=num_blocks)
 
             this_samples = this_samples.reshape(-1, 1)
@@ -224,20 +241,6 @@ class StochasticUncontrollableGenerator:
         samples = np.stack(samples, axis=1)
         samples = samples[:num_samples, :].squeeze()
 
-        season_obs += samples * summer_percentage
-
-        # winter obs
-        samples = []
-        this_season_dists = dists[1]
-        for i in range(num_dists):
-            this_dist = this_season_dists[i]
-            this_samples = this_dist.rvs(size=num_blocks)
-
-            this_samples = this_samples.reshape(-1, 1)
-            samples.append(this_samples)
-        samples = np.stack(samples, axis=1)
-        samples = samples[:num_samples, :].squeeze()
-
-        season_obs += samples * (1 - summer_percentage)
+        season_obs += samples
 
         return season_obs
