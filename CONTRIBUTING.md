@@ -80,6 +80,7 @@ We use the following Sphinx extensions to build our documentation site:
     ```python
     napoleon_custom_sections = [("Returns", "params_style")]
     ```
+- [Furo theme](https://pradyunsg.me/furo/)
 
 
 ## Coding style guide
