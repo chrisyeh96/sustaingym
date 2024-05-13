@@ -1,6 +1,7 @@
 """
 The module implements a multi-agent version of the building environment.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -54,25 +55,27 @@ class MultiAgentBuildingEnv(ParallelEnv):
         self.agents = self.possible_agents[:]
 
         self.observation_spaces = {
-            agent: self.single_env.observation_space
-            for agent in self.agents
+            agent: self.single_env.observation_space for agent in self.agents
         }
 
         if self.single_env.is_continuous_action:
             self.action_spaces = {
-                agent: spaces.Box(-1., 1., shape=(1,), dtype=np.float32)
+                agent: spaces.Box(-1.0, 1.0, shape=(1,), dtype=np.float32)
                 for agent in self.agents
             }
         else:
             assert isinstance(self.single_env.action_space, spaces.MultiDiscrete)
             self.action_spaces = {
-                agent: self.single_env.action_space[agent]
-                for agent in self.agents
+                agent: self.single_env.action_space[agent] for agent in self.agents
             }
 
     def step(self, actions: Mapping[int, np.ndarray]) -> tuple[
-            dict[int, np.ndarray], dict[int, float], dict[int, bool],
-            dict[int, bool], dict[int, dict[str, Any]]]:
+        dict[int, np.ndarray],
+        dict[int, float],
+        dict[int, bool],
+        dict[int, bool],
+        dict[int, dict[str, Any]],
+    ]:
         """
         Returns: obss, rewards, terminateds, truncateds, infos
         """
@@ -99,8 +102,9 @@ class MultiAgentBuildingEnv(ParallelEnv):
 
         return obss, rewards, terminateds, truncateds, infos
 
-    def reset(self, seed: int | None = None, options: dict | None = None
-              ) -> tuple[dict[int, np.ndarray], dict[int, dict[str, Any]]]:
+    def reset(
+        self, seed: int | None = None, options: dict | None = None
+    ) -> tuple[dict[int, np.ndarray], dict[int, dict[str, Any]]]:
         """Resets the environment."""
         obs, info = self.single_env.reset(seed=seed, options=options)
         self._state = obs
