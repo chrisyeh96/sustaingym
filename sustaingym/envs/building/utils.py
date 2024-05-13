@@ -23,6 +23,7 @@ Monthly ground temperature values come from the
 Weather data come from EnergyPlus TMY3 Weather Files (in ``*.epw`` format)
 also provided by the Building Energy Codes Program.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -37,16 +38,19 @@ from scipy import interpolate
 
 from sustaingym.data.utils import read_to_stringio
 
+from stochastic_uncontrollable_generator import StochasticUncontrollableGenerator
+
 
 class Ufactor(NamedTuple):
     """Thermal transmittance (in W/m2-K) of different surfaces in a building"""
-    intwall: float      # 0
-    floor: float        # 1
-    outwall: float      # 2
-    roof: float         # 3
-    ceiling: float      # 4
+
+    intwall: float  # 0
+    floor: float  # 1
+    outwall: float  # 2
+    roof: float  # 3
+    ceiling: float  # 4
     groundfloor: float  # 5
-    window: float       # 6
+    window: float  # 6
 
 
 BUILDINGS = {
@@ -159,18 +163,18 @@ WEATHER = {
 
 
 class Zone(NamedTuple):
-    name: str                   # 0
-    Zaxis: float                # 1
-    Xmin: float                 # 2
-    Xmax: float                 # 3
-    Ymin: float                 # 4
-    Ymax: float                 # 5
-    Zmin: float                 # 6
-    Zmax: float                 # 7
-    FloorArea: float            # 8, in m^2
-    ExteriorGrossArea: float    # 9, in m^2
-    ExteriorWindowArea: float   # 10, in m^2
-    ind: int                    # 11, can't use name "index" because of tuple.index()
+    name: str  # 0
+    Zaxis: float  # 1
+    Xmin: float  # 2
+    Xmax: float  # 3
+    Ymin: float  # 4
+    Ymax: float  # 5
+    Zmin: float  # 6
+    Zmax: float  # 7
+    FloorArea: float  # 8, in m^2
+    ExteriorGrossArea: float  # 9, in m^2
+    ExteriorWindowArea: float  # 10, in m^2
+    ind: int  # 11, can't use name "index" because of tuple.index()
 
 
 def get_zones(
@@ -192,12 +196,12 @@ def get_zones(
 
     # Read all lines of the html file
     if isinstance(path_or_file, str):
-        with open(path_or_file, 'r') as f:
+        with open(path_or_file, "r") as f:
             htmllines = f.readlines()
     elif isinstance(path_or_file, io.TextIOBase):
         htmllines = path_or_file.readlines()
     else:
-        raise ValueError(f'Unsupported type for {path_or_file}')
+        raise ValueError(f"Unsupported type for {path_or_file}")
 
     # Initialize count and printflag variables
     count = 0
@@ -208,7 +212,7 @@ def get_zones(
         count += 1
 
         # Turn off the printflag after the 'Zone info' chart
-        if 'Zone Internal Gains Nominal' in line:
+        if "Zone Internal Gains Nominal" in line:
             printflag = False
 
         # Extract information when the printflag is True
@@ -252,7 +256,7 @@ def get_zones(
                 cord = []
 
         # Set printflag to True when 'Zone Information' is encountered in the line
-        if 'Zone Information' in line:
+        if "Zone Information" in line:
             printflag = True
             count = 0
 
@@ -290,27 +294,15 @@ def get_zones(
 
 def checkconnect(z1: Zone, z2: Zone) -> bool:
     """Checks whether zones in the same layer are connected."""
-    z1_min_in_z2 = (
-        z2.Xmin <= z1.Xmin <= z2.Xmax
-        and z2.Ymin <= z1.Ymin <= z2.Ymax
-    )
-    z1_max_in_z2 = (
-        z2.Xmin <= z1.Xmax <= z2.Xmax
-        and z2.Ymin <= z1.Ymax <= z2.Ymax
-    )
+    z1_min_in_z2 = z2.Xmin <= z1.Xmin <= z2.Xmax and z2.Ymin <= z1.Ymin <= z2.Ymax
+    z1_max_in_z2 = z2.Xmin <= z1.Xmax <= z2.Xmax and z2.Ymin <= z1.Ymax <= z2.Ymax
     return z1_min_in_z2 or z1_max_in_z2
 
 
 def checkconnect_layer(z1: Zone, z2: Zone) -> bool:
     """Checks whether zones in different layers are connected."""
-    z1_min_in_z2 = (
-        z2.Xmin <= z1.Xmin < z2.Xmax
-        and z2.Ymin <= z1.Ymin < z2.Ymax
-    )
-    z1_max_in_z2 = (
-        z2.Xmin < z1.Xmax <= z2.Xmax
-        and z2.Ymin < z1.Ymax <= z2.Ymax
-    )
+    z1_min_in_z2 = z2.Xmin <= z1.Xmin < z2.Xmax and z2.Ymin <= z1.Ymin < z2.Ymax
+    z1_max_in_z2 = z2.Xmin < z1.Xmax <= z2.Xmax and z2.Ymin < z1.Ymax <= z2.Ymax
     return z1_min_in_z2 or z1_max_in_z2
 
 
@@ -357,9 +349,9 @@ def Nfind_neighbor(
         # Check for neighbors in the layer above
         if k + 1 < num_layers:
             for z1 in layer:
-                for z2 in layers[k+1]:
+                for z2 in layers[k + 1]:
                     # Check if zones are connected between layers
-                    if (checkconnect_layer(z1, z2) or checkconnect_layer(z2, z1)):
+                    if checkconnect_layer(z1, z2) or checkconnect_layer(z2, z1):
                         # Calculate cross-sectional area
                         x_overlap = min(z1.Xmax, z2.Xmax) - max(z1.Xmin, z2.Xmin)
                         y_overlap = min(z1.Ymax, z2.Ymax) - max(z1.Ymin, z1.Ymin)
@@ -367,7 +359,11 @@ def Nfind_neighbor(
 
                         # Calculate heat transfer coefficient (U) for connected zones
                         # - floor and ceiling are in series
-                        U = crossarea * (ufactor.floor * ufactor.ceiling / (ufactor.floor + ufactor.ceiling))
+                        U = crossarea * (
+                            ufactor.floor
+                            * ufactor.ceiling
+                            / (ufactor.floor + ufactor.ceiling)
+                        )
 
                         # Update Rtable for connected zones
                         Rtable[z2.ind, z1.ind] = U
@@ -433,6 +429,37 @@ def Nfind_neighbor(
     return neighbors, Rtable, Ctable, Windowtable
 
 
+def generate_stochastic_ambient_features(
+    stochastic_summer_percentage: float,
+    num_rows: int,
+    data: np.ndarray,
+    block_size: int,
+) -> np.ndarray:
+    """
+    Generates stochastic ambient/environment features for the BuildingEnv.
+
+    Args:
+        stochastic_summer_percentage: the weight (between 0 and 1) of the generated
+            observations to be given to those generated from the summer distribution.
+        num_rows: the number of observations of the ambient features to generate
+        data: shape [num_hours, 3], processed data containing the year's worth of
+            feature observations to be fed into the stochastic generator
+        block_size: the number of hours of data over which to infer a data-generating
+            distribution that creates new instances of observations
+
+    Returns:
+        samples: The sampled ambient features in the desired season. Shape is
+            (block_size x num_rows, num_obs_features).
+    """
+    generator = StochasticUncontrollableGenerator(block_size=block_size)
+    generator.split_observations_into_seasons(observation_data=data)
+    generator.get_empirical_dist(season='summer', block_size=block_size)
+    generator.get_empirical_dist(season='winter', block_size=block_size)
+    samples = generator.draw_samples_from_dist(
+        num_samples=num_rows, summer_percentage=stochastic_summer_percentage)
+    return samples
+
+
 def ParameterGenerator(
     building: str,
     weather: str,
@@ -452,7 +479,9 @@ def ParameterGenerator(
     activity_sch: np.ndarray | float = 120,
     temp_range: tuple[float, float] = (-40, 40),
     is_continuous_action: bool = True,
-    root: str = ''
+    root: str = "",
+    stochastic_summer_percentage: float | None = None,
+    episode_len: int = 288,
 ) -> dict[str, Any]:
     """Generates parameters from the selected building and temperature file for the env.
 
@@ -493,33 +522,41 @@ def ParameterGenerator(
         root: root directory for building and weather data files, only used when
             ``building`` and ``weather`` do not correspond to keys in `BUILDINGS`
             and `WEATHER`
+        stochastic_summer_percentage: fraction (between 0 and 1) of the generated
+            observations that should be weighted toward those from the summer
+            distribution. None if not using stochastic features
+        episode_len: number of time steps in each episode (default: 288 steps at 5-min
+            time_res is 1 day)
 
     Returns:
         parameters: Contains all parameters needed for environment initialization.
     """
+    if episode_len * time_res % (24 * 60 * 60) != 0:
+        raise ValueError("Episode must be a multiple of 1 day")
+
     # check if location is in GROUND_TEMP, otherwise use ground_temp
     monthly_ground_temp = GROUND_TEMP.get(location, ground_temp)
 
     # Calculate ground temperature for each month
     all_ground_temp = np.concatenate([
-        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[0],
-        np.ones(28 * 24 * 3600 // time_res) * monthly_ground_temp[1],
-        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[2],
-        np.ones(30 * 24 * 3600 // time_res) * monthly_ground_temp[3],
-        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[4],
-        np.ones(30 * 24 * 3600 // time_res) * monthly_ground_temp[5],
-        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[6],
-        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[7],
-        np.ones(30 * 24 * 3600 // time_res) * monthly_ground_temp[8],
-        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[9],
-        np.ones(30 * 24 * 3600 // time_res) * monthly_ground_temp[10],
-        np.ones(31 * 24 * 3600 // time_res) * monthly_ground_temp[11],
+        np.ones(31 * 24) * monthly_ground_temp[0],
+        np.ones(28 * 24) * monthly_ground_temp[1],
+        np.ones(31 * 24) * monthly_ground_temp[2],
+        np.ones(30 * 24) * monthly_ground_temp[3],
+        np.ones(31 * 24) * monthly_ground_temp[4],
+        np.ones(30 * 24) * monthly_ground_temp[5],
+        np.ones(31 * 24) * monthly_ground_temp[6],
+        np.ones(31 * 24) * monthly_ground_temp[7],
+        np.ones(30 * 24) * monthly_ground_temp[8],
+        np.ones(31 * 24) * monthly_ground_temp[9],
+        np.ones(30 * 24) * monthly_ground_temp[10],
+        np.ones(31 * 24) * monthly_ground_temp[11],
     ])
 
     # Check if building is in BUILDINGS, otherwise use building as building_file
     building_file: str | io.StringIO
     if building in BUILDINGS:
-        internal_path = os.path.join('data', 'building', BUILDINGS[building][0])
+        internal_path = os.path.join("data", "building", BUILDINGS[building][0])
         building_file = read_to_stringio(internal_path)
         U_Wall = BUILDINGS[building][1]
     else:
@@ -527,22 +564,51 @@ def ParameterGenerator(
 
     # Get room information from the building file
     layers, n, all_zones = get_zones(building_file)
-    print("###############All Zones from Ground############")
+    print("############### All Zones from Ground ############")
     for zone in all_zones:
         print(zone.name, " [Zone index]: ", zone.ind)
     print("###################################################")
 
     # Check if weather is in WEATHER, otherwise use weather as weather_file
     if weather in WEATHER:
-        internal_path = os.path.join('data', 'building', WEATHER[weather])
+        internal_path = os.path.join("data", "building", WEATHER[weather])
         weather_file = read_to_stringio(internal_path)
         weather_df, weather_metadata = pvlib.iotools.parse_epw(weather_file)
     else:
         weather_path = os.path.join(root, weather)
         weather_df, weather_metadata = pvlib.iotools.read_epw(weather_path)
 
-    # Read the weather data and interpolate temperature values
-    oneyear = weather_df["temp_air"]
+    # Read the hourly air temp data
+    oneyear = weather_df["temp_air"].to_numpy()
+
+    # Read the hourly GHI data
+    oneyearrad = weather_df["ghi"].to_numpy()  # in Wh/m^2
+
+    all_data = np.stack(
+        (oneyear, oneyearrad, all_ground_temp), axis=1
+    )  # shape [num_hours, 3]
+
+    if stochastic_summer_percentage is not None:
+        num_hours_per_episode = int(episode_len * time_res / 60 / 60)
+        samples = generate_stochastic_ambient_features(
+            stochastic_summer_percentage,
+            len(all_data),
+            all_data,
+            block_size=num_hours_per_episode)
+        oneyear = samples[:, 0]
+        oneyearrad = samples[:, 1]
+        all_ground_temp = samples[:, 2]
+
+    # Interpolate ground temp values
+    num_ground_temp_points = len(all_ground_temp)
+    x = np.arange(num_ground_temp_points)
+    y = np.array(all_ground_temp)
+
+    f = interpolate.interp1d(x, y)
+    xnew = np.arange(0, num_ground_temp_points - 1, 1 / 3600 * time_res)
+    all_ground_temp = f(xnew)
+
+    # Interpolate air temp values
     num_datapoint = len(oneyear)
     x = np.arange(num_datapoint)
     y = np.array(oneyear)
@@ -551,8 +617,7 @@ def ParameterGenerator(
     xnew = np.arange(0, num_datapoint - 1, 1 / 3600 * time_res)
     outtempdatanew = f(xnew)
 
-    # Read the weather data and interpolate GHI values to the new time resolution
-    oneyearrad = weather_df["ghi"]  # in Wh/m^2
+    # Interpolate GHI values to the new time resolution
     x = np.arange(num_datapoint)
     y = np.array(oneyearrad)
 
@@ -562,7 +627,9 @@ def ParameterGenerator(
 
     # Define constants and calculate SHGC
     SpecificHeat_avg = 1000  # specific heat of indoor air, in J/kg-K
-    SHGC = shgc * shgc_weight * (max(weather_df["ghi"]) / (1 / 3600 * time_res))  # GHI change from Wh to W
+    SHGC = (
+        shgc * shgc_weight * (max(weather_df["ghi"]) / (1 / 3600 * time_res))
+    )  # GHI change from Wh to W
     # Find neighboring rooms, resistance and capacitance tables, and window properties
     neighbors, Rtable, Ctable, Windowtable = Nfind_neighbor(
         n, layers, U_Wall, SpecificHeat_avg
@@ -610,27 +677,29 @@ def ParameterGenerator(
 
     # Store parameters in a dictionary for the simulation
     parameters: dict[str, Any] = {}
-    parameters['n'] = n
-    parameters['zones'] = all_zones
-    parameters['target'] = np.zeros(n) + target
-    parameters['out_temp'] = outtempdatanew
-    parameters['ground_temp'] = all_ground_temp
-    parameters['ghi'] = (
+    parameters["n"] = n
+    parameters["zones"] = all_zones
+    parameters["target"] = np.zeros(n) + target
+    parameters["out_temp"] = outtempdatanew
+    parameters["ground_temp"] = all_ground_temp
+    parameters["ghi"] = (
         solardatanew
         / (1 / 3600 * time_res)
-        / (max(weather_df['ghi']) / (1 / 3600 * time_res))
+        / (max(weather_df["ghi"]) / (1 / 3600 * time_res))
     )
-    parameters['metabolism'] = activity_sch * np.ones(len(outtempdatanew))
-    parameters['reward_beta'] = reward_beta
-    parameters['reward_pnorm'] = reward_pnorm
-    parameters['ac_map'] = np.zeros(n) + ac_map
-    parameters['max_power'] = max_power
-    parameters['temp_range'] = temp_range
-    parameters['is_continuous_action'] = is_continuous_action
-    parameters['time_resolution'] = time_res
-    parameters['A'] = A
-    parameters['B'] = B
-    parameters['D'] = D
+    parameters["metabolism"] = activity_sch * np.ones(len(outtempdatanew))
+    parameters["reward_beta"] = reward_beta
+    parameters["reward_pnorm"] = reward_pnorm
+    parameters["ac_map"] = np.zeros(n) + ac_map
+    parameters["max_power"] = max_power
+    parameters["temp_range"] = temp_range
+    parameters["is_continuous_action"] = is_continuous_action
+    parameters["time_resolution"] = time_res
+    parameters["A"] = A
+    parameters["B"] = B
+    parameters["D"] = D
+    parameters["episode_len"] = episode_len
+
     return parameters
 
 
@@ -639,7 +708,7 @@ def construct_A_matrix(
     weightcmap: np.ndarray,
     connectmap: np.ndarray,
     occu_coef: float,
-    n: int
+    n: int,
 ) -> np.ndarray:
     """
     Constructs the A matrix for the building environment.
@@ -675,9 +744,7 @@ def construct_A_matrix(
 
 
 def construct_BD_matrix(
-    weightcmap: np.ndarray,
-    connectmap: np.ndarray,
-    RCtable: np.ndarray
+    weightcmap: np.ndarray, connectmap: np.ndarray, RCtable: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray]:
     """
     Constructs the B matrix for the building environment.
