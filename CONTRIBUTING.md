@@ -41,6 +41,8 @@ python -m unittest -v tests/test_evcharging.py
 
 ## Building PyPI package
 
+First, increment the version number in pyproject.toml. Then, follow these commands:
+
 ```bash
 # create a conda environment with appropriate build tools
 conda env update --file env_build.yml --prune
