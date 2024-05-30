@@ -55,27 +55,4 @@ More instructions coming soon!
 
 ### Custom RL Loop
 
-```python
-from sustaingym.envs.building import BuildingEnv, ParameterGenerator
-
-params = ParameterGenerator(
-    building='OfficeSmall', weather='Hot_Dry', location='Tucson')
-env = BuildingEnv(params)
-
-num_hours = 24
-obs, _ = env.reset(seed=123)
-for _ in range(num_hours):
-    action = env.action_space.sample()
-    obs, reward, terminated, truncated, info = env.step(action)
-```
-
-If you prefer using [`gym.make()`](https://gymnasium.farama.org/api/registry/), you may instead create the environment as follows:
-
-```python
-import gymnasium as gym
-from sustaingym.envs.building import ParameterGenerator
-
-params = ParameterGenerator(
-    building='OfficeSmall', weather='Hot_Dry', location='Tucson')
-env = gym.make('sustaingym/Building-v0', parameters=params)
-```
+Coming soon!

@@ -57,16 +57,6 @@ while not terminated:
     obs, reward, terminated, truncated, info = env.step(action)
 ```
 
-If you prefer using [`gym.make()`](https://gymnasium.farama.org/api/registry/), you may instead create the environment as follows:
-
-```python
-import gymnasium as gym
-import sustaingym
-
-rm = 300  # 300 MW renewables penetration
-env = gym.make('sustaingym/Cogen-v0', renewables_magnitude=rm)
-```
-
 
 ### Using our training script
 

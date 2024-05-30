@@ -50,12 +50,12 @@ exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # sphinx.ext.napoleon
 # - document multiple return variables
-napoleon_custom_sections = [('Returns', 'params_style')]
+napoleon_custom_sections = [("Returns", "params_style")]
 
 # myst_parser
 # - use $...$ for inline, $$...$$ for display, and \$ for an actual dollar sign
 myst_enable_extensions = [
-    'dollarmath'
+    "dollarmath"
 ]
 
 # sphinx.ext.mathjax
@@ -63,9 +63,9 @@ myst_enable_extensions = [
 mathjax3_config = {
     'tex': {
         'macros': {
-            'E': '{\\mathbb{E}}',
-            'R': '{\\mathbb{R}}',
-            'Z': '{\\mathbb{Z}}',
+            'E': "{\\mathbb{E}}",
+            'R': "{\\mathbb{R}}",
+            'Z': "{\\mathbb{Z}}",
         },
         # Use AMS numbering rules and support labeled equations.
         # See https://docs.mathjax.org/en/latest/input/tex/eqnumbers.html
@@ -91,9 +91,7 @@ autodoc_typehints = 'both'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 # left-sidebar title
-html_title = 'SustainGym'
-html_logo = 'logo.png'
-html_favicon = 'favicon.ico'
+html_title = "SustainGym"
 
 # include custom CSS
 html_static_path = ['_static']
@@ -106,7 +104,7 @@ html_theme = 'furo'
 # add edit button
 # see https://pradyunsg.me/furo/customisation/edit-button/
 html_theme_options = {
-    'source_repository': 'https://github.com/chrisyeh96/sustaingym/',
-    'source_branch': 'main',
-    'source_directory': 'docs/',
+    "source_repository": "https://github.com/chrisyeh96/sustaingym/",
+    "source_branch": "main",
+    "source_directory": "docs/",
 }
