@@ -41,8 +41,6 @@ python -m unittest -v tests/test_evcharging.py
 
 ## Building PyPI package
 
-First, increment the version number in pyproject.toml. Then, follow these commands:
-
 ```bash
 # create a conda environment with appropriate build tools
 conda env update --file env_build.yml --prune
@@ -61,10 +59,6 @@ python -m build
 # upload built files to PyPI
 twine upload --repository testpypi dist/*  # for testpypi
 twine upload dist/*
-
-# create a new tag
-git tag vX.Y.Z
-git push origin --tags
 ```
 
 
@@ -82,7 +76,6 @@ We use the following Sphinx extensions to build our documentation site:
     ```python
     napoleon_custom_sections = [("Returns", "params_style")]
     ```
-- [Furo theme](https://pradyunsg.me/furo/)
 
 
 ## Coding style guide
