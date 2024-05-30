@@ -33,14 +33,11 @@ import os
 from typing import Any, NamedTuple
 
 import numpy as np
-import pandas as pd
 import pvlib
 from scipy import interpolate
 
 from sustaingym.data.utils import read_to_stringio
-from sustaingym.envs.building import BuildingEnv
-
-from stochastic_uncontrollable_generator import StochasticUncontrollableGenerator
+from stochastic_generator import StochasticUncontrollableGenerator
 
 
 class Ufactor(NamedTuple):
@@ -131,79 +128,14 @@ GROUND_TEMP = {
     "ElPaso": [18.3, 11.2, 6.8, 8.1, 10.3, 12.5, 19.2, 23.8, 27.9, 27.5, 26.3, 23.4],
     "Fairbanks": [-3.1, 17.7, 19.3, 17.6, 15.4, 10.3, 0.7, 10.6, 16.0, 16.9, 14.2, 6.7],
     "GreatFalls": [8.6, 2.8, 4.1, 8.8, 2.2, 0.3, 6.7, 10.1, 16.5, 20.6, 19.2, 14.7],
-    "HoChiMinh": [
-        26.9,
-        26.7,
-        26.0,
-        26.4,
-        27.5,
-        28.3,
-        29.2,
-        29.0,
-        28.9,
-        27.2,
-        27.5,
-        27.6,
-    ],
-    "Honolulu": [
-        26.2,
-        24.8,
-        23.7,
-        22.5,
-        22.8,
-        23.2,
-        23.8,
-        25.2,
-        25.9,
-        26.9,
-        27.1,
-        26.9,
-    ],
-    "InternationalFalls": [
-        5.4,
-        2.0,
-        14.6,
-        16.9,
-        11.5,
-        6.2,
-        4.0,
-        13.4,
-        18.0,
-        19.7,
-        17.9,
-        12.3,
-    ],
-    "NewDelhi": [
-        25.1,
-        19.6,
-        14.5,
-        13.4,
-        17.0,
-        22.4,
-        29.1,
-        33.0,
-        33.6,
-        31.7,
-        30.0,
-        28.7,
-    ],
+    "HoChiMinh": [26.9, 26.7, 26.0, 26.4, 27.5, 28.3, 29.2, 29.0, 28.9, 27.2, 27.5, 27.6],
+    "Honolulu": [26.2, 24.8, 23.7, 22.5, 22.8, 23.2, 23.8, 25.2, 25.9, 26.9, 27.1, 26.9],
+    "InternationalFalls": [5.4, 2.0, 14.6, 16.9, 11.5, 6.2, 4.0, 13.4, 18.0, 19.7, 17.9, 12.3],
+    "NewDelhi": [25.1, 19.6, 14.5, 13.4, 17.0, 22.4, 29.1, 33.0, 33.6, 31.7, 30.0, 28.7],
     "NewYork": [14.0, 7.3, 3.3, 1.2, -0.2, 5.6, 10.9, 16.1, 21.7, 25.0, 24.8, 19.9],
     "PortAngeles": [9.3, 6.7, 4.1, 4.2, 4.2, 5.9, 9.0, 10.0, 13.3, 15.0, 15.7, 13.4],
     "Rochester": [7.4, 0.0, 7.6, 12.6, 7.7, 0.3, 7.0, 14.2, 19.2, 20.9, 20.0, 15.4],
-    "SanDiego": [
-        18.8,
-        14.3,
-        13.6,
-        13.2,
-        13.3,
-        12.6,
-        15.3,
-        15.6,
-        17.7,
-        19.4,
-        19.7,
-        18.5,
-    ],
+    "SanDiego": [18.8, 14.3, 13.6, 13.2, 13.3, 12.6, 15.3, 15.6, 17.7, 19.4, 19.7, 18.5],
     "Seattle": [11.4, 8.1, 5.4, 4.5, 5.8, 8.3, 10.9, 13.0, 15.6, 17.7, 18.8, 15.1],
     "Tampa": [24.2, 18.9, 15.7, 13.6, 15.5, 17.1, 21.2, 26.9, 27.6, 27.9, 27.4, 26.2],
     "Tucson": [20.9, 15.4, 11.9, 14.8, 12.7, 15.4, 23.3, 26.3, 31.2, 30.4, 29.8, 27.8],
@@ -497,22 +429,20 @@ def Nfind_neighbor(
 
 
 def generate_stochastic_ambient_features(
-    building_env_params: dict,
     stochastic_summer_percentage: float,
     num_rows: int,
-    data: pd.DataFrame,
-    block_size: int = 100,
+    data: np.ndarray,
+    block_size: int,
 ) -> np.ndarray:
     """
     Generates stochastic ambient/environment features for the BuildingEnv.
 
     Args:
-        building_env_params: parameter dictionary to generate the BuildingEnv instance
         stochastic_summer_percentage: the weight (between 0 and 1) of the generated
             observations to be given to those generated from the summer distribution.
         num_rows: the number of observations of the ambient features to generate
-        data: the processed data containing the year's worth of feature observations
-            to be fed into the stochastic generator
+        data: shape [num_hours, 3], processed data containing the year's worth of
+            feature observations to be fed into the stochastic generator
         block_size: the number of hours of data over which to infer a data-generating
             distribution that creates new instances of observations
 
@@ -520,15 +450,12 @@ def generate_stochastic_ambient_features(
         samples: The sampled ambient features in the desired season. Shape is
             (block_size x num_rows, num_obs_features).
     """
-    generator = StochasticUncontrollableGenerator()
-    data = np.array(data)
-    generator.split_observations_into_seasons(observation_data=data)
-    generator.get_empirical_dist(season="summer", block_size=block_size)
-    generator.get_empirical_dist(season="winter", block_size=block_size)
-    print(stochastic_summer_percentage)
+    generator = StochasticUncontrollableGenerator(block_size=block_size)
+    generator.split_observations_into_seasons(data=data)
+    generator.get_empirical_dist(season='summer')
+    generator.get_empirical_dist(season='winter')
     samples = generator.draw_samples_from_dist(
-        num_samples=num_rows, summer_percentage=stochastic_summer_percentage
-    )
+        num_samples=num_rows, summer_frac=stochastic_summer_percentage)
     return samples
 
 
@@ -552,9 +479,9 @@ def ParameterGenerator(
     temp_range: tuple[float, float] = (-40, 40),
     is_continuous_action: bool = True,
     root: str = "",
-    stochastic_summer_percentage: None | float = None,
-    stochasic_generator_block_size: int = None,
+    stochastic_summer_percentage: float | None = None,
     episode_len: int = 288,
+    block_size: int = None
 ) -> dict[str, Any]:
     """Generates parameters from the selected building and temperature file for the env.
 
@@ -595,38 +522,39 @@ def ParameterGenerator(
         root: root directory for building and weather data files, only used when
             ``building`` and ``weather`` do not correspond to keys in `BUILDINGS`
             and `WEATHER`
-        stochastic_summer_percentage: The fraction (between 0 and 1) of the generated
+        stochastic_summer_percentage: fraction (between 0 and 1) of the generated
             observations that should be weighted toward those from the summer
-            distribution. None if not using stochastic features.
-        stochastic_generator_block_size: Desired block size for use in generating
-            stochastic seasonal ambient features in number of hours.
+            distribution. None if not using stochastic features
         episode_len: number of time steps in each episode (default: 288 steps at 5-min
             time_res is 1 day)
+        block_size: size (in hours) of blocks of data to fit distributions to (e.g., 
+            block_size=24 will sample daily blocks of 24 hourly observations to 
+            fit distributions to)
 
     Returns:
         parameters: Contains all parameters needed for environment initialization.
     """
+    if episode_len * time_res % (24 * 60 * 60) != 0:
+        raise ValueError("Episode must be a multiple of 1 day")
+
     # check if location is in GROUND_TEMP, otherwise use ground_temp
     monthly_ground_temp = GROUND_TEMP.get(location, ground_temp)
-    ground_temp_time_res = 3600
 
     # Calculate ground temperature for each month
-    all_ground_temp = np.concatenate(
-        [
-            np.ones(31 * 24) * monthly_ground_temp[0],
-            np.ones(28 * 24) * monthly_ground_temp[1],
-            np.ones(31 * 24) * monthly_ground_temp[2],
-            np.ones(30 * 24) * monthly_ground_temp[3],
-            np.ones(31 * 24) * monthly_ground_temp[4],
-            np.ones(30 * 24) * monthly_ground_temp[5],
-            np.ones(31 * 24) * monthly_ground_temp[6],
-            np.ones(31 * 24) * monthly_ground_temp[7],
-            np.ones(30 * 24) * monthly_ground_temp[8],
-            np.ones(31 * 24) * monthly_ground_temp[9],
-            np.ones(30 * 24) * monthly_ground_temp[10],
-            np.ones(31 * 24) * monthly_ground_temp[11],
-        ]
-    )
+    all_ground_temp = np.concatenate([
+        np.ones(31 * 24) * monthly_ground_temp[0],
+        np.ones(28 * 24) * monthly_ground_temp[1],
+        np.ones(31 * 24) * monthly_ground_temp[2],
+        np.ones(30 * 24) * monthly_ground_temp[3],
+        np.ones(31 * 24) * monthly_ground_temp[4],
+        np.ones(30 * 24) * monthly_ground_temp[5],
+        np.ones(31 * 24) * monthly_ground_temp[6],
+        np.ones(31 * 24) * monthly_ground_temp[7],
+        np.ones(30 * 24) * monthly_ground_temp[8],
+        np.ones(31 * 24) * monthly_ground_temp[9],
+        np.ones(30 * 24) * monthly_ground_temp[10],
+        np.ones(31 * 24) * monthly_ground_temp[11],
+    ])
 
     # Check if building is in BUILDINGS, otherwise use building as building_file
     building_file: str | io.StringIO
@@ -639,7 +567,7 @@ def ParameterGenerator(
 
     # Get room information from the building file
     layers, n, all_zones = get_zones(building_file)
-    print("###############All Zones from Ground############")
+    print("############### All Zones from Ground ############")
     for zone in all_zones:
         print(zone.name, " [Zone index]: ", zone.ind)
     print("###################################################")
@@ -664,20 +592,16 @@ def ParameterGenerator(
     )  # shape [num_hours, 3]
 
     if stochastic_summer_percentage is not None:
-        if stochasic_generator_block_size is not None:
-            block_size = stochasic_generator_block_size
-        else:
-            block_size = 100
+        num_hours_per_episode = int(episode_len * time_res / 60 / 60)
+        this_block_size = block_size if block_size is not None else num_hours_per_episode
         samples = generate_stochastic_ambient_features(
-            None,
             stochastic_summer_percentage,
             len(all_data),
             all_data,
-            block_size=block_size,
-        )
-        oneyear = samples[:, 0].squeeze()
-        oneyearrad = samples[:, 1].squeeze()
-        all_ground_temp = samples[:, 2].squeeze()
+            block_size=this_block_size)
+        oneyear = samples[:, 0]
+        oneyearrad = samples[:, 1]
+        all_ground_temp = samples[:, 2]
 
     # Interpolate ground temp values
     num_ground_temp_points = len(all_ground_temp)

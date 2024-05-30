@@ -3,25 +3,15 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 import numpy as np
-import pandas as pd
 import scipy
 
 
 class StochasticUncontrollableGenerator:
     """
     A generator class for the uncontrollable features in BuildingEnv.
-
-    Args:
-        num_episodes: The number of episodes in the provided observation
-            data. If given, instance will treat each row in the observation
-            data as a separate raw dataset to split into seasons and fit
-            distributions to. If None, will use the provided raw data as a
-            single episode.
     """
 
-    def __init__(self, num_episodes: int | None = None):
-        self.episodes = num_episodes
-
+    def __init__(self, block_size: int):
         self.observations = [[]]
 
         self.summer_observations = []
@@ -30,71 +20,35 @@ class StochasticUncontrollableGenerator:
         self.summer_dists = None
         self.winter_dists = None
 
-        self.block_size = 0
+        self.block_size = block_size
 
     def split_observations_into_seasons(
-        self, observation_data: np.ndarray
+        self, data: np.ndarray
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Splits observation data into summer and winter seasons.
 
         Args:
-            observation_data: The collected observation data. Shape
-                is (num_episodes x len_of_episode, num_features).
+            data: Observation data, shape [n, num_features]. Assumed to represent
+                a whole year of observations.
 
         Returns:
             summer_observations: Summer ambient features. Shape is
-                (len_of_season x num_episodes, num_features).
+                (len_of_season, num_features).
             winter_observations: Winter ambient features. Shape is
-                (len_of_season x num_episodes, num_features).
+                (len_of_season, num_features).
 
         Raises:
-            ValueError if no observation_data is given and the class instance
+            ValueError if no data is given and the class instance
                 has no observations stored.
         """
-        if observation_data is None and len(self.observations) == 0:
-            raise ValueError("`observation_data` cannot be None")
+        if data is None and len(self.observations) == 0:
+            raise ValueError("`data` cannot be None")
 
-        self.summer_observations = []
-        self.winter_observations = []
-
-        if self.episodes is not None:
-            for i in range(self.episodes):
-                this_observation_block = observation_data[i]
-                this_n = len(this_observation_block)
-
-                # January only for winter distribution
-                this_winter = this_observation_block[: this_n // 12]
-                # July only for summer distribution
-                this_summer = this_observation_block[
-                    this_n * 2 // 12 : this_n * 3 // 12
-                ]
-
-                if i == 0:
-                    self.summer_observations = this_summer
-                    self.winter_observations = this_winter
-                else:
-                    self.summer_observations = np.vstack(
-                        (self.summer_observations, this_summer)
-                    )
-                    self.winter_observations = np.vstack(
-                        (self.winter_observations, this_winter)
-                    )
-        else:
-            num_observations = observation_data.shape[0]
-            self.summer_observations = observation_data[
-                num_observations // 4 : 3 * num_observations // 4, :
-            ]
-            self.winter_observations = np.vstack(
-                (
-                    observation_data[: num_observations // 4, :],
-                    observation_data[3 * num_observations // 4 :, :],
-                )
-            )
-
-        # (len_of_season x num_episodes, dim_of_obs_vector)
-        self.summer_observations = np.array(self.summer_observations)
-        self.winter_observations = np.array(self.winter_observations)
+        # winter = January, summer = July
+        n = data.shape[0]
+        self.winter_observations = data[: n // 12]
+        self.summer_observations = data[n // 12 * 6: n // 12 * 7]
 
         return self.summer_observations, self.winter_observations
 
@@ -102,7 +56,7 @@ class StochasticUncontrollableGenerator:
         self,
         season: str | None = None,
         this_season_observations: np.ndarray | None = None,
-        block_size: int = 100,
+        block_size: int | None = None,
     ) -> list[scipy.stats.rv_continuous]:
         """
         Fits a multivariate normal distribution to each ambient feature.
@@ -113,12 +67,13 @@ class StochasticUncontrollableGenerator:
                 and split into seasons through split_observations_into_seasons.
             this_season_observations: The observation data for this season. Can be
                 `None` if user has generated and split data.
-            block_size: Desired block size for each ambient feature vector.
-                In hours.
+            block_size: Desired block size for each ambient feature vector,
+                defaults to self.block_size
 
         Returns:
-            empirical_dists: The empirical distributions for each of the ambient
-                features.
+            empirical_dists: list of length num_features, empirical distributions for
+                each of the ambient features, each distribution is a multivariate normal
+                with shape [block_size]
 
         Raises:
             ValueError if neither season nor this_season_observations is specified OR
@@ -126,19 +81,22 @@ class StochasticUncontrollableGenerator:
         """
         if season is None and this_season_observations is None:
             raise ValueError(
-                "Either season or this_season_observations must be specified."
-            )
+                "Either `season` or `this_season_observations` must be specified.")
         if season is not None and this_season_observations is None:
-            if season == "summer":
+            if season == 'summer':
                 this_season_observations = self.summer_observations
-            elif season == "winter":
+            elif season == 'winter':
                 this_season_observations = self.winter_observations
             else:
-                raise ValueError("Season must be either summer or winter.")
+                raise ValueError('Season must be either "summer" or "winter".')
 
-        this_season_observations = np.array(this_season_observations)
+        this_season_observations = np.asarray(this_season_observations)
         num_obs, num_features = this_season_observations.shape
-        self.block_size = block_size
+
+        if block_size is None:
+            block_size = self.block_size
+        
+        assert block_size < num_obs, "Block size should be less than number of obs"
 
         mu_vectors = []
         cov_matrices = []
@@ -156,15 +114,15 @@ class StochasticUncontrollableGenerator:
             cov_matrices.append(this_cov_mat)
 
         empirical_dists = []
-        for i in range(len(mu_vectors)):
+        for i in range(num_features):
             this_dist = scipy.stats.multivariate_normal(
                 mean=mu_vectors[i], cov=cov_matrices[i], allow_singular=True
             )
             empirical_dists.append(this_dist)
 
-        if season == "summer":
+        if season == 'summer':
             self.summer_dists = empirical_dists
-        elif season == "winter":
+        elif season == 'winter':
             self.winter_dists = empirical_dists
 
         return empirical_dists
@@ -172,7 +130,7 @@ class StochasticUncontrollableGenerator:
     def draw_samples_from_dist(
         self,
         num_samples: int,
-        summer_percentage: float,
+        summer_frac: float,
         dists: Iterable[scipy.stats.rv_continuous] | None = None,
         block_size: int | None = None,
     ) -> np.ndarray:
@@ -181,7 +139,7 @@ class StochasticUncontrollableGenerator:
 
         Args:
             num_samples: The number of desired samples.
-            summer_percentage: The weight of the generated observations to
+            summer_frac: The weight of the generated observations to
                 be given to those generated from the summer distribution.
             dists: Iterable of the empirical distributions. Can be `None` if
                 instance has generated empirical distributions through
@@ -192,12 +150,12 @@ class StochasticUncontrollableGenerator:
                 Shape is (num_samples x block_size, num_obs_features).
 
         Raises:
-            ValueError if `summer_percentage` is not between 0 and 1 or if
+            ValueError if `summer_frac` is not between 0 and 1 or if
                 either the summer or winter distributions aren't available to
                 draw samples from.
         """
-        if summer_percentage > 1 or summer_percentage < 0:
-            raise ValueError("`summer_percentage` must be between 0 and 1")
+        if summer_frac < 0 or summer_frac > 1:
+            raise ValueError("`summer_frac` must be between 0 and 1")
         if dists is None:
             if self.summer_dists is None or self.winter_dists is None:
                 raise ValueError("No dists available; call `get_empicial_dist` first")
@@ -219,12 +177,12 @@ class StochasticUncontrollableGenerator:
             winter_dist = dists[1][dist_idx]
 
             blended_mean = (
-                summer_dist.mean * summer_percentage
-                + (1 - summer_percentage) * winter_dist.mean
+                summer_dist.mean * summer_frac
+                + (1 - summer_frac) * winter_dist.mean
             )
             blended_cov = (
-                summer_dist.cov * summer_percentage
-                + (1 - summer_percentage) * winter_dist.cov
+                summer_dist.cov * summer_frac
+                + (1 - summer_frac) * winter_dist.cov
             )
             blended_dist = scipy.stats.multivariate_normal(
                 mean=blended_mean, cov=blended_cov, allow_singular=True
