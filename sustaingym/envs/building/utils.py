@@ -451,11 +451,11 @@ def generate_stochastic_ambient_features(
             (block_size x num_rows, num_obs_features).
     """
     generator = StochasticUncontrollableGenerator(block_size=block_size)
-    generator.split_observations_into_seasons(observation_data=data)
-    generator.get_empirical_dist(season='summer', block_size=block_size)
-    generator.get_empirical_dist(season='winter', block_size=block_size)
+    generator.split_observations_into_seasons(data=data)
+    generator.get_empirical_dist(season='summer')
+    generator.get_empirical_dist(season='winter')
     samples = generator.draw_samples_from_dist(
-        num_samples=num_rows, summer_percentage=stochastic_summer_percentage)
+        num_samples=num_rows, summer_frac=stochastic_summer_percentage)
     return samples
 
 
@@ -481,6 +481,7 @@ def ParameterGenerator(
     root: str = "",
     stochastic_summer_percentage: float | None = None,
     episode_len: int = 288,
+    block_size: int = None
 ) -> dict[str, Any]:
     """Generates parameters from the selected building and temperature file for the env.
 
@@ -526,6 +527,9 @@ def ParameterGenerator(
             distribution. None if not using stochastic features
         episode_len: number of time steps in each episode (default: 288 steps at 5-min
             time_res is 1 day)
+        block_size: size (in hours) of blocks of data to fit distributions to (e.g., 
+            block_size=24 will sample daily blocks of 24 hourly observations to 
+            fit distributions to)
 
     Returns:
         parameters: Contains all parameters needed for environment initialization.
@@ -589,11 +593,12 @@ def ParameterGenerator(
 
     if stochastic_summer_percentage is not None:
         num_hours_per_episode = int(episode_len * time_res / 60 / 60)
+        this_block_size = block_size if block_size is not None else num_hours_per_episode
         samples = generate_stochastic_ambient_features(
             stochastic_summer_percentage,
             len(all_data),
             all_data,
-            block_size=num_hours_per_episode)
+            block_size=this_block_size)
         oneyear = samples[:, 0]
         oneyearrad = samples[:, 1]
         all_ground_temp = samples[:, 2]

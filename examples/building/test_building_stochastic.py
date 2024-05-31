@@ -1,3 +1,5 @@
+import sys
+sys.path.append("/Users/ethanwilk/Documents/sustaingym/sustaingym/envs/building")
 from env import BuildingEnv
 from utils import ParameterGenerator
 
@@ -7,15 +9,15 @@ import pandas as pd
 
 from tqdm import tqdm
 
-block_size = 24  # always in hours
-episode_len = 365  # number of episodes in one year of data
-time_res = 3600  # always in seconds
+block_size = 12 # in hours
+episode_len = 24 # number of timesteps in each episode
+time_res = 3600 # resolution in seconds
 summer_params = ParameterGenerator(
     building="OfficeSmall",
     weather="Hot_Dry",
     location="Tucson",
-    stochastic_summer_percentage=1.0,
-    stochasic_generator_block_size=block_size,
+    stochastic_summer_percentage=1.,
+    block_size=block_size,
     episode_len=episode_len,
     time_res=time_res,
 )
@@ -24,7 +26,7 @@ winter_params = ParameterGenerator(
     weather="Hot_Dry",
     location="Tucson",
     stochastic_summer_percentage=0.0,
-    stochasic_generator_block_size=block_size,
+    block_size=block_size,
     episode_len=episode_len,
     time_res=time_res,
 )
@@ -44,15 +46,15 @@ summer_obs = []
 winter_obs = []
 neutral_obs = []
 
-num_running_periods = episode_len
+num_running_periods = 365
 seed_start = None
 
 print("Collecting weather data...")
 for i in tqdm(range(num_running_periods)):
     done = False
-    this_summer_obs, _ = summer_env.reset(seed=seed_start)
-    this_winter_obs, _ = winter_env.reset(seed=seed_start)
-    this_neutral_obs, _ = neutral_env.reset(seed=seed_start)
+    this_summer_obs, _ = summer_env.reset(seed=None)
+    this_winter_obs, _ = winter_env.reset(seed=None)
+    this_neutral_obs, _ = neutral_env.reset(seed=None)
     if i == 0:
         summer_obs = this_summer_obs.copy()
         winter_obs = this_winter_obs.copy()
@@ -70,7 +72,7 @@ for i in tqdm(range(num_running_periods)):
         winter_obs = np.vstack((winter_obs, this_winter_obs))
         neutral_obs = np.vstack((neutral_obs, this_neutral_obs))
 
-ewm_periods = 30  # num_periods
+ewm_periods = 100  # num_periods
 feature_mappings = {
     -2: "heat gain from irradiance",
     -3: "ground temperature",
@@ -83,9 +85,9 @@ for ft_idx in ambient_feature_indices:
     winter_series = pd.Series(winter_obs[:, ft_idx])
     neutral_series = pd.Series(neutral_obs[:, ft_idx])
 
-    summer_ewma = summer_series.ewm(ewm_periods).mean()  # [30:]
-    winter_ewma = winter_series.ewm(ewm_periods).mean()  # [30:]
-    neutral_ewma = neutral_series.ewm(ewm_periods).mean()  # [30:]
+    summer_ewma = summer_series.rolling(ewm_periods, center=True, min_periods=1).mean()
+    winter_ewma = winter_series.rolling(ewm_periods, center=True, min_periods=1).mean()
+    neutral_ewma = neutral_series.rolling(ewm_periods, center=True, min_periods=1).mean()
 
     plt.figure()
     plt.title(f"Summer vs. winter for {feature_mappings[ft_idx]}")

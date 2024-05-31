@@ -187,6 +187,7 @@ class BuildingEnv(gym.Env):
         self.statelist: list[np.ndarray] = []
         self.actionlist: list[np.ndarray] = []
         self.epoch = 0
+        self.num_epoch_runs = 0
 
         # Initialize zonal temperature
         self.X_new = self.target
@@ -299,16 +300,13 @@ class BuildingEnv(gym.Env):
 
         # Increment the epochs counter
         self.epoch += 1
+        self.num_epoch_runs += 1
 
         # Check if the environment has reached the end of the weather data
-        if (
-            self.epoch % (self.length_of_weather // self.episode_len) == 0
-            and self.epoch != 0
-        ):
-            done = True
-        if self.epoch >= self.length_of_weather - 1:
-            done = True
+        if self.epoch >= self.length_of_weather:
             self.epoch = 0
+        if self.num_epoch_runs >= self.episode_len:
+            done = True
 
         # Return the new state, reward, done flag, and info
         return self.state, reward, done, done, info
@@ -338,12 +336,14 @@ class BuildingEnv(gym.Env):
         super().reset(seed=seed, options=options)
 
         # Initialize the episode counter
-        num_episodes = self.length_of_weather // self.episode_len
         if seed is None:
-            episode = self.np_random.integers(low=0, high=num_episodes)
+            self.epoch = self.np_random.integers(low=0, high=self.length_of_weather-1)
         else:
-            episode = seed % num_episodes
-        self.epoch = episode * self.episode_len
+            # uses seed to determine which observation of the year to map to
+            num_days_normalizer = ((self.episode_len * self.timestep) // 86_400) * 365
+            self.epoch = int((seed / num_days_normalizer) * self.length_of_weather)
+            self.epoch = min(self.epoch, self.length_of_weather-1)
+        self.num_epoch_runs = 0
 
         # Initialize state and action lists
         self.statelist = []

@@ -95,6 +95,8 @@ class StochasticUncontrollableGenerator:
 
         if block_size is None:
             block_size = self.block_size
+        
+        assert block_size < num_obs, "Block size should be less than number of obs"
 
         mu_vectors = []
         cov_matrices = []
