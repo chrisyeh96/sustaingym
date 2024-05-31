@@ -47,6 +47,16 @@ while not terminated:
     obs, reward, terminated, truncated, info = env.step(action)
 ```
 
+If you prefer using [`gym.make()`](https://gymnasium.farama.org/api/registry/), you may instead create the environment as follows:
+
+```python
+import gymnasium as gym
+from sustaingym.envs.evcharging import GMMsTraceGenerator
+
+gmmg = GMMsTraceGenerator('caltech', 'Summer 2019')
+env = gym.make('sustaingym/EVCharging-v0', data_generator=gmmg)
+```
+
 ### Using our training script
 
 1. Install [miniconda3](https://docs.conda.io/en/latest/miniconda-other-installer-links.html).

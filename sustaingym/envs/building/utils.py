@@ -37,7 +37,7 @@ import pvlib
 from scipy import interpolate
 
 from sustaingym.data.utils import read_to_stringio
-from stochastic_generator import StochasticUncontrollableGenerator
+from sustaingym.envs.building.stochastic_generator import StochasticUncontrollableGenerator
 
 
 class Ufactor(NamedTuple):
