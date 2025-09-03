@@ -27,3 +27,13 @@ register(
     entry_point='sustaingym.envs.cogen:CogenEnv',
     nondeterministic=False
 )
+
+# register(
+#     id='sustaingym/ElectricityMarket-v0',
+#     entry_point='sustaingym.envs:ElectricityMarketEnv'
+# )
+
+# register(
+#     id='sustaingym/CongestedElectricityMarket-v0',
+#     entry_point='sustaingym.envs:CongestedElectricityMarketEnv'
+# )
