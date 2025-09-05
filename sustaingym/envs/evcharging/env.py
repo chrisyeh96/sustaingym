@@ -171,9 +171,6 @@ class EVChargingEnv(Env[dict[str, np.ndarray], np.ndarray]):
         self.action_space = spaces.Box(
             low=0, high=1.0, shape=(self.num_stations,), dtype=np.float32)
 
-        # Define reward range
-        self.reward_range = (-np.inf, self.PROFIT_FACTOR * 32 * self.num_stations)
-
         # Set up action projection
         if self.project_action_in_env:
             self._init_action_projection()
