@@ -17,7 +17,7 @@ from .utils import MINS_IN_DAY, site_str_to_site
 from sustaingym.envs.utils import solve_mosek
 
 
-class EVChargingEnv(Env):
+class EVChargingEnv(Env[dict[str, np.ndarray], np.ndarray]):
     """EVCharging class.
 
     This classes simulates the charging schedule of electric vehicles (or EVs)
@@ -70,13 +70,14 @@ class EVChargingEnv(Env):
               convex optimization solver
 
     Attributes:
-        # attributes required by gym.Env
+        # attributes required by gymnasium.Env
         action_space: spaces.Box, structure of actions expected by env
         observation_space: spaces.Dict, structure of observations
-        reward_range: tuple[float, float], min and max rewards
-        spec: EnvSpec, info about env if initialized from gymnasium.make()
+
+        # attributes inherited from gymnasium.Env
         metadata: dict[str, Any], unused
-        np_random: np.random.Generator, random number generator for the env
+        render_mode: str | None, unused
+        spec: EnvSpec, info about env if initialized from gymnasium.make()
 
         # attributes specific to EVChargingEnv
         data_generator: AbstractTraceGenerator, generator for sampling EV
@@ -165,7 +166,6 @@ class EVChargingEnv(Env):
 
         # Initialize variables for gym resetting
         self.t = 0
-        self._simulator: acns.Simulator = None
 
         # Define action space for the pilot signals
         self.action_space = spaces.Box(
@@ -229,8 +229,9 @@ class EVChargingEnv(Env):
                 f'moer forecast steps = {self.moer_forecast_steps}) '
                 f'using {self.data_generator.__repr__()}')
 
-    def step(self, action: np.ndarray
-             ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
+    def step(
+        self, action: np.ndarray
+    ) -> tuple[dict[str, np.ndarray], float, bool, bool, dict[str, Any]]:
         """Steps the environment.
 
         Calls the step function of the internal simulator.
@@ -292,8 +293,9 @@ class EVChargingEnv(Env):
 
         return observation, reward, done, False, info
 
-    def reset(self, *, seed: int | None = None, options: dict[str, Any] | None = None
-              ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    def reset(
+        self, *, seed: int | None = None, options: dict[str, Any] | None = None
+    ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
         """Resets the environment.
 
         Prepares for the next episode by re-creating the charging network,
@@ -418,7 +420,7 @@ class EVChargingEnv(Env):
 
     def _calculate_avg_plugin_time(self) -> float:
         """Calculate average plug-in times for evs in periods."""
-        return np.mean([ev.departure - ev.arrival for ev in self._evs])
+        return np.mean([ev.departure - ev.arrival for ev in self._evs]).item()
 
     def _calculate_max_profit(self) -> float:
         """Calculate max profits without regards to network constraints."""
@@ -447,8 +449,8 @@ class EVChargingEnv(Env):
         profit = self.PROFIT_FACTOR * total_charging_rate
 
         # Network constraints - amount of charge over maximum allowed rates ($)
-        schedule = np.array([x[0] for x in schedule.values()])  # convert to numpy
-        current_sum = np.abs(self._simulator.network.constraint_current(schedule))
+        schedule_arr = np.array([x[0] for x in schedule.values()])  # convert to numpy
+        current_sum = np.abs(self._simulator.network.constraint_current(schedule_arr))
         excess_current = np.sum(np.maximum(0, current_sum - self._simulator.network.magnitudes))
         excess_charge = excess_current * self.VIOLATION_FACTOR
 
@@ -466,7 +468,9 @@ class EVChargingEnv(Env):
 
     def close(self) -> None:
         """Close the environment. Delete internal variables."""
-        del self._simulator, self.cn
+        if hasattr(self, '_simulator'):
+            del self._simulator
+        del self.cn
 
 
 def magnitude_constraint(action: cp.Variable, cn: acns.ChargingNetwork
