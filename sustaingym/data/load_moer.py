@@ -361,20 +361,21 @@ class MOERLoader:
                  save_dir: str | None = None):
         self.df = load_moer(starttime, endtime, ba, save_dir)
 
-    def retrieve(self, dt: datetime) -> np.ndarray:
+    def retrieve(self, dt: datetime, forecast_steps: int = 36) -> np.ndarray:
         """Retrieves MOER data starting at given datetime for next 24 hours.
 
         Args:
             dt: a timezone-aware datetime object
 
         Returns:
-            data: array of shape (289, 37). The first column is the historical
-                MOER. The remaining columns are forecasts for the next 36
-                five-min time steps. Units kg CO2 per kWh. Rows are sorted
-                chronologically.
+            data: array of shape (289, 1 + forecast_steps). The first column is
+                the historical MOER. The remaining columns are forecasts for
+                the next 36 five-min time steps. Units kg CO2 per kWh. Rows are
+                sorted chronologically.
         """
         dt_one_day_later = dt + ONEDAY + FIVEMINS
-        return self.df[(dt <= self.df.index) & (self.df.index < dt_one_day_later)].values
+        data = self.df[(dt <= self.df.index) & (self.df.index < dt_one_day_later)].values
+        return data[:, :1 + forecast_steps]
 
 
 if __name__ == '__main__':
