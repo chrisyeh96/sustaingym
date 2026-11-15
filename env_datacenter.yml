@@ -1,0 +1,29 @@
+# Install or update environment
+# conda env update --file env_datacenter.yml --prune
+#
+# Remove environment
+# conda remove --name sustaingym_datacenter --all
+#
+# Notes
+# - DataCenterEnv and its baselines run on CPU and need no solver or GPU.
+# - Python 3.10 matches the other SustainGym environments.
+#
+# last updated: November 15, 2026
+name: sustaingym_datacenter
+channels:
+- conda-forge
+dependencies:
+- python=3.10.*
+- flake8
+- ipykernel               # for Jupyter / VSCode notebooks
+- matplotlib
+- mypy
+- numpy=1.26.*
+- pandas=2.1.*
+- pip
+- pytz=2023.3
+- requests=2.31.*
+
+- pip:
+  - gymnasium==0.28.1
+  - pettingzoo==1.24.*
