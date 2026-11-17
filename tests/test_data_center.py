@@ -76,7 +76,7 @@ class TestDataCenterEnv(unittest.TestCase):
         # the baselines never look at job power
         for policy, safe in [(ASAP, False), (ForecastWindow, True)]:
             schedules = set()
-            for name in ('tdp', 'measured', 'measured_released'):
+            for name in ('tdp', 'tdp_idle40', 'measured', 'measured_released'):
                 env = small_env(power_model=name)
                 policy(env, deadline_safe=safe).run_episode(seed=1, day='2020-06-03')
                 schedules.add(tuple(env.schedule()))
@@ -84,7 +84,7 @@ class TestDataCenterEnv(unittest.TestCase):
 
     def test_energy_follows_power_model(self) -> None:
         summaries = {}
-        for name in ('tdp', 'measured', 'measured_released'):
+        for name in ('tdp', 'tdp_idle40', 'measured', 'measured_released'):
             env = small_env(power_model=name)
             summaries[name] = ASAP(env).run_episode(seed=1, day='2020-06-03')
         gpu_steps = sum(j.num_gpus * j.duration for j in env.jobs)
@@ -94,6 +94,8 @@ class TestDataCenterEnv(unittest.TestCase):
         idle = make_power_model('measured').idle_w(env.gpu)
         self.assertAlmostEqual(summaries['tdp']['energy_kwh'],
                                gpu_steps * tdp * dt_h / 1000, places=6)
+        self.assertAlmostEqual(summaries['tdp_idle40']['energy_kwh'],
+                               (gpu_steps + 0.4 * idle_steps) * tdp * dt_h / 1000, places=6)
         self.assertAlmostEqual(summaries['measured']['idle_kwh'],
                                idle_steps * idle * dt_h / 1000, places=6)
         self.assertEqual(summaries['measured_released']['idle_kwh'], 0.0)
@@ -195,6 +197,19 @@ class TestDataCenterEnv(unittest.TestCase):
         np.testing.assert_array_equal(slots[:, 0], [1, 1, 0])
         # the job with the earlier latest start is first
         self.assertAlmostEqual(slots[0, 1], 2 / 4)
+
+    def test_duration_feature_ignores_later_jobs(self) -> None:
+        # a long job arriving later must not change how the first job's
+        # duration is scaled at step 0
+        firsts = []
+        for later in ([], [(100, 140, 1, 'W4', 400)]):
+            gen = FixedJobs([(0, 12, 1, 'W4', 100)] + later)
+            gen.max_duration_steps = 144
+            env = small_env(job_generator=gen, num_gpus=4)
+            obs, _ = env.reset(seed=0)
+            firsts.append(obs[GLOBAL_FEATURES + 2])
+        self.assertEqual(firsts[0], firsts[1])
+        self.assertAlmostEqual(firsts[0], 12 / 144, places=6)
 
 
 class TestBestOffset(unittest.TestCase):

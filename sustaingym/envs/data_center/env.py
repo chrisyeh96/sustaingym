@@ -70,9 +70,13 @@ class DataCenterEnv(Env[np.ndarray, np.ndarray]):
         for window slot i (index 42 + 5i onward):
             1 if the slot has a job                 k       0       1
             job GPUs / num_gpus                     k       0       1
-            job duration / longest duration         k       0       1
+            job duration / longest duration (*)     k       0       1
             (latest start - step) / max slack       k       -1      1
             job power per GPU / TDP                 k       0       1
+
+    (*) The longest duration the job generator can produce, so the feature
+    does not depend on jobs that have not arrived yet. For a generator
+    without a fixed limit, it is the longest job of the episode instead.
 
     Window slots hold queued jobs sorted by latest feasible start time.
 
@@ -281,7 +285,11 @@ class DataCenterEnv(Env[np.ndarray, np.ndarray]):
         self._arrivals: dict[int, list[Job]] = {}
         for job in self.jobs:
             self._arrivals.setdefault(job.arrival, []).append(job)
-        self._max_duration = max([j.duration for j in self.jobs], default=1)
+        # a fixed scale, so the observation does not reveal future arrivals
+        limit = self.job_generator.max_duration_steps
+        if limit is None:
+            limit = max([j.duration for j in self.jobs], default=1)
+        self._max_duration = max(1, limit)
         self._max_slack = max(1, self.job_generator.max_slack_steps)
         self._job_power = {w: self.power.active_w(self.gpu, w)
                            for w in {j.workload for j in self.jobs}}
@@ -387,7 +395,9 @@ class DataCenterEnv(Env[np.ndarray, np.ndarray]):
         return obs
 
     def render(self) -> None:
+        """Does nothing: the environment has no rendering."""
         return None
 
     def close(self) -> None:
+        """Does nothing: the environment holds no resources."""
         return None
