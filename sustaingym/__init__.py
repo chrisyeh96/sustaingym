@@ -11,10 +11,11 @@ register(
 #     entry_point='sustaingym.envs.electricitymarket:ElectricityMarketEnv'
 # )
 
-# register(
-#     id='sustaingym/DataCenter-v0',
-#     entry_point='sustaingym.envs:DataCenterEnv'
-# )
+register(
+    id='sustaingym/DataCenter-v0',
+    entry_point='sustaingym.envs.data_center:DataCenterEnv',
+    nondeterministic=False
+)
 
 register(
     id='sustaingym/Building-v0',

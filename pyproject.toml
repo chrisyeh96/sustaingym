@@ -50,6 +50,11 @@ cogen = [
     "pandas>=1.1, <3",          # semver
     "xlrd>=2",
 ]
+datacenter = [
+    "pandas>=1.1, <3",          # semver
+    "pytz",
+    "requests>=2.31.0",         # semver
+]
 evcharging = [
     "acnportal>=0.3.3",
     "cvxpy>=1.3, <2",           # semver
